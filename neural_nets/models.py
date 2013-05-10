@@ -6,6 +6,7 @@ from math import sqrt
 from scikits.cuda import linalg
 from .pycuda_ops import sigmoid_kernel, df_sigmoid, \
       tanh_kernel, df_tanh, relu_kernel, df_relu, \
+      sample_dropout_mask, apply_dropout_mask, \
       add_vec_to_mat, softmax, cross_entropy, matrix_sum_out_axis
 
 class HiddenLayer(object):
@@ -29,6 +30,8 @@ class HiddenLayer(object):
         self.n_in = n_in
         self.n_units = n_units
 
+        self.dropout = dropout
+
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
@@ -41,13 +44,38 @@ class HiddenLayer(object):
         return 0.
 
     def feed_forward(self, input, dropout_predict=False):
-        activations = linalg.dot(input, self.W)
-        activations = add_vec_to_mat(activations, self.b, inplace=True)
+        """ Propagate forward through the hidden layer.
+        Inputs:
+        input -- input from the previous layer
+        dropout_predict -- whether to to half the weights when 
+            predicting a dropout model
+
+        Outputs:
+        lin_activations
+        activations
+
+        If self.dropout = True and dropout_predict=False:
+        Output:
+        lin_activations
+        activations
+        dropout_mask: binary mask of dropped units
+
+        """
+
+        if self.dropout and dropout_predict:
+            activations = linalg.dot(input, .5 * self.W)
+            activations = add_vec_to_mat(activations, .5 * self.b, inplace=True)
+        else:
+            activations = linalg.dot(input, self.W)
+            activations = add_vec_to_mat(activations, self.b, inplace=True)
         
-        # activations = gpuarray.empty_like(lin_activations)        
         self.f(activations)
+
+        if self.dropout and not dropout_predict:
+            dropout_mask = sample_dropout_mask(activations)
+            return activations, dropout_mask
         
-        return activations
+        return (activations,)
 
     def backprop(self, input, df_output, cache=None):
         """ Backpropagate through the hidden layer
@@ -66,9 +94,17 @@ class HiddenLayer(object):
 
         # Get cache if it wasn't provided
         if cache is None:
-            cache = self.feed_forward(input)
+            cache = self.feed_forward(input, dropout=self.dropout,
+                                      dropout_predict=False)
 
-        activations = cache
+        if len(cache) == 2:
+            activations, dropout_mask = cache
+        else:
+            activations = cache[0]
+
+        # Multiply the binary mask with the incoming gradients
+        if self.dropout and dropout_mask is not None:
+            apply_dropout_mask(df_output, dropout_mask)
 
         # Get gradient wrt activation function
         df_activations = self.df(activations)
@@ -186,14 +222,13 @@ class LogisticLayer(TopLayer):
         # targets_soft = expand_int_targets(targets, self.n_out)
         targets_soft = targets
         
-        # if dropout_predict:
-        #     # Half the hidden weights
-        #     lin_activations = gpu.dot(input, .5 * self.W) + self.b
-        # else:
-        #     lin_activations = gpu.dot(input, self.W) + self.b
-
-        activations = linalg.dot(input, self.W)
-        activations = add_vec_to_mat(activations, self.b, inplace=True)
+        if dropout_predict:
+            # Half the hidden weights
+            activations = linalg.dot(input, .5 * self.W)
+            activations = add_vec_to_mat(activations, .5 * self.b, inplace=True)
+        else:
+            activations = linalg.dot(input, self.W)
+            activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         activations = softmax(activations)
 
@@ -204,14 +239,13 @@ class LogisticLayer(TopLayer):
             return loss, (targets_soft, activations)
 
     def predict(self, input):
-        # if dropout_predict:
-        #     # Half the hidden weights
-        #     lin_activations = gpu.dot(input, .5 * self.W) + .5 * self.b
-        # else:
-        #     lin_activations = gpu.dot(input, self.W) + self.b
-
-        activations = linalg.dot(input, self.W)
-        activations = add_vec_to_mat(activations, self.b, inplace=True)
+        if dropout_predict:
+            # Half the hidden weights
+            activations = linalg.dot(input, .5 * self.W)
+            activations = add_vec_to_mat(activations, .5 * self.b, inplace=True)
+        else:
+            activations = linalg.dot(input, self.W)
+            activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         activations = self.act_f(activations)
 
@@ -447,14 +481,14 @@ class NeuralNet(object):
                                                                    dropout_predict=False))
 
         for i in range(1, self.n_layers):
-            hidden_activations = hidden_cache[i - 1]
+            hidden_activations = hidden_cache[i - 1][0]
             # Use dropout predict if previous layer has dropout
             hidden_cache.append(self.hidden_layers[i]
                                 .feed_forward(hidden_activations,
                                               dropout_predict=dropout_predict[i - 1]))
 
         if self.hidden_layers:
-            hidden_activations = hidden_cache[-1]
+            hidden_activations = hidden_cache[-1][0]
         else:
             hidden_activations = input
 
@@ -488,7 +522,7 @@ class NeuralNet(object):
 
         # Backpropagation
         if self.hidden_layers:
-            hidden_activations = hidden_cache[-1]
+            hidden_activations = hidden_cache[-1][0]
         else:
             hidden_activations = input
 
@@ -499,7 +533,7 @@ class NeuralNet(object):
         gradients = list(df_top_layer[:-1][::-1])
         df_hidden = df_top_layer[-1]
 
-        hidden_inputs = [input] + hidden_cache[:-1]
+        hidden_inputs = [input] + [c[0] for c in hidden_cache[:-1]]
         for hl, hc, hi in \
             zip(self.hidden_layers[::-1], hidden_cache[::-1], 
                 hidden_inputs[::-1]):
