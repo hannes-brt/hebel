@@ -2,12 +2,23 @@ import numpy as np
 from pycuda import gpuarray, cumath
 from pycuda.gpuarray import GPUArray
 from pycuda.elementwise import ElementwiseKernel, get_elwise_kernel
+from pycuda.reduction import ReductionKernel
 from pycuda.compiler import SourceModule
 from pycuda.curandom import md5_code
 
 from scikits.cuda import linalg
 
 eps = np.finfo(np.float32).eps
+
+sign_kernel = ElementwiseKernel(
+    "float *mat, float *target",
+    "target[i] = (mat[i] > 0.) - (mat[i] < 0);",
+    "sign")
+
+def sign(x):
+    target = gpuarray.GPUArray(x.shape, dtype=x.dtype)
+    sign_kernel(x, target)
+    return target
 
 sigmoid_kernel = ElementwiseKernel(
         "float *mat",
@@ -142,7 +153,7 @@ __global__ void kMaxColumnwise(float* mat, float* target, unsigned int width, un
 
         target[blockIdx.x] = cur_max;
     }
-    __syncthreads();
+    // __syncthreads();
 }
 
 __global__ void kMaxRowwise(float* mat, float* target, unsigned int width, unsigned int height) {
@@ -170,7 +181,37 @@ __global__ void kMaxRowwise(float* mat, float* target, unsigned int width, unsig
 
         target[blockIdx.x] = cur_max;
     }
+    // __syncthreads();
+}
+
+__global__ void kVectorNormalize(float* mat, float max_vec_norm, 
+    unsigned int width, unsigned int height) {
+    
+    __shared__ float sum_shared[32];
+    __shared__ float vec_norm;
+    float sum = 0;
+ 
+    for (unsigned int i = threadIdx.x; i < height; i += 32)
+        sum += powf(mat[blockIdx.x + i * width], 2);
+
+    sum_shared[threadIdx.x] = sum;
+
     __syncthreads();
+
+    if (threadIdx.x == 0) {
+        sum = 0;
+
+        for (unsigned int i = 0; i < 32; i++)
+            sum += sum_shared[i];
+
+        vec_norm = sqrtf(sum);
+    }
+    __syncthreads();
+
+    for (unsigned int i = threadIdx.x; i < height; i += 32) {
+        if (vec_norm > max_vec_norm)
+            mat[blockIdx.x + i * width] /= (vec_norm / max_vec_norm);
+    }
 }
 
 """
@@ -179,6 +220,7 @@ add_row_vec_kernel = mod.get_function('addRowVecToMat')
 add_col_vec_kernel = mod.get_function('addColVecToMat')
 max_column = mod.get_function("kMaxColumnwise")
 max_row = mod.get_function("kMaxRowwise")
+vector_normalize_kernel = mod.get_function("kVectorNormalize")
 
 def add_vec_to_mat(mat, vec, axis=None, inplace=False):
     """ Add a vector to a matrix
@@ -229,6 +271,15 @@ def max_by_axis(mat, axis=0):
         
     return target
 
+def vector_normalize(mat, max_vec_norm=1.):
+    """ Normalize each column vector in mat to length max_vec_norm if it is longer than
+    max_vec_norm
+    """
+    n,m = mat.shape
+    
+    vector_normalize_kernel(mat, np.float32(max_vec_norm), 
+                            np.int32(m), np.int32(n), block=(32,1,1), grid=(m,1,1))
+
 def logsumexp(mat):
     max_dim = max_by_axis(mat, 1)
     tmp = add_vec_to_mat(mat, -max_dim, 0)
@@ -271,3 +322,4 @@ def _matrix_sum_out_axis_wrapper():
         return target
     return f
 matrix_sum_out_axis = _matrix_sum_out_axis_wrapper()
+

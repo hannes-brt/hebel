@@ -1,11 +1,11 @@
 import numpy as np
 import time
 import datetime
-from .pycuda_ops import eps
+from .pycuda_ops import eps, vector_normalize
 from itertools import izip
 from data_providers import DataProvider, MiniBatchDataProvider
 from schedulers import constant_scheduler
-from pycuda import gpuarray
+from pycuda import gpuarray, cumath
 
 class SGD(object):
     def __init__(self,
@@ -14,7 +14,7 @@ class SGD(object):
                  momentum_schedule=None,
                  nesterov_momentum=False,
                  rmsprop=False,
-                 vector_norm_normalization=False,
+                 max_vec_norm=False,
                  epsilon=1e-6,
                  batch_size_train=100, batch_size_test=100,
                  introspection_prefix=None):
@@ -62,7 +62,7 @@ class SGD(object):
         
         self.nesterov_momentum = nesterov_momentum
         self.rmsprop = rmsprop
-        self.vector_norm_normalization = vector_norm_normalization
+        self.max_vec_norm = max_vec_norm
         self.epsilon = epsilon
         self.introspection_prefix = introspection_prefix
 
@@ -115,7 +115,7 @@ class SGD(object):
                     batch_loss, gradients = self.model.training_pass(batch_data, batch_targets)
                     train_loss += batch_loss
 
-                    # self.norm_v_norm()
+                    self.norm_v_norm()
 
                     # if self.rmsprop:
                     #     gradients = self.rmsprop_update(gradients)
@@ -210,20 +210,11 @@ class SGD(object):
         self.model.parameters = new_parameters
         if self.momentum: self.velocity = new_velocity
 
-    # def norm_v_norm(self):
-    #     if self.vector_norm_normalization:
-    #         new_weights = []
-    #         for w in self.model.parameters:
-    #             if w.ndim == 2:
-    #                 w_norm = (w ** 2.).sum(0).sqrt()
-    #                 small_el_idx = (w_norm < self.vector_norm_normalization)\
-    #                   .as_numpy_array().nonzero()[0]                    
-    #                 w_norm[small_el_idx] = self.vector_norm_normalization * \
-    #                   gpuarray.ones((len(small_el_idx),))
-    #                 w = w / w_norm[gpu.newaxis, :]
-    #             new_weights.append(w)
-
-    #         self.model.parameters = new_weights
+    def norm_v_norm(self):
+        if self.max_vec_norm:
+            for w in self.model.parameters:
+                if len(w.shape) == 2:
+                    vector_normalize(w, self.max_vec_norm)
 
     def nesterov_momentum_move(self):
         """ First step of Nesterov momentum method:

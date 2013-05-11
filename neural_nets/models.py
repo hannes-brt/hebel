@@ -7,7 +7,8 @@ from scikits.cuda import linalg
 from .pycuda_ops import sigmoid_kernel, df_sigmoid, \
       tanh_kernel, df_tanh, relu_kernel, df_relu, \
       sample_dropout_mask, apply_dropout_mask, \
-      add_vec_to_mat, softmax, cross_entropy, matrix_sum_out_axis
+      add_vec_to_mat, softmax, cross_entropy, matrix_sum_out_axis, \
+      sign
 
 class HiddenLayer(object):
     def __init__(self, n_in, n_units, dropout=False,
@@ -37,11 +38,11 @@ class HiddenLayer(object):
 
     @property
     def l1_penalty(self):
-        return 0.
+        return float(self.l1_penalty_weight) * gpuarray.sum(abs(self.W)).get()
 
     @property
     def l2_penalty(self):
-        return 0.
+        return float(self.l2_penalty_weight) * .5 * gpuarray.sum(self.W ** 2.).get()
 
     def feed_forward(self, input, dropout_predict=False):
         """ Propagate forward through the hidden layer.
@@ -114,6 +115,14 @@ class HiddenLayer(object):
         df_b = matrix_sum_out_axis(delta, 0)  # Gradient wrt bias
         df_input = linalg.dot(delta, self.W, transb='T')   # Gradient wrt inputs
 
+        # L1 weight decay
+        if self.l1_penalty_weight:
+            df_W -= self.l1_penalty_weight * sign(self.W)
+
+        # L2 weight decay
+        if self.l2_penalty_weight:
+            df_W -= self.l2_penalty_weight * self.W
+        
         return df_W, df_b, df_input
 
 class TanhHiddenLayer(HiddenLayer):
@@ -192,13 +201,11 @@ class LogisticLayer(TopLayer):
 
     @property
     def l1_penalty(self):
-        # return self.l1_penalty_weight * self.W.abs().sum()
-        return 0.
+        return self.l1_penalty_weight * gpuarray.sum(abs(self.W)).get()
 
     @property
     def l2_penalty(self):
-        # return self.l2_penalty_weight * 0.5 * (self.W ** 2.).sum()
-        return 0.
+        return self.l2_penalty_weight * 0.5 * gpuarray.sum(self.W ** 2.).get()
 
     def feed_forward(self, input, targets, return_cache=False, 
                      dropout_predict=False):
@@ -283,13 +290,13 @@ class LogisticLayer(TopLayer):
         else:
             output = (df_W, df_b)
 
-        # # L1 penalty
-        # if self.l1_penalty_weight:
-        #     df_W += self.l1_penalty_weight * self.W.sign()
+        # L1 penalty
+        if self.l1_penalty_weight:
+            df_W -= self.l1_penalty_weight * sign(self.W)
 
-        # # L2 penalty
-        # if self.l2_penalty_weight:
-        #     df_W += self.l2_penalty_weight * self.W
+        # L2 penalty
+        if self.l2_penalty_weight:
+            df_W -= self.l2_penalty_weight * self.W
 
         if return_cache:
             output += (targets_soft, activations)
