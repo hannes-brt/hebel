@@ -9,8 +9,9 @@ from pycuda import gpuarray, cumath
 
 class SGD(object):
     def __init__(self,
-                 model, train_data, train_targets, test_data, test_targets,
-                 learning_rate_schedule,
+                 model, train_data, train_targets, 
+                 test_data=None, test_targets=None,
+                 learning_rate_schedule=constant_scheduler(.1),
                  momentum_schedule=None,
                  nesterov_momentum=False,
                  rmsprop=False,
@@ -26,6 +27,7 @@ class SGD(object):
         # self.batch_size_test = batch_size_test
 
         self.model = model
+        self.multitask = self.model.top_layer.n_tasks > 1
 
         # if self.batch_size_train is None: self.batch_size_train = self.N_train
         # if self.batch_size_test is None: self.batch_size_test = self.N_test
@@ -40,18 +42,25 @@ class SGD(object):
         else:
             self.train_targets = MiniBatchDataProvider(train_targets, batch_size_train)
 
-        self.test_data = test_data if isinstance(test_data, DataProvider) \
+        self.test_data = test_data if test_data is None or \
+          isinstance(test_data, DataProvider) \
           else MiniBatchDataProvider(test_data, batch_size_test)
 
-        if isinstance(test_targets, DataProvider):
-            self.test_targets = test_targets
-        elif test_targets is None:
-            self.test_targets = DummyDataProvider()
-        else:
-            self.test_targets = MiniBatchDataProvider(test_targets, batch_size_test)
+        self.test_targets = test_targets if test_targets is None or \
+          isinstance(test_targets, DataProvider) \
+          else MiniBatchDataProvider(test_targets, batch_size_test)
+          
+        # if isinstance(test_targets, DataProvider):
+        #     self.test_targets = test_targets
+        # elif test_targets is None:
+        #     self.test_targets = DummyDataProvider()
+        # else:
+        #     self.test_targets = MiniBatchDataProvider(test_targets, batch_size_test)
 
         self.N_train = self.train_data.N
-        self.N_test = self.test_data.N
+
+        if test_data is not None:
+            self.N_test = self.test_data.N
 
         self.learning_rate_schedule = learning_rate_schedule
 
@@ -132,31 +141,46 @@ class SGD(object):
                     del batch_targets
 
                 # Evaluate on test data
-                test_loss = 0
-                for batch_idx, (batch_data, batch_targets) in \
-                  enumerate(izip(self.test_data, self.test_targets)):
+                if self.test_data is not None:
+                    test_loss = 0 if self.multitask \
+                      else np.zeros((self.model.top_layer.n_tasks,))
+                    for batch_idx, (batch_data, batch_targets) in \
+                      enumerate(izip(self.test_data, self.test_targets)):
 
-                    test_loss += self.model.test_error(batch_data, batch_targets, average=False)
+                        test_loss += self.model.test_error(batch_data, 
+                                                                batch_targets, 
+                                                                average=False)
+
+                    test_loss_rate = test_loss / float(self.N_test)
                     
-                test_loss_rate = test_loss / float(self.N_test)
+                    if not self.multitask:
+                        print 'Epoch %d, Test error: %.5g, Train Loss: %.3f' % \
+                          (self.epoch, test_loss_rate, train_loss),
+                    else:
+                        print 'Epoch %d, Test error: %s, Train Loss: %.3f' % \
+                          (self.epoch, str(test_loss_rate), train_loss),
 
-                print 'Epoch %d, Test error: %.5g, Train Loss: %.3f' % \
-                  (self.epoch, test_loss_rate, train_loss),
+                    self.test_error.append(test_loss_rate)
 
-                self.test_error.append(test_loss_rate)
-                self.train_error.append(train_loss)
+                    if self.introspection_prefix is not None:
+                        self.radio.send(epoch=self.epoch, test_loss=test_loss_rate)
 
-                if self.introspection_prefix is not None:
-                    self.radio.send(epoch=self.epoch, test_loss=test_loss_rate)
+                    if early_stopping and test_loss_rate < self.best_test_loss:
+                        print ' (new best)'
+                        self.best_test_loss = test_loss_rate
+                        self.best_params = map(lambda param: param.copy(), self.model.parameters)
+                        # self.best_params_cpu = map(lambda param: param.get(), self.best_params)
+                        self.best_epoch = self.epoch
+                    else:
+                        # assert all([np.all(a.get() == b) for a, b 
+                        #             in izip(self.best_params, self.best_params_cpu)])
+                        print
 
-                if test_loss_rate < self.best_test_loss:
-                    print ' (new best)'
-                    self.best_test_loss = test_loss_rate
-                    self.best_params = map(lambda param: param.copy(), self.model.parameters)
-                    # self.best_params = self.model.parameters
-                    self.best_epoch = self.epoch
                 else:
-                    print
+                    print 'Epoch %d, Train loss: %.3f' % \
+                      (self.epoch, train_loss)
+
+                self.train_error.append(train_loss)
 
                 epoch_t = time.time() - t
                 self.avg_epoch_t = ((self.epoch - 1) * self.avg_epoch_t + epoch_t) / self.epoch \
@@ -169,7 +193,7 @@ class SGD(object):
         end_time = time.clock() 
         self.train_time = end_time - start_time / 60.
 
-        if early_stopping:
+        if early_stopping and self.best_params is not None:
             self.model.parameters = self.best_params
 
         print "Optimization complete. Best test error of %.5g obtained in self.epoch %d" % \

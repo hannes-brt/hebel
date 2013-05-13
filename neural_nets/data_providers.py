@@ -64,38 +64,39 @@ class MiniBatchDataProvider(DataProvider):
 
 #         return minibatch
 
-# class MultiTaskDataProvider(DataProvider):
-#     def __init__(self, data, batch_size):
-#         assert all([data[0].shape[0] == d.shape[0] for d in data])
-#         assert all([type(data[0]) == type(d) for d in data])
-#         self.data = data
-#         self.batch_size = batch_size
+class MultiTaskDataProvider(DataProvider):
+    def __init__(self, data, batch_size):
+        assert all([data[0].shape[0] == d.shape[0] for d in data])
+        assert all([type(data[0]) == type(d) for d in data])
+        self.data = data
+        self.batch_size = batch_size
 
-#         self.N_outer = data[0].shape[0]
+        self.N_outer = data[0].shape[0]
+        self.N = self.N_outer
+        
+        # if isinstance(data[0], np.ma.MaskedArray):
+        #     self.N = self.N_outer * len(self.data) - \
+        #       sum([d.mask.sum() for d in self.data])
+        # elif isinstance(data[0], np.ndarray) or \
+        #   isinstance(data[0], gpuarray.GPUArray):
+        #     self.N = self.N_outer * len(self.data) - \
+        #       sum([d[0].isnan().sum() for d in self.data])
 
-#         if isinstance(data[0], np.ma.MaskedArray):
-#             self.N = self.N_outer * len(self.data) - \
-#               sum([d.mask.sum() for d in self.data])
-#         elif isinstance(data[0], np.ndarray) or \
-#           isinstance(data[0], gpu.garray):
-#             self.N = self.N_outer * len(self.data) - \
-#               sum([d[0].isnan().sum() for d in self.data])
+        self.i = 0
 
-#         self.i = 0
+    def __getitem__(self, batch_idx):
+        return [d[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+                for d in self.data]
 
-#     def __getitem__(self, batch_idx):
-#         return [d[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-#                 for d in self.data]
+    def next(self):
+        if self.i >= self.N:
+            self.i = 0
+            raise StopIteration
 
-#     def next(self):
-#         if self.i >= self.N:
-#             self.i = 0
-#             raise StopIteration
-
-#         minibatch = [d[self.i:self.i+self.batch_size]
-#                      for d in self.data]
-#         self.i += self.batch_size
-#         return minibatch
+        minibatch = [d[self.i:self.i+self.batch_size]
+                     for d in self.data]
+        self.i += self.batch_size
+        return minibatch
 
 # class GPUDataProvider(MiniBatchDataProvider):
 #     def __getitem__(self, batch_idx):
