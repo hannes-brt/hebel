@@ -5,11 +5,14 @@ from pycuda.curandom import rand as curand
 from pycuda import cumath
 from math import sqrt
 from scikits.cuda import linalg
-from .pycuda_ops import sigmoid_kernel, df_sigmoid, \
-      tanh_kernel, df_tanh, relu_kernel, df_relu, \
-      sample_dropout_mask, apply_dropout_mask, \
-      add_vec_to_mat, softmax, cross_entropy, matrix_sum_out_axis, \
-      sign
+from .pycuda_ops import eps
+from .pycuda_ops.elementwise import sigmoid_kernel, df_sigmoid, \
+     tanh_kernel, df_tanh, relu_kernel, df_relu, \
+     sample_dropout_mask, apply_dropout_mask, sign, \
+     nan_to_zeros_kernel
+from .pycuda_ops.matrix import add_vec_to_mat
+from .pycuda_ops.reductions import matrix_sum_out_axis
+from .pycuda_ops.softmax import softmax, cross_entropy
 
 class HiddenLayer(object):
     def __init__(self, n_in, n_units, dropout=False,
@@ -208,45 +211,20 @@ class LogisticLayer(TopLayer):
     def l2_penalty(self):
         return self.l2_penalty_weight * 0.5 * gpuarray.sum(self.W ** 2.).get()
 
-    def feed_forward(self, input, targets, return_cache=False, 
-                     dropout_predict=False):
+    def feed_forward(self, input, dropout_predict=False):
         """ Propagate forward through the layer
 
         Inputs:
         input
-        target: classification targets (may be soft targets/class 
-            probabilities, or integer vector)
         return_cache: (bool) whether to return the cache object
         dropout_predict: (bool) whether to half the weights when 
             the preceding layer uses dropout
 
-        Outpus:
-        loss: value of the loss function
-        cache: (only when return_cache == True)
+        Outputs:
+        activations
 
         """
 
-        # Expand targets if necessary
-        # targets_soft = expand_int_targets(targets, self.n_out)
-        targets_soft = targets
-        
-        if dropout_predict:
-            # Half the hidden weights
-            activations = linalg.dot(input, .5 * self.W)
-            activations = add_vec_to_mat(activations, .5 * self.b, inplace=True)
-        else:
-            activations = linalg.dot(input, self.W)
-            activations = add_vec_to_mat(activations, self.b, inplace=True)
-
-        activations = softmax(activations)
-
-        loss = cross_entropy(activations, targets_soft)
-        if not return_cache:
-            return loss
-        else:
-            return loss, (targets_soft, activations)
-
-    def predict(self, input, dropout_predict=True):
         if dropout_predict:
             # Half the hidden weights
             activations = linalg.dot(input, .5 * self.W)
@@ -274,13 +252,12 @@ class LogisticLayer(TopLayer):
         """
         
         if cache is not None:
-            targets_soft, activations = cache
+            activations = cache
         else:
-            _, (targets_soft, activations) = \
-              self.feed_forward(input, targets, return_cache=True,
-                                dropout_predict=False)
+            activations = self.feed_forward(input, dropout_predict=False)
 
-        delta = activations - targets_soft
+        delta = activations - targets
+        nan_to_zeros_kernel(delta, delta)
         
         df_W = linalg.dot(input, delta, transa='T')    # Gradient wrt weights
         df_b = matrix_sum_out_axis(delta, 0)               # Gradient wrt bias
@@ -300,7 +277,7 @@ class LogisticLayer(TopLayer):
             df_W -= self.l2_penalty_weight * self.W
 
         if return_cache:
-            output += (targets_soft, activations)
+            output += (targets, activations)
 
         return output
 
@@ -316,19 +293,33 @@ class LogisticLayer(TopLayer):
 
         return test_error(input, targets, average,
                           cache, dropout_predict)
-    
-    def class_error(self, input, targets, average=True, 
-                    cache=None, dropout_predict=False):
-        """ Return the classification error rate
 
+    def cross_entropy_error(self, input, targets, average=True,
+                            cache=None, dropout_predict=False):
+        """ Return the cross entropy error
         """
         
         if cache is not None:
-            targets_soft, activations = cache
+            activations = cache
         else:
-            _, (targets_soft, activations) = \
-              self.feed_forward(input, targets, return_cache=True,
-                                dropout_predict=dropout_predict)
+            activations = \
+              self.feed_forward(input, dropout_predict=dropout_predict)
+
+        loss = cross_entropy(activations, targets)
+
+        if average: loss = loss.mean()
+        return loss
+
+    def class_error(self, input, targets, average=True, 
+                    cache=None, dropout_predict=False):
+        """ Return the classification error rate
+        """
+        
+        if cache is not None:
+            activations = cache
+        else:
+            activations = \
+              self.feed_forward(input, dropout_predict=dropout_predict)
 
         # if not is_integer_array(targets):
         #     targets = targets_soft.argmax(1)
@@ -339,27 +330,27 @@ class LogisticLayer(TopLayer):
         return class_error
 
     def kl_error(self, input, targets, average=True, 
-                 cache=None):
+                 cache=None, dropout_predict=True):
         """ The KL divergence error
-
         """
         
         if cache is not None:
-            targets_soft, activations = cache
+            activations = cache
         else:
-            _, (targets_soft, activations) = \
-              self.feed_forward(input, targets, return_cache=True,
-                                dropout_predict=dropout)
+            activations = \
+              self.feed_forward(input, dropout_predict=dropout_predict)
 
-        kl_error = gpuarray.sum(targets * (cumath.log2(targets + eps) -
-                                           cumath.log2(activations + eps)))
+        targets_non_nan = gpuarray.empty_like(targets)
+        nan_to_zeros_kernel(targets, targets_non_nan)
+        kl_error = gpuarray.sum(targets_non_nan * 
+                                (cumath.log(targets_non_nan + eps) -
+                                 cumath.log(activations + eps)))
         if average:
             kl_error /= targets.shape[0]
         return kl_error
 
 class NeuralNet(object):
     """ A Neural Network Object
-
     """
 
     TopLayerClass = LogisticLayer
@@ -471,7 +462,6 @@ class NeuralNet(object):
 
     def evaluate(self, input, targets, return_cache=False, dropout_predict=True):
         """ Evaluate the loss function without computing gradients
-
         """
 
         if dropout_predict:
@@ -482,30 +472,13 @@ class NeuralNet(object):
             dropout_predict = [False]
         
         # Forward pass
-        hidden_cache = []
-        # Input layer never has dropout
-        if self.hidden_layers:
-            hidden_cache.append(self.hidden_layers[0].feed_forward(input,
-                                                                   dropout_predict=False))
-
-        for i in range(1, self.n_layers):
-            hidden_activations = hidden_cache[i - 1][0]
-            # Use dropout predict if previous layer has dropout
-            hidden_cache.append(self.hidden_layers[i]
-                                .feed_forward(hidden_activations,
-                                              dropout_predict=dropout_predict[i - 1]))
-
-        if self.hidden_layers:
-            hidden_activations = hidden_cache[-1][0]
-        else:
-            hidden_activations = input
-
-        # Use dropout_predict if last hidden layer has dropout
-        loss, logistic_cache = \
-          self.top_layer.feed_forward(hidden_activations, 
-                                      targets, return_cache=True,
-                                      dropout_predict=dropout_predict[-1])
-
+        predictions, hidden_cache = self.feed_forward(
+            input, return_cache=True, dropout_predict=dropout_predict)
+        
+        loss = self.top_layer.cross_entropy_error(None,
+            targets, average=False, cache=predictions,
+            dropout_predict=dropout_predict[-1])
+ 
         for hl in self.hidden_layers:
             if hl.l1_penalty_weight: loss += hl.l1_penalty
             if hl.l2_penalty_weight: loss += hl.l2_penalty
@@ -516,17 +489,15 @@ class NeuralNet(object):
         if not return_cache:
             return loss
         else:
-            return loss, hidden_cache, logistic_cache
+            return loss, hidden_cache, predictions
 
     def training_pass(self, input, targets):
         """ Perform a full forward and backward pass through the model
-
         """
         
         # Forward pass
-        loss, hidden_cache, logistic_cache = self.evaluate(input, targets, 
-                                                           return_cache=True,
-                                                           dropout_predict=False)
+        loss, hidden_cache, logistic_cache = self.evaluate(
+            input, targets, return_cache=True, dropout_predict=False)
 
         # Backpropagation
         if self.hidden_layers:
@@ -571,12 +542,18 @@ class NeuralNet(object):
         return self.top_layer.test_error(hidden_activations, targets, average=average,
                                          cache=logistic_cache, dropout_predict=True)
 
-    def predict(self, input):
+    def feed_forward(self, input, return_cache=False, dropout_predict=True):
         """ Get predictions from the model
         """
-        
-        dropout_predict = True
 
+        if type(dropout_predict) is not list:
+            if dropout_predict:
+                dropout_predict = self.dropout
+            elif self.hidden_layers:
+                dropout_predict = self.n_layers * [False]
+            else:
+                dropout_predict = [False]
+        
         if self.hidden_layers:
             # Forward pass
             hidden_cache = []
@@ -585,11 +562,11 @@ class NeuralNet(object):
                                                                    dropout_predict=False))
 
             for i in range(1, self.n_layers):
-                hidden_activations = hidden_cache[i - 1][0]
+                hidden_activations = hidden_cache[i-1][0]
                 # Use dropout predict if previous layer has dropout
                 hidden_cache.append(self.hidden_layers[i]
                                     .feed_forward(hidden_activations,
-                                                  dropout_predict=dropout_predict))
+                                                  dropout_predict=dropout_predict[i-1]))
 
             hidden_activations = hidden_cache[-1][0]
 
@@ -598,9 +575,11 @@ class NeuralNet(object):
             
         # Use dropout_predict if last hidden layer has dropout
         prediction = \
-          self.top_layer.predict(hidden_activations, 
-                                 dropout_predict=dropout_predict)
+          self.top_layer.feed_forward(hidden_activations, 
+                                 dropout_predict=dropout_predict[-1])
 
+        if return_cache:
+            return prediction, hidden_cache
         return prediction
 
 ################################################################################
@@ -682,31 +661,13 @@ class MultitaskTopLayer(TopLayer):
     def l2_penalty(self):
         return sum([task.l2_penalty for task in self.tasks])
 
-    def feed_forward(self, input, targets, return_cache=False,
-                     dropout_predict=False):
-        loss = []
-        cache = []
-
-        for targets_task, task in izip(targets, self.tasks):
-            return_task = task.feed_forward(input, targets_task,
-                                            return_cache,
-                                            dropout_predict)
-            if return_cache:
-                loss_task, cache_task = return_task
-                cache.append(cache_task)
-            else:
-                loss_task = return_task
-            loss.append(loss_task)
-
-        if not return_cache:
-            return sum(loss)
-        else:
-            return sum(loss), cache
-
-    def predict(self, input, dropout_predict=True):
+    def feed_forward(self, input, dropout_predict=False):
         activations = []
+
         for task in self.tasks:
-            activations.append(task.predict(input, dropout_predict))
+            activations_task = task.feed_forward(input, dropout_predict)
+            activations.append(activations_task)
+
         return activations
 
     def backprop(self, input, targets, get_df_input=True,
@@ -747,7 +708,7 @@ class MultitaskTopLayer(TopLayer):
 
     def test_error(self, input, targets, average=True,
                    cache=None, dropout_predict=False,
-                   sum_errors=False):
+                   sum_errors=True):
 
         test_error = []
         if cache is None:
@@ -756,13 +717,34 @@ class MultitaskTopLayer(TopLayer):
           izip(targets, cache, self.tasks):
           test_error.append(task.test_error(input, targets_task,
                                             average, cache_task,
-                                            dropout_predict))
+                                            dropout_predict).get())
 
         if sum_errors:
             return sum(test_error)
         else:
             return np.array(test_error)
 
+    def cross_entropy_error(self, input, targets, average=True,
+                            cache=None, dropout_predict=False,
+                            sum_errors=True):
+        """ Return the cross entropy error
+        """
+
+        loss = []
+        if cache is None:
+            cache = self.n_tasks * [None]
+
+        for targets_task, cache_task, task in \
+            izip(targets, cache, self.tasks):
+            loss.append(task.cross_entropy_error(
+                input, targets_task, average=average,
+                cache=cache_task, 
+                dropout_predict=dropout_predict))
+
+        if sum_errors:
+            return sum(loss)
+        else:
+            return loss
 
 class MultitaskNeuralNet(NeuralNet):
     TopLayerClass = MultitaskTopLayer

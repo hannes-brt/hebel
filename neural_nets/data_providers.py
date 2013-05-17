@@ -65,15 +65,19 @@ class MiniBatchDataProvider(DataProvider):
 #         return minibatch
 
 class MultiTaskDataProvider(DataProvider):
-    def __init__(self, data, batch_size):
+    def __init__(self, data, batch_size=None):
         assert all([data[0].shape[0] == d.shape[0] for d in data])
         assert all([type(data[0]) == type(d) for d in data])
         self.data = data
-        self.batch_size = batch_size
 
         self.N_outer = data[0].shape[0]
         self.N = self.N_outer
         
+        if batch_size is not None:
+            self.batch_size = batch_size
+        else:
+            self.batch_size = self.N
+
         # if isinstance(data[0], np.ma.MaskedArray):
         #     self.N = self.N_outer * len(self.data) - \
         #       sum([d.mask.sum() for d in self.data])
@@ -139,3 +143,62 @@ class DummyDataProvider(DataProvider):
     def next(self):
         return None
 
+class MNISTDataProvider(DataProvider):
+    from skdata import mnist
+    mnist_data = mnist.views.MNIST()
+    _ = mnist_data.build_meta()
+
+    N_train, d = mnist_data.arrays['train_images'].shape[:2]
+    N_test = mnist_data.arrays['test_images'].shape[0]
+    D = d**2
+
+    def __init__(self, batch_size, array):
+        if array == 'train_images':
+            self.data = gpuarray.to_gpu(self.mnist_data.arrays['train_images']
+                                   .reshape((self.N_train, self.D))
+                                   .astype(np.float32) / 255.)
+            self.N = self.N_train
+        elif array == 'test_images':
+            self.data = gpuarray.to_gpu(self.mnist_data.arrays['test_images']
+                                   .reshape((self.N_test, self.D))
+                                   .astype(np.float32) / 255.)
+            self.N = self.N_test
+        elif array == 'train_labels':
+            targets = self.mnist_data.arrays['train_labels']
+            labels_soft = np.zeros((self.N_train, 10), dtype=np.float32)
+            labels_soft[range(self.N_train), targets] = 1.
+            self.data = gpuarray.to_gpu(labels_soft)
+            self.N = self.N_train
+        elif array == 'test_labels':
+            targets = self.mnist_data.arrays['test_labels']
+            labels_soft = np.zeros((self.N_test, 10), dtype=np.float32)
+            labels_soft[range(self.N_test), targets] = 1.
+            self.data = gpuarray.to_gpu(labels_soft)
+            self.N = self.N_test
+        else:
+            raise ValueError
+
+        self.batch_size = batch_size
+        self.i = 0
+
+    def __getitem__(self, batch_idx):
+        if self.batch_size is None:
+            if batch_idx == 0:
+                return self.data
+            else:
+                raise ValueError("batch_idx out of bounds")
+        else:
+            return self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+
+    def next(self):
+        if self.i >= self.N:
+            self.i = 0
+            raise StopIteration
+
+        if self.batch_size is None:
+            self.i += self.N
+            return self.data
+        else:
+            minibatch = self.data[self.i:self.i+self.batch_size]
+            self.i += self.batch_size
+            return minibatch
