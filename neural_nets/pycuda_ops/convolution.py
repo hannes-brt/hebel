@@ -123,9 +123,6 @@ __global__ void conv1d_grad_weights(const %(data_type)s *input,
     
     unsigned int target_idx;
     for (int f=0; f < n_filters; f++) {
-        // df_weights_reduce[tid] = 0.;
-        // __syncthreads();
-    
         // Load df_output into shared memory
         df_output_idx = f*width*height+lin_idx;
         df_output_shared[tid] = (j < width && i < height) ?
