@@ -71,6 +71,91 @@ __global__ void conv1d_matrix_mult_filter(const %(data_type)s *input,
         }        
     }
 }
+
+__global__ void conv1d_grad_weights(const %(data_type)s *input,
+    const %(data_type)s *df_output,
+    %(data_type)s *df_weights,
+    const unsigned int width, const unsigned int height,
+    const unsigned int filter_width, const unsigned int n_filters) {
+    
+    const unsigned int i = blockIdx.y*blockDim.y+threadIdx.y;
+    const unsigned int j = blockIdx.x*blockDim.x+threadIdx.x;
+    const unsigned int tid = threadIdx.y*TILE_SIZE+threadIdx.x;
+    const unsigned int lin_idx = i*width+j;
+    const unsigned int row_start = i*width;
+    unsigned int shared_idx, input_idx, df_output_idx, df_output_shared_idx;
+    
+    const unsigned int shared_width = TILE_SIZE+MAX_WIDTH_FILTER-1;
+    __shared__ %(data_type)s input_shared[TILE_SIZE*shared_width];
+    __shared__ %(data_type)s df_output_shared[TILE_SIZE*TILE_SIZE];
+    __shared__ %(data_type)s df_weights_reduce[TILE_SIZE*TILE_SIZE];
+    
+    const unsigned int halo_width = filter_width / 2;
+
+    // Load left halo elements
+    if (i < height) {
+        int halo_index_left = (blockIdx.x-1)*blockDim.x+threadIdx.x;
+        if (threadIdx.x >= blockDim.x-halo_width) {
+            shared_idx = threadIdx.y*shared_width + 
+                threadIdx.x-(blockDim.x-halo_width);
+            input_idx = row_start + halo_index_left;
+            input_shared[shared_idx] = 
+                (halo_index_left < 0) ? 0 : input[input_idx];
+        }
+    }
+    
+    // Load central elements
+    shared_idx = threadIdx.y*shared_width+halo_width+threadIdx.x;
+    input_shared[shared_idx] = (j < width && i < height) ? input[lin_idx] : 0;
+    
+    // Load right halo elements
+    if (i < height) {
+        int halo_index_right = (blockIdx.x+1)*blockDim.x+threadIdx.x;
+        if (threadIdx.x < halo_width) {
+            shared_idx = threadIdx.y*shared_width+blockDim.x+threadIdx.x+halo_width;
+            input_idx = row_start+halo_index_right;
+            input_shared[shared_idx] =
+                (halo_index_right >= width) ? 0 : input[input_idx];
+        }
+    }
+    __syncthreads();
+
+    
+    unsigned int target_idx;
+    for (int f=0; f < n_filters; f++) {
+        // df_weights_reduce[tid] = 0.;
+        // __syncthreads();
+    
+        // Load df_output into shared memory
+        df_output_idx = f*width*height+lin_idx;
+        df_output_shared[tid] = (j < width && i < height) ?
+            df_output[df_output_idx] : 0;
+
+        // Compute df_weights for each vector element
+        for (int k=0; k < filter_width; k++) {
+            shared_idx = threadIdx.y*shared_width+threadIdx.x+k;
+            df_output_shared_idx = f*TILE_SIZE*TILE_SIZE+threadIdx.y*TILE_SIZE+threadIdx.x;
+            df_weights_reduce[tid] = input_shared[shared_idx]*df_output_shared[tid];
+
+            __syncthreads();
+
+            // Reduction
+            for (unsigned int s=TILE_SIZE*TILE_SIZE/2; s>0; s>>=1) {
+                if (tid<s) {
+                    df_weights_reduce[tid] += df_weights_reduce[tid+s];
+                }
+                __syncthreads();
+            }
+
+            if (tid==0) {
+                target_idx = f*filter_width*gridDim.x*gridDim.y+
+                    k*gridDim.x*gridDim.y+blockIdx.y*gridDim.x+blockIdx.x;
+                df_weights[target_idx] = df_weights_reduce[0];
+            }
+            __syncthreads();
+        }
+    }
+}
 """
 
 source_module_float = SourceModule(code % {'TILE_SIZE': CONV_BLOCK_SIZE[0],
@@ -83,7 +168,9 @@ source_module_double = SourceModule(code % {'TILE_SIZE': CONV_BLOCK_SIZE[0],
                                             'data_type': 'double'})
 
 conv1d_matrix_mult_filter_kernel_float = source_module_float.get_function('conv1d_matrix_mult_filter')
+conv1d_grad_weights_kernel_float = source_module_float.get_function('conv1d_grad_weights')
 conv1d_matrix_mult_filter_kernel_double = source_module_double.get_function('conv1d_matrix_mult_filter')
+conv1d_grad_weights_kernel_double = source_module_double.get_function('conv1d_grad_weights')
 
 def conv1d_matrix_mult_filter(mat, conv_filter, stride=1, target=None, stream=None):
     dtype = mat.dtype
@@ -94,9 +181,6 @@ def conv1d_matrix_mult_filter(mat, conv_filter, stride=1, target=None, stream=No
         assert target.dtype == dtype
         assert mat.shape // stride == target.shape[:2]
 
-    # import pudb
-    # pudb.set_trace()
-        
     height, width = mat.shape
     n_filters, width_filter = conv_filter.shape
     
@@ -125,4 +209,39 @@ def conv1d_matrix_mult_filter(mat, conv_filter, stride=1, target=None, stream=No
            block=block, grid=grid,
            stream=stream)
         
+    return target
+
+def conv1d_grad_weights(mat, df_output, filter_width, n_filters, 
+                        target=None, stream=None):
+    dtype = mat.dtype
+    assert dtype in (np.float32, np.float64)
+    assert df_output.dtype == dtype
+
+    height, width = mat.shape
+
+    block = CONV_BLOCK_SIZE
+    grid = (int(np.ceil(mat.shape[1] / float(block[0]))),
+            int(np.ceil(mat.shape[0] / float(block[1]))),
+            1)
+
+    if target is not None:
+        assert target.dtype == dtype
+        assert target.shape == (n_filters, filter_width)
+    else:
+        target = gpuarray.empty((n_filters, filter_width, 
+                                 grid[1], grid[0]), dtype=dtype)
+
+    if dtype == np.float32:
+        kernel = conv1d_grad_weights_kernel_float
+    elif dtype == np.float64:
+        kernel = conv1d_grad_weights_kernel_double
+    else:
+        raise ValueError
+
+    kernel(mat, df_output, target,
+           np.int32(width), np.int32(height),
+           np.int32(filter_width), np.int32(n_filters),
+           block=block, grid=grid, stream=stream)
+
+    target = target.get().sum(3).sum(2)
     return target
