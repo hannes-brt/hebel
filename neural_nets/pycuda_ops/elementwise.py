@@ -1,3 +1,4 @@
+import numpy as np
 from pycuda import gpuarray
 from pycuda.elementwise import ElementwiseKernel, get_elwise_kernel
 from pycuda.curandom import md5_code
