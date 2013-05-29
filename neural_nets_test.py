@@ -127,9 +127,10 @@ class TestConvolutionGradWeights(unittest.TestCase):
             df_output = curand((n_filters, height, width), dtype)
 
             df_w = conv1d_grad_weights(x, df_output, filter_width, n_filters)
+            df_w_cpu = df_w.get()
             df_w_np = self.grad_weights_cpu(x.get(), df_output.get(), n_filters, filter_width)
 
-            self.assertLess(np.linalg.norm((df_w-df_w_np)/df_w, np.inf), err_tol)
+            self.assertLess(np.linalg.norm((df_w_cpu-df_w_np)/df_w_cpu, np.inf), err_tol)
 
     def test_grad_weights(self):
         for n in range(20):

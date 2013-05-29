@@ -2,7 +2,7 @@ from pycuda import gpuarray
 from pycuda.compiler import SourceModule
 import numpy as np
 
-CONV_BLOCK_SIZE = (8, 8, 1)
+CONV_BLOCK_SIZE = (32, 32, 1)
 MAX_WIDTH_FILTER = 15
 MAX_NUM_FILTERS = 100
 assert CONV_BLOCK_SIZE[0] == CONV_BLOCK_SIZE[1]
@@ -83,7 +83,7 @@ __global__ void conv1d_grad_weights(const %(data_type)s *input,
     const unsigned int tid = threadIdx.y*TILE_SIZE+threadIdx.x;
     const unsigned int lin_idx = i*width+j;
     const unsigned int row_start = i*width;
-    unsigned int shared_idx, input_idx, df_output_idx, df_output_shared_idx;
+    unsigned int shared_idx, input_idx, df_output_idx;
     
     const unsigned int shared_width = TILE_SIZE+MAX_WIDTH_FILTER-1;
     __shared__ %(data_type)s input_shared[TILE_SIZE*shared_width];
@@ -131,7 +131,6 @@ __global__ void conv1d_grad_weights(const %(data_type)s *input,
         // Compute df_weights for each vector element
         for (int k=0; k < filter_width; k++) {
             shared_idx = threadIdx.y*shared_width+threadIdx.x+k;
-            df_output_shared_idx = f*TILE_SIZE*TILE_SIZE+threadIdx.y*TILE_SIZE+threadIdx.x;
             df_weights_reduce[tid] = input_shared[shared_idx]*df_output_shared[tid];
 
             __syncthreads();
@@ -153,6 +152,32 @@ __global__ void conv1d_grad_weights(const %(data_type)s *input,
         }
     }
 }
+
+__global__ void conv1d_grad_weights_sum(const %(data_type)s *df_weights,
+    %(data_type)s *df_weights_sum, const unsigned int n_filters,
+    const unsigned int filter_width, const unsigned int n_elements) {
+
+    const unsigned int tid = threadIdx.x;
+    const unsigned int df_weights_idx = blockIdx.x*filter_width*n_elements+
+        blockIdx.y*n_elements+threadIdx.x;
+    
+    extern __shared__ %(data_type)s sdata[];
+    
+    sdata[tid] = (tid<n_elements) ? df_weights[df_weights_idx] : 0;
+    __syncthreads();
+    
+    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+        if (tid < s) {
+            sdata[tid] += sdata[tid+s];
+        }
+        __syncthreads();
+    }
+    
+    if (tid==0) {        
+        const unsigned int df_weights_sum_idx = blockIdx.x*filter_width+blockIdx.y;
+        df_weights_sum[df_weights_sum_idx] = sdata[0];
+    }
+}
 """
 
 source_module_float = SourceModule(code % {'TILE_SIZE': CONV_BLOCK_SIZE[0],
@@ -166,8 +191,10 @@ source_module_double = SourceModule(code % {'TILE_SIZE': CONV_BLOCK_SIZE[0],
 
 conv1d_matrix_mult_filter_kernel_float = source_module_float.get_function('conv1d_matrix_mult_filter')
 conv1d_grad_weights_kernel_float = source_module_float.get_function('conv1d_grad_weights')
+conv1d_grad_weights_sum_kernel_float = source_module_float.get_function('conv1d_grad_weights_sum')
 conv1d_matrix_mult_filter_kernel_double = source_module_double.get_function('conv1d_matrix_mult_filter')
 conv1d_grad_weights_kernel_double = source_module_double.get_function('conv1d_grad_weights')
+conv1d_grad_weights_sum_kernel_double = source_module_double.get_function('conv1d_grad_weights_sum')
 
 def conv1d_matrix_mult_filter(mat, conv_filter, stride=1, target=None, stream=None):
     dtype = mat.dtype
@@ -230,8 +257,10 @@ def conv1d_grad_weights(mat, df_output, filter_width, n_filters,
 
     if dtype == np.float32:
         kernel = conv1d_grad_weights_kernel_float
+        kernel_sum = conv1d_grad_weights_sum_kernel_float
     elif dtype == np.float64:
         kernel = conv1d_grad_weights_kernel_double
+        kernel_sum = conv1d_grad_weights_sum_kernel_double
     else:
         raise ValueError
 
@@ -240,5 +269,15 @@ def conv1d_grad_weights(mat, df_output, filter_width, n_filters,
            np.int32(filter_width), np.int32(n_filters),
            block=block, grid=grid, stream=stream)
 
-    target = target.get().sum(3).sum(2)
-    return target
+    sum_height = grid[1]
+    sum_width = grid[0]
+    target_sum = gpuarray.empty((n_filters, filter_width), dtype)
+    block_sum = (2**int(np.ceil(np.log2(sum_height*sum_width))), 1, 1)
+    grid_sum = (n_filters, filter_width, 1)
+    shared = block_sum[0]*np.dtype(dtype).itemsize
+    kernel_sum(target, target_sum,
+               np.int32(n_filters), np.int32(filter_width),
+               np.int32(sum_height*sum_width),
+               block=block_sum, grid=grid_sum, shared=shared)
+
+    return target_sum
