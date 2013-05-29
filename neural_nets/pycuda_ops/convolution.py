@@ -164,6 +164,8 @@ __global__ void conv1d_grad_weights_sum(const %(data_type)s *df_weights,
     extern __shared__ %(data_type)s sdata[];
     
     sdata[tid] = (tid<n_elements) ? df_weights[df_weights_idx] : 0;
+    if (tid+blockDim.x < n_elements)
+        sdata[tid] += df_weights[df_weights_idx+blockDim.x];
     __syncthreads();
     
     for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
@@ -272,7 +274,7 @@ def conv1d_grad_weights(mat, df_output, filter_width, n_filters,
     sum_height = grid[1]
     sum_width = grid[0]
     target_sum = gpuarray.empty((n_filters, filter_width), dtype)
-    block_sum = (2**int(np.ceil(np.log2(sum_height*sum_width))), 1, 1)
+    block_sum = (2**int(np.ceil(np.log2(sum_height*sum_width)-1)), 1, 1)
     grid_sum = (n_filters, filter_width, 1)
     shared = block_sum[0]*np.dtype(dtype).itemsize
     kernel_sum(target, target_sum,
