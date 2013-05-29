@@ -210,6 +210,28 @@ __global__ void max_pool(const %(data_type)s *mat,
         target[target_idx] = sdata[0];
     }
 }
+
+__global__ void max_pool_grad(
+    const %(data_type)s *mat,
+    const %(data_type)s *mat_pooled,
+    const %(data_type)s *df_output,
+    %(data_type)s *df_input,
+    const unsigned int width,
+    const unsigned int width_pooled) {
+
+    const unsigned int tx = threadIdx.x;
+    const unsigned int bx = blockIdx.x;
+    const unsigned int by = blockIdx.y;
+    const unsigned int lin_idx = by*width+bx*blockDim.x+tx;
+    
+    const %(data_type)s max_element = mat_pooled[by*width_pooled+bx];
+    const %(data_type)s df_output_element = df_output[by*width_pooled+bx];
+
+    if (bx*blockDim.x+tx < width) {
+        df_input[by*width+bx*blockDim.x+tx] =
+            (mat[lin_idx] == max_element) ? df_output_element : 0.;
+    }
+}
 """
 
 source_modules = {dtype: SourceModule(code % {'TILE_SIZE': CONV_BLOCK_SIZE[0],
@@ -222,7 +244,8 @@ kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
                    for f_name in ('conv1d_matrix_mult_filter',
                                   'conv1d_grad_weights',
                                   'conv1d_grad_weights_sum',
-                                  'max_pool')}
+                                  'max_pool',
+                                  'max_pool_grad')}
            for dtype, sm in source_modules.iteritems()}
 
 dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
@@ -328,3 +351,26 @@ def max_pool(mat, pool_size, target=None, stream=None):
         block=block, grid=grid, shared=shared, stream=stream)
 
     return target 
+
+def max_pool_grad(mat, mat_pooled, df_output, pool_size, target=None, stream=None):
+    dtype = mat.dtype
+    assert dtype in (np.float32, np.float64)
+
+    height, width = mat.shape
+
+    block = (pool_size, 1, 1)
+    grid = (int(np.ceil(width / float(pool_size))), height, 1)
+
+    if target is not None:
+        assert target.dtype == dtype
+        assert target.shape == mat.shape
+    else:
+        target = gpuarray.empty_like(mat)
+
+    dname = dtype_name[dtype]
+    kernels[dname]['max_pool_grad_kernel'](
+        mat, mat_pooled, df_output, target,
+        np.uint32(width), np.uint32(mat_pooled.shape[1]),
+        block=block, grid=grid, stream=stream)
+
+    return target

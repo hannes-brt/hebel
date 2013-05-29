@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pycuda.autoinit
 from neural_nets.pycuda_ops.convolution import conv1d_matrix_mult_filter, \
-     conv1d_grad_weights, max_pool
+     conv1d_grad_weights, max_pool, max_pool_grad
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 
@@ -167,6 +167,43 @@ class TestMaxPool(unittest.TestCase):
             width = np.random.randint(4, 500)
             pool_size = np.random.randint(2, 15)
             self.max_pool_test(height, width, pool_size)
-                    
+
+class TestMaxPoolGrad(unittest.TestCase):
+    FLOAT_ERR_TOL = 1e-20
+    DOUBLE_ERR_TOL = 1e-20
+
+    @staticmethod
+    def max_pool_grad_cpu(mat, mat_pooled, df_output, pool_size):
+        df_input = np.zeros_like(mat)
+
+        for i in range(pool_size*mat_pooled.shape[1]):
+            if not i % pool_size:
+                o = df_output[:,i/pool_size]
+                p = mat_pooled[:,i/pool_size]
+            df_input[mat[:,i]==p, i] = o[mat[:,i]==p]
+        return df_input
+
+    def max_pool_grad_test(self, height, width, pool_size):
+        for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
+                               (np.float64, self.DOUBLE_ERR_TOL)):
+            mat = curand((height, width), dtype)
+            mat_pooled = max_pool(mat, pool_size)
+            df_output = curand(mat_pooled.shape, dtype)
+            df_input = max_pool_grad(mat, mat_pooled, df_output, pool_size)
+            df_input_cpu = df_input.get()
+
+            df_input_np = self.max_pool_grad_cpu(mat.get(), mat_pooled.get(), 
+                                                 df_output.get(), pool_size)
+
+            self.assertLess(np.linalg.norm(df_input_cpu - df_input_np, np.inf), 
+                            err_tol)
+
+    def test_max_pool_grad(self):
+        for i in range(20):
+            n = np.random.randint(100, 1000)
+            m = np.random.randint(4, 500)
+            pool_size = np.random.randint(2, 15)
+            self.max_pool_grad_test(n, m, pool_size)
+            
 if __name__ == '__main__':
     unittest.main()
