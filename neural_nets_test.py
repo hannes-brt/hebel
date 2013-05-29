@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pycuda.autoinit
 from neural_nets.pycuda_ops.convolution import conv1d_matrix_mult_filter, \
-     conv1d_grad_weights
+     conv1d_grad_weights, max_pool
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 
@@ -139,6 +139,34 @@ class TestConvolutionGradWeights(unittest.TestCase):
             n_filters = np.random.randint(2, 100)
             filter_width = np.random.randint(1, 5)*2 + 1
             self.grad_weights_test(n, m, n_filters, filter_width)
+
+class TestMaxPool(unittest.TestCase):
+    FLOAT_ERR_TOL = 1e-20
+    DOUBLE_ERR_TOL = 1e-20
+
+    @staticmethod
+    def max_pool_cpu(mat, pool_size):
+        output = np.empty((mat.shape[0], mat.shape[1] / pool_size))
+        for i in range(output.shape[1]):
+            output[:,i] = np.max(mat[:, pool_size*i:pool_size*(i+1)], 1)
+        return output
+
+    def max_pool_test(self, height, width, pool_size):
+        for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
+                               (np.float64, self.DOUBLE_ERR_TOL)):
+            mat = curand((height, width), dtype)
+            target = max_pool(mat, pool_size)
+            target_cpu = target.get()
+            target_np = self.max_pool_cpu(mat.get(), pool_size)
+            self.assertLess(np.linalg.norm(
+                (target_cpu - target_np) / target_cpu, np.inf), err_tol)
+
+    def test_max_pool(self):
+        for i in range(20):
+            height = np.random.randint(100, 1000)
+            width = np.random.randint(4, 500)
+            pool_size = np.random.randint(2, 15)
+            self.max_pool_test(height, width, pool_size)
                     
 if __name__ == '__main__':
     unittest.main()

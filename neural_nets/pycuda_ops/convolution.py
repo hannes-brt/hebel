@@ -8,6 +8,7 @@ MAX_NUM_FILTERS = 100
 assert CONV_BLOCK_SIZE[0] == CONV_BLOCK_SIZE[1]
 
 code = """
+#include "float.h"
 #define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
 
 #define TILE_SIZE %(TILE_SIZE)d
@@ -180,23 +181,51 @@ __global__ void conv1d_grad_weights_sum(const %(data_type)s *df_weights,
         df_weights_sum[df_weights_sum_idx] = sdata[0];
     }
 }
+
+__global__ void max_pool(const %(data_type)s *mat,
+    %(data_type)s *target, 
+    const unsigned int height,
+    const unsigned int width,
+    const unsigned int pool_size) {
+    
+    const unsigned int tx = threadIdx.x;
+    const unsigned int i = blockIdx.y;
+    const unsigned int j = blockIdx.x*pool_size+tx;
+    const unsigned int mat_idx = i*width+j;
+    
+    extern __shared__ %(data_type)s sdata[];
+    
+    sdata[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
+    __syncthreads();
+    
+    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+        if (tx<s && sdata[tx+s] > sdata[tx]) {
+            sdata[tx] = sdata[tx+s];
+        }
+        __syncthreads();
+    }
+    
+    if (tx==0) {
+        const unsigned int target_idx = blockIdx.y*gridDim.x+blockIdx.x;
+        target[target_idx] = sdata[0];
+    }
+}
 """
 
-source_module_float = SourceModule(code % {'TILE_SIZE': CONV_BLOCK_SIZE[0],
-                                           'MAX_WIDTH_FILTER': MAX_WIDTH_FILTER,
-                                           'MAX_NUM_FILTERS': MAX_NUM_FILTERS,
-                                           'data_type': 'float'})
-source_module_double = SourceModule(code % {'TILE_SIZE': CONV_BLOCK_SIZE[0],
-                                            'MAX_WIDTH_FILTER': MAX_WIDTH_FILTER,
-                                            'MAX_NUM_FILTERS': MAX_NUM_FILTERS,
-                                            'data_type': 'double'})
+source_modules = {dtype: SourceModule(code % {'TILE_SIZE': CONV_BLOCK_SIZE[0],
+                                              'MAX_WIDTH_FILTER': MAX_WIDTH_FILTER,
+                                              'MAX_NUM_FILTERS': MAX_NUM_FILTERS,
+                                              'data_type': dtype})
+                  for dtype in ('float', 'double')}
 
-conv1d_matrix_mult_filter_kernel_float = source_module_float.get_function('conv1d_matrix_mult_filter')
-conv1d_grad_weights_kernel_float = source_module_float.get_function('conv1d_grad_weights')
-conv1d_grad_weights_sum_kernel_float = source_module_float.get_function('conv1d_grad_weights_sum')
-conv1d_matrix_mult_filter_kernel_double = source_module_double.get_function('conv1d_matrix_mult_filter')
-conv1d_grad_weights_kernel_double = source_module_double.get_function('conv1d_grad_weights')
-conv1d_grad_weights_sum_kernel_double = source_module_double.get_function('conv1d_grad_weights_sum')
+kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
+                   for f_name in ('conv1d_matrix_mult_filter',
+                                  'conv1d_grad_weights',
+                                  'conv1d_grad_weights_sum',
+                                  'max_pool')}
+           for dtype, sm in source_modules.iteritems()}
+
+dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
 
 def conv1d_matrix_mult_filter(mat, conv_filter, stride=1, target=None, stream=None):
     dtype = mat.dtype
@@ -220,20 +249,15 @@ def conv1d_matrix_mult_filter(mat, conv_filter, stride=1, target=None, stream=No
         target = gpuarray.empty((n_filters, height, target_width),
                                 dtype=dtype)
 
-    if dtype == np.float32:
-        kernel = conv1d_matrix_mult_filter_kernel_float
-    elif dtype == np.float64:
-        kernel = conv1d_matrix_mult_filter_kernel_double
-    else:
-        raise ValueError
-
-    kernel(mat, target, conv_filter,
-           np.int32(width), np.int32(height),
-           np.int32(width_filter),
-           np.int32(n_filters),
-           np.int32(stride),
-           block=block, grid=grid,
-           stream=stream)
+    dname = dtype_name[dtype]
+    kernels[dname]['conv1d_matrix_mult_filter_kernel'](
+        mat, target, conv_filter,
+        np.uint32(width), np.uint32(height),
+        np.uint32(width_filter),
+        np.uint32(n_filters),
+        np.uint32(stride),
+        block=block, grid=grid,
+        stream=stream)
         
     return target
 
@@ -257,19 +281,12 @@ def conv1d_grad_weights(mat, df_output, filter_width, n_filters,
         target = gpuarray.empty((n_filters, filter_width, 
                                  grid[1], grid[0]), dtype=dtype)
 
-    if dtype == np.float32:
-        kernel = conv1d_grad_weights_kernel_float
-        kernel_sum = conv1d_grad_weights_sum_kernel_float
-    elif dtype == np.float64:
-        kernel = conv1d_grad_weights_kernel_double
-        kernel_sum = conv1d_grad_weights_sum_kernel_double
-    else:
-        raise ValueError
-
-    kernel(mat, df_output, target,
-           np.int32(width), np.int32(height),
-           np.int32(filter_width), np.int32(n_filters),
-           block=block, grid=grid, stream=stream)
+    dname = dtype_name[dtype]
+    kernels[dname]['conv1d_grad_weights_kernel'](
+        mat, df_output, target,
+        np.uint32(width), np.uint32(height),
+        np.uint32(filter_width), np.uint32(n_filters),
+        block=block, grid=grid, stream=stream)
 
     sum_height = grid[1]
     sum_width = grid[0]
@@ -277,9 +294,37 @@ def conv1d_grad_weights(mat, df_output, filter_width, n_filters,
     block_sum = (2**int(np.ceil(np.log2(sum_height*sum_width)-1)), 1, 1)
     grid_sum = (n_filters, filter_width, 1)
     shared = block_sum[0]*np.dtype(dtype).itemsize
-    kernel_sum(target, target_sum,
-               np.int32(n_filters), np.int32(filter_width),
-               np.int32(sum_height*sum_width),
-               block=block_sum, grid=grid_sum, shared=shared)
+    kernels[dname]['conv1d_grad_weights_sum_kernel'](
+        target, target_sum,
+        np.uint32(n_filters), np.uint32(filter_width),
+        np.uint32(sum_height*sum_width),
+        block=block_sum, grid=grid_sum, 
+        shared=shared, stream=stream)
 
     return target_sum
+
+def max_pool(mat, pool_size, target=None, stream=None):
+    dtype = mat.dtype
+    assert dtype in (np.float32, np.float64)
+
+    height, width = mat.shape
+
+    block = (2**int(np.ceil(np.log2(width))), 1, 1)
+    grid = (int(np.ceil(width / pool_size)), height, 1)
+    shared = block[0]*np.dtype(dtype).itemsize
+
+    if target is not None:
+        assert target.dtype == dtype
+        assert target.shape == (mat.shape[0], 
+                                mat.shape[1] / pool_size)
+    else:
+        target = gpuarray.empty(
+            (mat.shape[0], mat.shape[1] / pool_size),
+            dtype)
+    
+    dname = dtype_name[dtype]
+    kernels[dname]['max_pool_kernel'](
+        mat, target, np.uint32(height), np.uint32(width), np.uint32(pool_size),
+        block=block, grid=grid, shared=shared, stream=stream)
+
+    return target 
