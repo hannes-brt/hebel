@@ -5,6 +5,7 @@ from neural_nets.pycuda_ops.convolution import conv1d_matrix_mult_filter, \
      conv1d_grad_weights, max_pool, max_pool_grad
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
+from hannes_tools.test_tools import debug_on
 
 class TestConvolution(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-4
@@ -182,27 +183,31 @@ class TestMaxPool(unittest.TestCase):
 
     @staticmethod
     def max_pool_cpu(mat, pool_size):
-        output = np.empty((mat.shape[0], mat.shape[1] / pool_size))
-        for i in range(output.shape[1]):
-            output[:,i] = np.max(mat[:, pool_size*i:pool_size*(i+1)], 1)
+        output = np.empty((mat.shape[0], mat.shape[1], mat.shape[2] / pool_size))
+        for n in range(output.shape[0]):
+            for i in range(output.shape[2]):
+                output[n,:,i] = np.max(mat[n,:, pool_size*i:pool_size*(i+1)], 1)
         return output
 
-    def max_pool_test(self, height, width, pool_size):
+    def max_pool_test(self, height, width, n_filters, pool_size):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
                                (np.float64, self.DOUBLE_ERR_TOL)):
-            mat = curand((height, width), dtype)
+            mat = curand((n_filters, height, width), dtype)
             target = max_pool(mat, pool_size)
             target_cpu = target.get()
             target_np = self.max_pool_cpu(mat.get(), pool_size)
-            self.assertLess(np.linalg.norm(
-                (target_cpu - target_np) / target_cpu, np.inf), err_tol)
+            for n in range(n_filters):
+                self.assertLess(np.linalg.norm(
+                    (target_cpu[n] - target_np[n]) / target_cpu[n], np.inf), 
+                    err_tol)
 
     def test_max_pool(self):
         for i in range(20):
             height = np.random.randint(100, 1000)
-            width = np.random.randint(4, 500)
+            width = np.random.randint(20, 500)
+            n_filters = np.random.randint(2, 10)
             pool_size = np.random.randint(2, 15)
-            self.max_pool_test(height, width, pool_size)
+            self.max_pool_test(height, width, n_filters, pool_size)
 
 class TestMaxPoolGrad(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-20
@@ -212,17 +217,18 @@ class TestMaxPoolGrad(unittest.TestCase):
     def max_pool_grad_cpu(mat, mat_pooled, df_output, pool_size):
         df_input = np.zeros_like(mat)
 
-        for i in range(pool_size*mat_pooled.shape[1]):
-            if not i % pool_size:
-                o = df_output[:,i/pool_size]
-                p = mat_pooled[:,i/pool_size]
-            df_input[mat[:,i]==p, i] = o[mat[:,i]==p]
+        for n in range(mat.shape[0]):
+            for i in range(pool_size*mat_pooled.shape[2]):
+                if not i % pool_size:
+                    o = df_output[n,:,i/pool_size]
+                    p = mat_pooled[n,:,i/pool_size]
+                df_input[n,mat[n,:,i]==p, i] = o[mat[n,:,i]==p]
         return df_input
 
-    def max_pool_grad_test(self, height, width, pool_size):
+    def max_pool_grad_test(self, height, width, n_filters, pool_size):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
                                (np.float64, self.DOUBLE_ERR_TOL)):
-            mat = curand((height, width), dtype)
+            mat = curand((n_filters, height, width), dtype)
             mat_pooled = max_pool(mat, pool_size)
             df_output = curand(mat_pooled.shape, dtype)
             df_input = max_pool_grad(mat, mat_pooled, df_output, pool_size)
@@ -231,15 +237,18 @@ class TestMaxPoolGrad(unittest.TestCase):
             df_input_np = self.max_pool_grad_cpu(mat.get(), mat_pooled.get(), 
                                                  df_output.get(), pool_size)
 
-            self.assertLess(np.linalg.norm(df_input_cpu - df_input_np, np.inf), 
-                            err_tol)
+            for n in range(n_filters):
+                self.assertLess(
+                    np.linalg.norm(df_input_cpu[0] - df_input_np[0], np.inf), 
+                    err_tol)
 
     def test_max_pool_grad(self):
         for i in range(20):
             n = np.random.randint(100, 1000)
             m = np.random.randint(4, 500)
+            n_filters = np.random.randint(2, 10)
             pool_size = np.random.randint(2, 15)
-            self.max_pool_grad_test(n, m, pool_size)
+            self.max_pool_grad_test(n, m, n_filters, pool_size)
             
 if __name__ == '__main__':
     unittest.main()

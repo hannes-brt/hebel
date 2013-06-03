@@ -126,23 +126,26 @@ def conv1d_grad_weights(mat, df_output, filter_width, n_filters,
 def max_pool(mat, pool_size, target=None, stream=None):
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
+    assert pool_size <= mat.shape[2]
 
-    height, width = mat.shape
+    n_filters, height, width = mat.shape
 
     block = (2**int(np.ceil(np.log2(width))), 1, 1)
-    grid = (int(np.ceil(width / pool_size)), height, 1)
+    grid = (int(np.ceil(width / pool_size)), height, n_filters)
     shared = block[0]*np.dtype(dtype).itemsize
 
     if target is not None:
         assert target.dtype == dtype
-        assert target.shape == (mat.shape[0], 
-                                mat.shape[1] / pool_size)
+        assert target.shape == (n_filters, 
+                                height,
+                                width / pool_size)
     else:
         target = gpuarray.empty(
-            (mat.shape[0], mat.shape[1] / pool_size),
+            (n_filters, height, width / pool_size),
             dtype)
     
     dname = dtype_name[dtype]
+
     kernels[dname]['max_pool_kernel'](
         mat, target, np.uint32(height), np.uint32(width), np.uint32(pool_size),
         block=block, grid=grid, shared=shared, stream=stream)
@@ -153,10 +156,10 @@ def max_pool_grad(mat, mat_pooled, df_output, pool_size, target=None, stream=Non
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
 
-    height, width = mat.shape
+    n_filters, height, width = mat.shape
 
     block = (pool_size, 1, 1)
-    grid = (int(np.ceil(width / float(pool_size))), height, 1)
+    grid = (int(np.ceil(width / float(pool_size))), height, n_filters)
 
     if target is not None:
         assert target.dtype == dtype
@@ -166,8 +169,8 @@ def max_pool_grad(mat, mat_pooled, df_output, pool_size, target=None, stream=Non
 
     dname = dtype_name[dtype]
     kernels[dname]['max_pool_grad_kernel'](
-        mat, mat_pooled, df_output, target,
-        np.uint32(width), np.uint32(mat_pooled.shape[1]),
+        mat, mat_pooled, df_output, target, np.uint32(height),
+        np.uint32(width), np.uint32(mat_pooled.shape[2]),
         block=block, grid=grid, stream=stream)
 
     return target
