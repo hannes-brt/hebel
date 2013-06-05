@@ -78,6 +78,8 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
     
     block = (_TILE_SIZE_GRAD_CONV, 1, 1)
     grid = (int(np.ceil(n_elements / float(block[0]))), 1, 1)
+    shared = (_TILE_SIZE_GRAD_CONV / stride +  # df_output_share
+              _TILE_SIZE_GRAD_CONV) * np.dtype(dtype).itemsize
 
     if target is not None:
         assert target.dtype == dtype
@@ -91,7 +93,7 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
         mat, df_output, target,
         np.uint32(mat.shape[1]), np.uint32(mat.shape[0]),
         np.uint32(filter_width), np.uint32(n_filters),
-        block=block, grid=grid, stream=stream)
+        block=block, grid=grid, shared=shared, stream=stream)
 
     target_sum = gpuarray.empty((n_filters, filter_width), dtype)
     block_sum = (max((1, 2**int(np.ceil(np.log2(grid[0])-1)))), 1, 1)

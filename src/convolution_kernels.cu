@@ -105,8 +105,9 @@ __global__ void convolve_sequence_gradient(
   unsigned int df_weights_idx, output_idx;
   
   const unsigned int shared_width = TILE_SIZE_GRAD_CONV / stride;
-  __shared__ {{ data_type }} df_output_shared[shared_width];
-  __shared__ {{ data_type }} df_weights_reduce[TILE_SIZE_GRAD_CONV];
+  extern __shared__ {{ data_type }} sdata[];
+  {{ data_type }} *df_output_shared = sdata;
+  {{ data_type }} *df_weights_reduce = df_output_shared + shared_width;
 
   const {{ data_type }} input_element = 
     (input_idx < len_input) ? input[input_idx] : 0.;
