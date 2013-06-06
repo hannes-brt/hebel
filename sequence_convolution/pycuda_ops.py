@@ -6,18 +6,14 @@ from jinja2 import Template
 from . import sequence_conv_root
 
 _TILE_SIZE_CONV = 128
-_TILE_SIZE_GRAD_CONV = 1024
 _MAX_WIDTH_FILTER = 15
-_MAX_NUM_FILTERS = 100
 
 _code = Template(open(os.path.join(sequence_conv_root, 
     'src', 'convolution_kernels.cu')).read())
 
 _source_modules = {dtype: SourceModule(_code.render(TILE_SIZE_CONV=_TILE_SIZE_CONV,
-                                                  TILE_SIZE_GRAD_CONV=_TILE_SIZE_GRAD_CONV,
-                                                  MAX_WIDTH_FILTER=_MAX_WIDTH_FILTER,
-                                                  MAX_NUM_FILTERS=_MAX_NUM_FILTERS,
-                                                  data_type=dtype))
+                                                    MAX_WIDTH_FILTER=_MAX_WIDTH_FILTER,
+                                                    data_type=dtype))
                   for dtype in ('float', 'double')}
 
 _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
@@ -65,7 +61,7 @@ def convolve_sequence(mat, conv_filter, stride=4,
     return target
 
 def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
-                               target=None, stream=None):
+                               target=None, stream=None, block_size=1024):
     stride = 4
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
@@ -75,11 +71,12 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
 
     height, width = mat.shape
     n_elements = height * width
-    
-    block = (_TILE_SIZE_GRAD_CONV, 1, 1)
+
+    block = (block_size, 1, 1)
     grid = (int(np.ceil(n_elements / float(block[0]))), 1, 1)
-    shared = (_TILE_SIZE_GRAD_CONV / stride +  # df_output_share
-              _TILE_SIZE_GRAD_CONV) * np.dtype(dtype).itemsize
+    shared = ((filter_width / stride) - 1 + block_size / stride +  # df_output_share
+              block_size # df_weights_reduce
+              ) * np.dtype(dtype).itemsize
 
     if target is not None:
         assert target.dtype == dtype

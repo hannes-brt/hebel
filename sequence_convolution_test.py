@@ -108,18 +108,18 @@ class TestConvolution(unittest.TestCase):
                     self.assertLess(np.linalg.norm(err, np.inf), err_tol)
 
 class TestConvolutionGradWeights(unittest.TestCase):
-    FLOAT_ERR_TOL = 1e-4
+    FLOAT_ERR_TOL = 1e-6
     DOUBLE_ERR_TOL = 1e-12
     
     @staticmethod
     def grad_weights_cpu(input, df_output, n_filters, filter_width):
-
         stride = 4
-        
         df_w = np.empty((n_filters, filter_width))
         for n in range(n_filters):
             for i in range(filter_width):
-                df_w[n, i] = (input[:,i::stride]*df_output[n,:,:]).sum()
+                input_padded = np.concatenate((input[:,i::], 
+                                               np.zeros((input.shape[0], i))), 1)
+                df_w[n, i] = (input_padded[:,::stride]*df_output[n]).sum()
         return df_w
 
     def grad_weights_test(self, height, width, n_filters, filter_width):
@@ -129,21 +129,49 @@ class TestConvolutionGradWeights(unittest.TestCase):
             stride = 4
             x = curand((height, width), dtype)
             df_output = curand((n_filters, height, width // stride), dtype)
+            # df_output = gpuarray.empty((n_filters, height, width // stride), dtype).fill(1.)
 
             df_w = convolve_sequence_gradient(x, df_output, filter_width, n_filters)
             df_w_cpu = df_w.get()
             df_w_np = self.grad_weights_cpu(x.get(), df_output.get(), n_filters, filter_width)
 
-            if np.any(np.isnan((df_w_cpu - df_w_np) / df_w_cpu)):
-                import pudb; pudb.set_trace()
-            self.assertLess(np.linalg.norm((df_w_cpu-df_w_np)/df_w_cpu, np.inf), err_tol)
+            # try:
+            del df_w, x, df_output
+            self.assertLess(np.abs((df_w_cpu-df_w_np)/df_w_cpu).max(), err_tol)
+            # except AssertionError:
+            #     import pudb; pudb.set_trace()
+            #     raise
+
+    def test_grad_weights_filter_12(self):
+        for n in range(20):
+            n = np.random.randint(5, 300)
+            filter_width = 12
+            m = 12*np.random.randint(1, 100)
+            n_filters = np.random.randint(2, 50)
+            self.grad_weights_test(n, m, n_filters, filter_width)
+
+    def test_grad_weights_filter_8(self):
+        for n in range(20):
+            n = np.random.randint(5, 300)
+            filter_width = 8
+            m = 8*np.random.randint(1, 100)
+            n_filters = np.random.randint(2, 50)
+            self.grad_weights_test(n, m, n_filters, filter_width)
+
+    def test_grad_weights_filter_4(self):
+        for n in range(20):
+            n = np.random.randint(5, 300)
+            filter_width = 4
+            m = 4*np.random.randint(1, 200)
+            n_filters = np.random.randint(2, 100)
+            self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights(self):
         for n in range(20):
             n = np.random.randint(5, 300)
-            m = 4*np.random.randint(1, 1000)
-            n_filters = np.random.randint(2, 100)
-            filter_width = 4
+            filter_width = 4*np.random.randint(2, 8)
+            m = 4*np.random.randint(8, 200)
+            n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
 class TestMaxPool(unittest.TestCase):
@@ -214,7 +242,7 @@ class TestMaxPoolGradient(unittest.TestCase):
     def test_max_pool_grad(self):
         for i in range(20):
             n = np.random.randint(100, 1000)
-            m = np.random.randint(4, 500)
+            m = np.random.randint(15, 500)
             n_filters = np.random.randint(2, 10)
             pool_size = np.random.randint(2, 15)
             self.max_pool_grad_test(n, m, n_filters, pool_size)

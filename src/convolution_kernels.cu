@@ -2,9 +2,7 @@
 #define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
 
 #define TILE_SIZE_CONV {{ TILE_SIZE_CONV }}
-#define TILE_SIZE_GRAD_CONV {{ TILE_SIZE_GRAD_CONV }}
 #define MAX_WIDTH_FILTER {{ MAX_WIDTH_FILTER }}
-#define MAX_NUM_FILTERS {{ MAX_NUM_FILTERS }}
 
 __global__ void convolve_sequence(const {{ data_type }} *input,
     {{ data_type }} *target, const {{ data_type }} *filter,
@@ -99,12 +97,15 @@ __global__ void convolve_sequence_gradient(
   const unsigned int stride = 4;
   const unsigned int tx = threadIdx.x;
   const unsigned int input_idx = blockIdx.x*blockDim.x+tx;
+  const unsigned int column = input_idx % width;
   const unsigned int len_input = height*width;
   const unsigned int len_df_output = len_input / stride;
 
-  unsigned int df_weights_idx, output_idx;
+  unsigned int df_weights_idx, output_idx, shared_idx, df_output_offset;
+  int halo_idx;
   
-  const unsigned int shared_width = TILE_SIZE_GRAD_CONV / stride;
+  const unsigned int halo_width = (filter_width / stride) - 1;
+  const unsigned int shared_width = halo_width + blockDim.x / stride;
   extern __shared__ {{ data_type }} sdata[];
   {{ data_type }} *df_output_shared = sdata;
   {{ data_type }} *df_weights_reduce = df_output_shared + shared_width;
@@ -113,32 +114,47 @@ __global__ void convolve_sequence_gradient(
     (input_idx < len_input) ? input[input_idx] : 0.;
 
   for (unsigned int f=0; f < n_filters; f++) {
-    if (tx < shared_width) {
+    // Load halo elements on the left
+    halo_idx = (blockIdx.x-1)*blockDim.x+tx;
+    if (tx < halo_width) {
+      output_idx = f*len_df_output+blockIdx.x*blockDim.x/stride+tx-halo_width;
+      shared_idx = tx;
+      df_output_shared[shared_idx] = 
+	(halo_idx < 0) ? 0. : df_output[output_idx];
+    }
+
+    if (tx < blockDim.x/stride) {
       output_idx = f*len_df_output+blockIdx.x*blockDim.x/stride+tx;
-      df_output_shared[tx] = 
+      df_output_shared[tx+halo_width] = 
 	((blockIdx.x*blockDim.x/stride+tx) < len_df_output) ? 
 	df_output[output_idx] : 0.;
     }
+
     __syncthreads();
 
-    df_weights_reduce[tx] = 
-      input_element * df_output_shared[tx/stride];
-    __syncthreads();
-
-    for (unsigned int s=TILE_SIZE_GRAD_CONV/2; s>=filter_width; s>>=1) {
-      if (tx<s) {
-    	df_weights_reduce[tx] += df_weights_reduce[tx+s];
-      }
+    for (unsigned int k=0; k<(halo_width+1); k++) {
+      df_output_offset = (halo_width-k)*stride;
+      df_weights_reduce[tx] =
+      	(column >= df_output_offset)
+      	? input_element * df_output_shared[tx/stride+k] : 0.;
       __syncthreads();
-    }
 
-    if (tx<filter_width) {
-      df_weights_idx = f*filter_width*gridDim.x+tx*gridDim.x+blockIdx.x;
-      df_weights[df_weights_idx] = df_weights_reduce[tx];
+      for (unsigned int s=blockDim.x/2; s>=stride; s>>=1) {
+	if (tx<s) {
+	  df_weights_reduce[tx] += df_weights_reduce[tx+s];
+	}
+	__syncthreads();
+      }
+
+      if (tx<stride) {
+	df_weights_idx = 
+	  f*filter_width*gridDim.x+
+	  (tx+df_output_offset)*gridDim.x+
+	  blockIdx.x;
+	df_weights[df_weights_idx] = df_weights_reduce[tx];
+      }
     }
-    __syncthreads();
   }
-
 }
 
 __global__ void max_pool(const {{ data_type }} *mat,
