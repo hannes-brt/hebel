@@ -1,11 +1,17 @@
-import unittest
+import unittest, random
 import numpy as np
 import pycuda.autoinit
 from sequence_convolution.pycuda_ops import convolve_sequence, \
      convolve_sequence_gradient, max_pool, max_pool_gradient
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
-from hannes_tools.test_tools import debug_on
+from sequence_convolution.sequence_convolution import SequenceConvolutionNet
+from neural_nets.data_providers import MiniBatchDataProvider
+from neural_nets.optimizers import SGD
+from neural_nets.schedulers import constant_scheduler
+from neural_nets.parameter_updaters import SimpleSGDUpdate
+from create_features import encode_seq
+
 
 class TestConvolution(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-4
@@ -247,5 +253,33 @@ class TestMaxPoolGradient(unittest.TestCase):
             pool_size = np.random.randint(2, 15)
             self.max_pool_grad_test(n, m, n_filters, pool_size)
 
+class TestConvNet(unittest.TestCase):
+    def test_conv_net(self):
+        s = ['A' + ''.join([random.choice('ACGT') for x in range(7)]) for x in range(100)] + \
+        ['T' + ''.join([random.choice('ACGT') for x in range(7)]) for x in range(100)]
+        seq = np.array(map(encode_seq, s), np.float32)
+        targets = np.array(100*[[1., 0.]] + 100*[[0., 1.]], dtype=np.float32)
+
+        shuffle_idx = np.random.permutation(len(s))
+        seq = gpuarray.to_gpu(seq[shuffle_idx])
+        targets = gpuarray.to_gpu(targets[shuffle_idx])
+
+        test_error = 1
+        for i in range(10):
+            model = SequenceConvolutionNet(seq.shape[1], 2, 32, 1, 8, [], activation_function='tanh')
+            
+            train_data = MiniBatchDataProvider(seq, 10)
+            train_targets = MiniBatchDataProvider(targets, 10)
+
+            optimizer = SGD(model, SimpleSGDUpdate, train_data, train_targets, 
+                            train_data, train_targets, 
+                            learning_rate_schedule=constant_scheduler(3.))
+
+            optimizer.run(20)
+            test_error = np.min([optimizer.best_test_loss, test_error])
+
+        self.assertEqual(test_error, 0.)
+        
+            
 if __name__ == '__main__':
     unittest.main()
