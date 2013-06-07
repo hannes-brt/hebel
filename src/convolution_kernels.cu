@@ -184,8 +184,8 @@ __global__ void max_pool(const {{ data_type }} *mat,
     }
     
     if (tx==0) {
-        const unsigned int target_idx = blockIdx.z*height*gridDim.x+
-	  blockIdx.y*gridDim.x+blockIdx.x;
+      const unsigned int target_idx = blockIdx.y*gridDim.z*gridDim.x+
+	blockIdx.z*gridDim.x+blockIdx.x;
         target[target_idx] = sdata[0];
     }
 }
@@ -206,15 +206,16 @@ __global__ void max_pool_gradient(
     const unsigned int bx = blockIdx.x;
     const unsigned int by = blockIdx.y;
     const unsigned int bz = blockIdx.z;
-    const unsigned int lin_idx = bz*height*width+by*width+bx*blockDim.x+tx;
+    const unsigned int n_filters = gridDim.y;
+    const unsigned int lin_idx = bz*n_filters*width+by*width+bx*blockDim.x+tx;
     
-    const {{ data_type }} max_element = mat_pooled[bz*height*width_pooled+
+    const {{ data_type }} max_element = mat_pooled[bz*n_filters*width_pooled+
 						   by*width_pooled+bx];
-    const {{ data_type }} df_output_element = df_output[bz*height*width_pooled+
+    const {{ data_type }} df_output_element = df_output[bz*n_filters*width_pooled+
 							by*width_pooled+bx];
 
     if (bx*blockDim.x+tx < width) {
-        df_input[bz*height*width+by*width+bx*blockDim.x+tx] =
+        df_input[bz*n_filters*width+by*width+bx*blockDim.x+tx] =
             (mat[lin_idx] == max_element) ? df_output_element : 0.;
     }
 }

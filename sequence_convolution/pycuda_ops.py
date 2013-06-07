@@ -127,7 +127,7 @@ def max_pool(mat, pool_size, target=None, stream=None):
                                 width / pool_size)
     else:
         target = gpuarray.empty(
-            (n_filters, height, width / pool_size),
+            (height, n_filters, width / pool_size),
             dtype)
     
     dname = _dtype_name[dtype]
@@ -142,10 +142,10 @@ def max_pool_gradient(mat, mat_pooled, df_output, pool_size, target=None, stream
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
 
-    n_filters, height, width = mat.shape
+    height, n_filters, width = mat.shape
 
     block = (pool_size, 1, 1)
-    grid = (int(np.ceil(width / float(pool_size))), height, n_filters)
+    grid = (int(np.ceil(width / float(pool_size))), n_filters, height)
 
     if target is not None:
         assert target.dtype == dtype
