@@ -48,18 +48,17 @@ class HiddenLayer(object):
     def l2_penalty(self):
         return float(self.l2_penalty_weight) * .5 * gpuarray.sum(self.W ** 2.).get()
 
-    def feed_forward(self, input, dropout_predict=False):
+    def feed_forward(self, input, prediction=False):
         """ Propagate forward through the hidden layer.
         Inputs:
         input -- input from the previous layer
-        dropout_predict -- whether to to half the weights when 
-            predicting a dropout model
+        prediction -- (bool) whether predicting or training
 
         Outputs:
         lin_activations
         activations
 
-        If self.dropout = True and dropout_predict=False:
+        If self.dropout = True and prediction=False:
         Output:
         lin_activations
         activations
@@ -67,16 +66,19 @@ class HiddenLayer(object):
 
         """
 
-        if self.dropout and dropout_predict:
-            activations = linalg.dot(input, .5 * self.W)
-            activations = add_vec_to_mat(activations, .5 * self.b, inplace=True)
-        else:
-            activations = linalg.dot(input, self.W)
-            activations = add_vec_to_mat(activations, self.b, inplace=True)
+        # if self.dropout and prediction:
+        #     activations = linalg.dot(input, .5 * self.W)
+        #     activations = add_vec_to_mat(activations, .5 * self.b, inplace=True)
+        # else:
+        activations = linalg.dot(input, self.W)
+        activations = add_vec_to_mat(activations, self.b, inplace=True)
         
         self.f(activations)
 
-        if self.dropout and not dropout_predict:
+        if self.dropout and prediction:
+            activations *= .5
+        
+        if self.dropout and not prediction:
             dropout_mask = sample_dropout_mask(activations)
             return activations, dropout_mask
         
@@ -100,7 +102,7 @@ class HiddenLayer(object):
         # Get cache if it wasn't provided
         if cache is None:
             cache = self.feed_forward(input, dropout=self.dropout,
-                                      dropout_predict=False)
+                                      prediction=False)
 
         if len(cache) == 2:
             activations, dropout_mask = cache
@@ -211,28 +213,21 @@ class LogisticLayer(TopLayer):
     def l2_penalty(self):
         return self.l2_penalty_weight * 0.5 * gpuarray.sum(self.W ** 2.).get()
 
-    def feed_forward(self, input, dropout_predict=False):
+    def feed_forward(self, input, prediction=False):
         """ Propagate forward through the layer
 
         Inputs:
         input
         return_cache: (bool) whether to return the cache object
-        dropout_predict: (bool) whether to half the weights when 
+        prediction: (bool) whether to half the weights when 
             the preceding layer uses dropout
 
         Outputs:
         activations
 
         """
-
-        if dropout_predict:
-            # Half the hidden weights
-            activations = linalg.dot(input, .5 * self.W)
-            activations = add_vec_to_mat(activations, .5 * self.b, inplace=True)
-        else:
-            activations = linalg.dot(input, self.W)
-            activations = add_vec_to_mat(activations, self.b, inplace=True)
-
+        activations = linalg.dot(input, self.W)
+        activations = add_vec_to_mat(activations, self.b, inplace=True)
         activations = softmax(activations)
 
         return activations
@@ -254,7 +249,7 @@ class LogisticLayer(TopLayer):
         if cache is not None:
             activations = cache
         else:
-            activations = self.feed_forward(input, dropout_predict=False)
+            activations = self.feed_forward(input, prediction=False)
 
         delta = activations - targets
         nan_to_zeros_kernel(delta, delta)
@@ -282,7 +277,7 @@ class LogisticLayer(TopLayer):
         return output
 
     def test_error(self, input, targets, average=True,
-                   cache=None, dropout_predict=False):
+                   cache=None, prediction=True):
         if self.test_error_fct == 'class_error':
             test_error = self.class_error
         elif self.test_error_fct == 'kl_error':
@@ -292,10 +287,10 @@ class LogisticLayer(TopLayer):
                              % self.test_error_fct)
 
         return test_error(input, targets, average,
-                          cache, dropout_predict)
+                          cache, prediction)
 
     def cross_entropy_error(self, input, targets, average=True,
-                            cache=None, dropout_predict=False):
+                            cache=None, prediction=False):
         """ Return the cross entropy error
         """
         
@@ -303,7 +298,7 @@ class LogisticLayer(TopLayer):
             activations = cache
         else:
             activations = \
-              self.feed_forward(input, dropout_predict=dropout_predict)
+              self.feed_forward(input, prediction=prediction)
 
         loss = cross_entropy(activations, targets)
 
@@ -311,7 +306,7 @@ class LogisticLayer(TopLayer):
         return loss
 
     def class_error(self, input, targets, average=True, 
-                    cache=None, dropout_predict=False):
+                    cache=None, prediction=False):
         """ Return the classification error rate
         """
         
@@ -319,7 +314,7 @@ class LogisticLayer(TopLayer):
             activations = cache
         else:
             activations = \
-              self.feed_forward(input, dropout_predict=dropout_predict)
+              self.feed_forward(input, prediction=prediction)
 
         # if not is_integer_array(targets):
         #     targets = targets_soft.argmax(1)
@@ -330,7 +325,7 @@ class LogisticLayer(TopLayer):
         return class_error
 
     def kl_error(self, input, targets, average=True, 
-                 cache=None, dropout_predict=True):
+                 cache=None, prediction=True):
         """ The KL divergence error
         """
         
@@ -338,7 +333,7 @@ class LogisticLayer(TopLayer):
             activations = cache
         else:
             activations = \
-              self.feed_forward(input, dropout_predict=dropout_predict)
+              self.feed_forward(input, prediction=prediction)
 
         targets_non_nan = gpuarray.empty_like(targets)
         nan_to_zeros_kernel(targets, targets_non_nan)
@@ -460,24 +455,17 @@ class NeuralNet(object):
 
     parameters = property(getParameters, setParameters)
 
-    def evaluate(self, input, targets, return_cache=False, dropout_predict=True):
+    def evaluate(self, input, targets, return_cache=False, prediction=True):
         """ Evaluate the loss function without computing gradients
         """
 
-        if dropout_predict:
-            dropout_predict = self.dropout
-        elif self.hidden_layers:
-            dropout_predict = self.n_layers * [False]
-        else:
-            dropout_predict = [False]
-        
         # Forward pass
-        predictions, hidden_cache = self.feed_forward(
-            input, return_cache=True, dropout_predict=dropout_predict)
+        activations, hidden_cache = self.feed_forward(
+            input, return_cache=True, prediction=prediction)
         
         loss = self.top_layer.cross_entropy_error(None,
-            targets, average=False, cache=predictions,
-            dropout_predict=dropout_predict[-1])
+            targets, average=False, cache=activations,
+            prediction=prediction)
  
         for hl in self.hidden_layers:
             if hl.l1_penalty_weight: loss += hl.l1_penalty
@@ -489,7 +477,7 @@ class NeuralNet(object):
         if not return_cache:
             return loss
         else:
-            return loss, hidden_cache, predictions
+            return loss, hidden_cache, activations
 
     def training_pass(self, input, targets):
         """ Perform a full forward and backward pass through the model
@@ -497,7 +485,7 @@ class NeuralNet(object):
         
         # Forward pass
         loss, hidden_cache, logistic_cache = self.evaluate(
-            input, targets, return_cache=True, dropout_predict=False)
+            input, targets, return_cache=True, prediction=False)
 
         # Backpropagation
         if self.hidden_layers:
@@ -530,7 +518,7 @@ class NeuralNet(object):
         if cache is None:
             loss, hidden_cache, logistic_cache = self.evaluate(input, targets,
                                                                return_cache=True,
-                                                               dropout_predict=True)
+                                                               prediction=True)
         else:
             loss, hidden_cache, logistic_cache = cache
 
@@ -540,33 +528,25 @@ class NeuralNet(object):
             hidden_activations = input
 
         return self.top_layer.test_error(hidden_activations, targets, average=average,
-                                         cache=logistic_cache, dropout_predict=True)
+                                         cache=logistic_cache, prediction=True)
 
-    def feed_forward(self, input, return_cache=False, dropout_predict=True):
+    def feed_forward(self, input, return_cache=False, prediction=True):
         """ Get predictions from the model
         """
 
-        if type(dropout_predict) is not list:
-            if dropout_predict:
-                dropout_predict = self.dropout
-            elif self.hidden_layers:
-                dropout_predict = self.n_layers * [False]
-            else:
-                dropout_predict = [False]
-        
         if self.hidden_layers:
             # Forward pass
             hidden_cache = []
             # Input layer never has dropout
             hidden_cache.append(self.hidden_layers[0].feed_forward(input,
-                                                                   dropout_predict=False))
+                                                                   prediction))
 
             for i in range(1, self.n_layers):
                 hidden_activations = hidden_cache[i-1][0]
                 # Use dropout predict if previous layer has dropout
                 hidden_cache.append(self.hidden_layers[i]
                                     .feed_forward(hidden_activations,
-                                                  dropout_predict=dropout_predict[i-1]))
+                                                  prediction=prediction))
 
             hidden_activations = hidden_cache[-1][0]
 
@@ -574,13 +554,13 @@ class NeuralNet(object):
             hidden_activations = input
             
         # Use dropout_predict if last hidden layer has dropout
-        prediction = \
+        activations = \
           self.top_layer.feed_forward(hidden_activations, 
-                                 dropout_predict=dropout_predict[-1])
+                                      prediction=prediction)
 
         if return_cache:
-            return prediction, hidden_cache
-        return prediction
+            return activations, hidden_cache
+        return activations
 
 ################################################################################
 ### Multitask-Learning Neural Net
