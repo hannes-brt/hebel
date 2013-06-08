@@ -15,10 +15,14 @@ from .pycuda_ops.reductions import matrix_sum_out_axis
 from .pycuda_ops.softmax import softmax, cross_entropy
 
 class HiddenLayer(object):
-    def __init__(self, n_in, n_units, dropout=False,
+    def __init__(self, n_in, n_units, 
+                 activation_function='sigmoid',
+                 dropout=False,
                  W = None, b = None,
                  l1_penalty_weight=0., l2_penalty_weight=0.):
 
+        self._set_activation_fct(activation_function)
+        self._set_weights_scale(activation_function, n_in, n_units)
         if W is None:
             self.W = self.weights_scale * curand((n_in, n_units), dtype=np.float32) \
               - .5 * self.weights_scale
@@ -39,6 +43,28 @@ class HiddenLayer(object):
 
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
+
+    def _set_activation_fct(self, activation_function):
+        if activation_function == 'sigmoid':
+            self.f = sigmoid_kernel
+            self.df = df_sigmoid
+        elif activation_function == 'tanh':
+            self.f = tanh_kernel
+            self.df = df_tanh
+        elif activation_function == 'relu':
+            self.f = relu_kernel
+            self.df = df_relu
+        else:
+            raise ValueError
+        self.activation_function = activation_function
+
+    def _set_weights_scale(self, activation_function, n_in, n_units):
+        if activation_function in ('tanh', 'relu'):
+            self.weights_scale = sqrt(6. / (n_in + n_units))
+        elif activation_function == 'sigmoid':
+            self.weights_scale = 4 * sqrt(6. / (n_in + n_units))
+        else:
+            raise ValueError
 
     @property
     def l1_penalty(self):
@@ -130,45 +156,6 @@ class HiddenLayer(object):
             df_W -= self.l2_penalty_weight * self.W
         
         return df_W, df_b, df_input
-
-class TanhHiddenLayer(HiddenLayer):
-    def __init__(self, n_in, n_units,
-                 dropout=False, W=None, b=None,
-                 l1_penalty_weight=0., l2_penalty_weight=0.):
-        self.f = tanh_kernel
-        self.df = df_tanh
-
-        self.weights_scale = sqrt(6. / (n_in + n_units))
-
-        super(TanhHiddenLayer, self).__init__(n_in, n_units, dropout, W, b,
-                                              l1_penalty_weight, l2_penalty_weight)
-
-
-class SigmoidHiddenLayer(HiddenLayer):
-    def __init__(self, n_in, n_units,
-                 dropout=False, W=None, b=None,
-                 l1_penalty_weight=0., l2_penalty_weight=0.):
-        self.f = sigmoid_kernel
-        self.df = df_sigmoid
-
-        self.weights_scale = 4 * sqrt(6. / (n_in + n_units))
-
-        super(SigmoidHiddenLayer, self).__init__(n_in, n_units, dropout, W, b,
-                                                 l1_penalty_weight, l2_penalty_weight)
-        
-
-class ReluHiddenLayer(HiddenLayer):
-    def __init__(self, n_in, n_units,
-                 dropout=False, W=None, b=None,
-                 l1_penalty_weight=0., l2_penalty_weight=0.):
-        self.f = relu_kernel
-        self.df = df_relu
-
-        self.weights_scale = sqrt(6. / (n_in + n_units))
-
-        super(ReluHiddenLayer, self).__init__(n_in, n_units, dropout, W, b,
-                                              l1_penalty_weight, l2_penalty_weight)
-
 
 class TopLayer(object):
     n_tasks = 1
@@ -393,21 +380,13 @@ class NeuralNet(object):
             if isinstance(hidden_layer, HiddenLayer):
                 self.hidden_layers.append(hidden_layer)
             elif isinstance(hidden_layer, int):
-                if activation_function == 'tanh':
-                    hidden_layer_class = TanhHiddenLayer
-                elif activation_function == 'sigmoid':
-                    hidden_layer_class = SigmoidHiddenLayer
-                elif activation_function == 'relu':
-                    hidden_layer_class = ReluHiddenLayer
-                else:
-                    raise ValueError('unknown activation function "%s"' % activation_function)
-
                 n_in_hidden = self.hidden_layers[-1].n_units if i > 0 else n_in
                 self.hidden_layers.append(
-                    hidden_layer_class(n_in_hidden, hidden_layer,
-                                       dropout=dropout[i],
-                                       l1_penalty_weight=self.l1_penalty_weight_hidden[i],
-                                       l2_penalty_weight=self.l2_penalty_weight_hidden[i]))
+                    HiddenLayer(n_in_hidden, hidden_layer,
+                                activation_function,
+                                dropout=dropout[i],
+                                l1_penalty_weight=self.l1_penalty_weight_hidden[i],
+                                l2_penalty_weight=self.l2_penalty_weight_hidden[i]))
                 
         self.n_units_hidden = [hl.n_units for hl in self.hidden_layers]
         
