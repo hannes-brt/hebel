@@ -29,18 +29,7 @@ class SequenceConvolutionLayer(HiddenLayer):
         self.filter_width = filter_width
         self.n_filters = n_filters
 
-        if activation_function == 'sigmoid':
-            self.f = sigmoid_kernel
-            self.df = df_sigmoid
-        elif activation_function == 'tanh':
-            self.f = tanh_kernel
-            self.df = df_tanh
-        elif activation_function == 'relu':
-            self.f = relu_kernel
-            self.df = df_relu
-        else:
-            raise ValueError
-
+        self._set_activation_fct(activation_function)
         self.l1_penalty_weight = 0.
         self.l2_penalty_weight = 0.
 
