@@ -34,6 +34,7 @@ class SequenceConvolutionLayer(HiddenLayer):
         self.n_in = n_in
         self.filter_width = filter_width
         self.n_filters = n_filters
+        self.n_units = n_filters * n_in / STRIDE
 
         self._set_activation_fct(activation_function)
         self.l1_penalty_weight = 0.
@@ -77,6 +78,8 @@ class MaxPoolingLayer(HiddenLayer):
 
         self.l1_penalty_weight = 0.
         self.l2_penalty_weight = 0.
+
+        self.n_units = 1
 
         self.W = gpuarray.zeros(1, np.float32)
         self.b = gpuarray.zeros(1, np.float32)
@@ -132,4 +135,4 @@ class SequenceConvolutionNet(NeuralNet):
         self.fully_connected_layers = self.hidden_layers
         self.hidden_layers = [self.conv_layer, self.max_pool_layer] + self.fully_connected_layers
 
-        self.lr_multiplier = [np.array(.1)] + self.lr_multiplier
+        self.lr_multiplier = [np.array(1.)] + self.lr_multiplier

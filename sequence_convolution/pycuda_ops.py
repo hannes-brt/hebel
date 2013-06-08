@@ -5,15 +5,12 @@ import os
 from jinja2 import Template
 from . import sequence_conv_root
 
-_TILE_SIZE_CONV = 128
-_MAX_WIDTH_FILTER = 15
+_TILE_SIZE_CONV = 1024
 
 _code = Template(open(os.path.join(sequence_conv_root, 
     'src', 'convolution_kernels.cu')).read())
 
-_source_modules = {dtype: SourceModule(_code.render(TILE_SIZE_CONV=_TILE_SIZE_CONV,
-                                                    MAX_WIDTH_FILTER=_MAX_WIDTH_FILTER,
-                                                    data_type=dtype))
+_source_modules = {dtype: SourceModule(_code.render(data_type=dtype))
                   for dtype in ('float', 'double')}
 
 _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
@@ -109,9 +106,6 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
         block=block_sum, grid=grid_sum,
         shared=shared, stream=stream)
 
-    if np.any(np.isnan(target_sum.get())):
-        import pudb; pudb.set_trace()
-    
     return target_sum
 
 def max_pool(mat, pool_size, target=None, argmax=None, stream=None):

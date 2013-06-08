@@ -2,9 +2,6 @@
 #include "limits.h"
 #define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
 
-#define TILE_SIZE_CONV {{ TILE_SIZE_CONV }}
-#define MAX_WIDTH_FILTER {{ MAX_WIDTH_FILTER }}
-
 __global__ void convolve_sequence(const {{ data_type }} *input,
     {{ data_type }} *target, const {{ data_type }} *filter,
     const {{ data_type }} *bias, const unsigned int width, 
@@ -23,7 +20,7 @@ __global__ void convolve_sequence(const {{ data_type }} *input,
     const unsigned int target_width = CEILING((double) width / stride);
     unsigned int shared_idx, input_idx;    
     
-    const unsigned int shared_width = TILE_SIZE_CONV+filter_width-1;
+    const unsigned int shared_width = blockDim.x+filter_width-1;
     extern __shared__ {{ data_type }} sdata[];
     {{ data_type }} *input_shared = sdata;
     {{ data_type }} *bias_shared = input_shared + shared_width;
