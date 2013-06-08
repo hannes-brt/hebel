@@ -1,4 +1,5 @@
 #include "float.h"
+#include "limits.h"
 #define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
 
 #define TILE_SIZE_CONV {{ TILE_SIZE_CONV }}
@@ -6,9 +7,9 @@
 
 __global__ void convolve_sequence(const {{ data_type }} *input,
     {{ data_type }} *target, const {{ data_type }} *filter,
-    const unsigned int width, const unsigned int height,
-    const unsigned int filter_width, const unsigned int n_filters,
-    const unsigned int stride) {
+    const {{ data_type }} *bias, const unsigned int width, 
+    const unsigned int height, const unsigned int filter_width, 
+    const unsigned int n_filters, const unsigned int stride) {
 
     /* Performs a 1D convolution on each row of a matrix with 
        multiple filters. Filter size must be even and input is
@@ -22,8 +23,10 @@ __global__ void convolve_sequence(const {{ data_type }} *input,
     const unsigned int target_width = CEILING((double) width / stride);
     unsigned int shared_idx, input_idx;    
     
-    const unsigned int shared_width = TILE_SIZE_CONV+MAX_WIDTH_FILTER-1;
-    __shared__ {{ data_type }} input_shared[shared_width];
+    const unsigned int shared_width = TILE_SIZE_CONV+filter_width-1;
+    extern __shared__ {{ data_type }} sdata[];
+    {{ data_type }} *input_shared = sdata;
+    {{ data_type }} *bias_shared = input_shared + shared_width;
     
     const unsigned int halo_width = filter_width - 1;
     
@@ -40,12 +43,15 @@ __global__ void convolve_sequence(const {{ data_type }} *input,
                 (halo_index_right >= width) ? 0 : input[input_idx];
         }
     }
+
+    if (threadIdx.x < n_filters)
+      bias_shared[threadIdx.x] = bias[threadIdx.x];
     __syncthreads();
   
     unsigned int filter_idx, target_idx;
     if (!(j%stride) && i < height && j < width) {
         for (int f=0; f < n_filters; f++) {
-            {{ data_type }} Pvalue = 0.;
+            {{ data_type }} Pvalue = bias_shared[f];
             for (int k=0; k < filter_width; k++) {
                 shared_idx = threadIdx.x+k;
                 filter_idx = f*filter_width+k;
@@ -159,6 +165,7 @@ __global__ void convolve_sequence_gradient(
 
 __global__ void max_pool(const {{ data_type }} *mat,
     {{ data_type }} *target, 
+    unsigned int *argmax,
     const unsigned int height,
     const unsigned int width,
     const unsigned int pool_size) {
@@ -172,13 +179,17 @@ __global__ void max_pool(const {{ data_type }} *mat,
     const unsigned int mat_idx = blockIdx.z*height*width+i*width+j;
     
     extern __shared__ {{ data_type }} sdata[];
+    {{ data_type }} *max_shared = sdata;
+    unsigned int *argmax_shared = (unsigned int*) (max_shared + blockDim.x);
     
-    sdata[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
+    max_shared[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
+    argmax_shared[tx] = (i < height && j < width && tx < pool_size) ? j : UINT_MAX;
     __syncthreads();
     
     for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
         if (tx<s && sdata[tx+s] > sdata[tx]) {
-            sdata[tx] = sdata[tx+s];
+            max_shared[tx] = max_shared[tx+s];
+	    argmax_shared[tx] = argmax_shared[tx+s];
         }
         __syncthreads();
     }
@@ -186,13 +197,13 @@ __global__ void max_pool(const {{ data_type }} *mat,
     if (tx==0) {
       const unsigned int target_idx = blockIdx.y*gridDim.z*gridDim.x+
 	blockIdx.z*gridDim.x+blockIdx.x;
-        target[target_idx] = sdata[0];
+        target[target_idx] = max_shared[0];
+	argmax[target_idx] = argmax_shared[0];
     }
 }
 
 __global__ void max_pool_gradient(
-    const {{ data_type }} *mat,
-    const {{ data_type }} *mat_pooled,
+    const unsigned int *argmax,
     const {{ data_type }} *df_output,
     {{ data_type }} *df_input,
     const unsigned int height,
@@ -207,15 +218,15 @@ __global__ void max_pool_gradient(
     const unsigned int by = blockIdx.y;
     const unsigned int bz = blockIdx.z;
     const unsigned int n_filters = gridDim.y;
-    const unsigned int lin_idx = bz*n_filters*width+by*width+bx*blockDim.x+tx;
+    const unsigned int column = bx*blockDim.x+tx;
     
-    const {{ data_type }} max_element = mat_pooled[bz*n_filters*width_pooled+
-						   by*width_pooled+bx];
+    const unsigned int max_idx = argmax[bz*n_filters*width_pooled+
+					by*width_pooled+bx];
     const {{ data_type }} df_output_element = df_output[bz*n_filters*width_pooled+
 							by*width_pooled+bx];
 
     if (bx*blockDim.x+tx < width) {
-        df_input[bz*n_filters*width+by*width+bx*blockDim.x+tx] =
-            (mat[lin_idx] == max_element) ? df_output_element : 0.;
+        df_input[by*height*width+bz*width+bx*blockDim.x+tx] =
+            (column == max_idx) ? df_output_element : 0.;
     }
 }

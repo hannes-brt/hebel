@@ -26,11 +26,12 @@ _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
 
 _dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
 
-def convolve_sequence(mat, conv_filter, stride=4,
+def convolve_sequence(mat, conv_filter, bias, stride=4,
                       target=None, stream=None):
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
     assert conv_filter.dtype == dtype
+    assert bias.shape[0] == conv_filter.shape[0]
 
     if target is not None:
         assert target.dtype == dtype
@@ -43,7 +44,10 @@ def convolve_sequence(mat, conv_filter, stride=4,
     grid = (int(np.ceil(mat.shape[1] / float(block[0]))),
             int(np.ceil(mat.shape[0] / float(block[1]))),
             1)
-
+    shared = ((_TILE_SIZE_CONV + width_filter - 1 +     # input_shared
+              n_filters) *                              # bias_shared
+              np.dtype(dtype).itemsize)
+    
     if target is None:
         target_width = int(np.ceil(width / float(stride)))
         target = gpuarray.empty((n_filters, height, target_width),
@@ -51,12 +55,13 @@ def convolve_sequence(mat, conv_filter, stride=4,
 
     dname = _dtype_name[dtype]
     _kernels[dname]['convolve_sequence_kernel'](
-        mat, target, conv_filter,
+        mat, target, conv_filter, bias,
         np.uint32(width), np.uint32(height),
         np.uint32(width_filter),
         np.uint32(n_filters),
         np.uint32(stride),
-        block=block, grid=grid, stream=stream)
+        block=block, grid=grid, stream=stream, 
+        shared=shared)
 
     return target
 
@@ -109,7 +114,7 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
     
     return target_sum
 
-def max_pool(mat, pool_size, target=None, stream=None):
+def max_pool(mat, pool_size, target=None, argmax=None, stream=None):
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
     assert pool_size <= mat.shape[2]
@@ -118,31 +123,41 @@ def max_pool(mat, pool_size, target=None, stream=None):
 
     block = (2**int(np.ceil(np.log2(width))), 1, 1)
     grid = (int(np.ceil(width / pool_size)), height, n_filters)
-    shared = block[0]*np.dtype(dtype).itemsize
+    shared = block[0]*np.dtype(dtype).itemsize + \
+      block[0]*np.dtype(np.uint32).itemsize
 
     if target is not None:
         assert target.dtype == dtype
-        assert target.shape == (n_filters, 
-                                height,
+        assert target.shape == (height,
+                                n_filters,
                                 width / pool_size)
     else:
         target = gpuarray.empty(
             (height, n_filters, width / pool_size),
             dtype)
+
+    if argmax is not None:
+        assert argmax.dtype == np.uint32
+        assert argmax.shape == target.shape
+    else:
+        argmax = gpuarray.empty(
+            (height, n_filters, width / pool_size),
+            np.uint32)
     
     dname = _dtype_name[dtype]
 
     _kernels[dname]['max_pool_kernel'](
-        mat, target, np.uint32(height), np.uint32(width), np.uint32(pool_size),
+        mat, target, argmax, np.uint32(height), np.uint32(width), np.uint32(pool_size),
         block=block, grid=grid, shared=shared, stream=stream)
 
-    return target 
+    return target, argmax
 
-def max_pool_gradient(mat, mat_pooled, df_output, pool_size, target=None, stream=None):
+def max_pool_gradient(mat, argmax,
+                      df_output, pool_size, target=None, stream=None):
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
 
-    height, n_filters, width = mat.shape
+    n_filters, height, width = mat.shape
 
     block = (pool_size, 1, 1)
     grid = (int(np.ceil(width / float(pool_size))), n_filters, height)
@@ -155,8 +170,9 @@ def max_pool_gradient(mat, mat_pooled, df_output, pool_size, target=None, stream
 
     dname = _dtype_name[dtype]
     _kernels[dname]['max_pool_gradient_kernel'](
-        mat, mat_pooled, df_output, target, np.uint32(height),
-        np.uint32(width), np.uint32(mat_pooled.shape[2]),
+        argmax, df_output, target, 
+        np.uint32(height), np.uint32(width), 
+        np.uint32(argmax.shape[2]),
         block=block, grid=grid, stream=stream)
 
     return target

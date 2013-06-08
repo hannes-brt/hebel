@@ -8,12 +8,13 @@ from . import pycuda_ops
 from neural_nets.models import HiddenLayer, NeuralNet
 from neural_nets.pycuda_ops.elementwise import sigmoid_kernel, df_sigmoid, \
      tanh_kernel, df_tanh, relu_kernel, df_relu
+from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
 
 STRIDE = 4
 
 class SequenceConvolutionLayer(HiddenLayer):
     def __init__(self, n_in, filter_width, n_filters, activation_function='sigmoid',
-                 weights_scale=.01, W=None):
+                 weights_scale=.01, W=None, b=None):
         if W is None:
             self.W = weights_scale * \
               curand((n_filters, filter_width), dtype=np.float32) \
@@ -21,8 +22,13 @@ class SequenceConvolutionLayer(HiddenLayer):
         else:
             self.W = W
 
-        self.b = gpuarray.zeros(1, np.float32)
+        if b is None:
+            self.b = gpuarray.zeros((n_filters,), np.float32)
+        else:
+            self.b = b
+            
         assert self.W.shape == (n_filters, filter_width)
+        assert self.b.shape == (n_filters,)
         assert not n_in % STRIDE
         
         self.n_in = n_in
@@ -43,7 +49,7 @@ class SequenceConvolutionLayer(HiddenLayer):
 
     def feed_forward(self, input, prediction=False):
         activations = \
-            pycuda_ops.convolve_sequence(input, self.W, stride=STRIDE)
+            pycuda_ops.convolve_sequence(input, self.W, self.b, stride=STRIDE)
 
         self.f(activations)
         return (activations,)
@@ -56,11 +62,13 @@ class SequenceConvolutionLayer(HiddenLayer):
 
         df_activations = self.df(activations)
         delta = df_activations * df_output
+        df_b = matrix_sum_out_axis(
+            delta.reshape((self.n_filters, delta.shape[1]*delta.shape[2])), 1)
         df_W = pycuda_ops.convolve_sequence_gradient(
             input, delta,
             self.filter_width, self.n_filters)
 
-        return (df_W, gpuarray.zeros(1, np.float32), gpuarray.zeros(1, np.float32))
+        return (df_W, df_b, gpuarray.zeros(1, np.float32))
 
 class MaxPoolingLayer(HiddenLayer):
     def __init__(self, pool_size, n_filters):
@@ -82,20 +90,20 @@ class MaxPoolingLayer(HiddenLayer):
         return 0.
 
     def feed_forward(self, input, prediction=False):
-        activations = pycuda_ops.max_pool(input, self.pool_size)
+        activations, argmax = pycuda_ops.max_pool(input, self.pool_size)
         n, f, m = activations.shape
-        return (activations.reshape((n, f*m)),)
+        return (activations.reshape((n, f*m)), argmax)
 
     def backprop(self, input, df_output, cache=None):
         if cache is None:
-            activations = self.feed_forward(input)[0]
+            activations, argmax = self.feed_forward(input)
         else:
-            activations = cache[0]
+            activations, argmax = cache
 
         n, fm = activations.shape
         activations = activations.reshape((n, self.n_filters, 
                                            fm / self.n_filters))
-        df_input = pycuda_ops.max_pool_gradient(input, activations,
+        df_input = pycuda_ops.max_pool_gradient(input, argmax,
                                                 df_output,
                                                 self.pool_size)
         return (gpuarray.zeros(1, np.float32), gpuarray.zeros(1, np.float32), df_input)

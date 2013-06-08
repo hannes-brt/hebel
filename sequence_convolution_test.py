@@ -18,7 +18,7 @@ class TestConvolution(unittest.TestCase):
     DOUBLE_ERR_TOL = 1e-13
     
     @staticmethod
-    def cpu_conv1d(x, w, stride=1):
+    def cpu_conv1d(x, w, b, stride=1):
         n, m = x.shape        
         n_filters, filter_width = w.shape
 
@@ -31,12 +31,12 @@ class TestConvolution(unittest.TestCase):
         for f in range(n_filters):
             for i in range(0, m_output):
                 ii = i*stride
-                y[f,:,i] = (x_padded[:,ii:(ii+filter_width)]*w[f,:]).sum(1)
+                y[f,:,i] = b[f] + (x_padded[:,ii:(ii+filter_width)]*w[f,:]).sum(1)
         return y
 
     @staticmethod    
-    def gpu_conv1d(x, w, dtype, stride=1):
-        y = convolve_sequence(x, w, stride=stride)
+    def gpu_conv1d(x, w, b, dtype, stride=1):
+        y = convolve_sequence(x, w, b, stride=stride)
         return y
     
     def conv1d_test_setup(self, height, width, filter_width, n_filters, 
@@ -45,8 +45,9 @@ class TestConvolution(unittest.TestCase):
                                (np.float64, self.DOUBLE_ERR_TOL)):
             x = curand((height, width), dtype)
             w = curand((n_filters, filter_width), dtype=dtype)
-            y = self.gpu_conv1d(x, w, dtype, stride)
-            y_np = self.cpu_conv1d(x.get(), w.get(), 
+            b = curand((n_filters,), dtype=dtype)
+            y = self.gpu_conv1d(x, w, b, dtype, stride)
+            y_np = self.cpu_conv1d(x.get(), w.get(), b.get(),
                                    stride=stride)
             y_cpu = y.get()
             
@@ -104,9 +105,10 @@ class TestConvolution(unittest.TestCase):
                                    (np.float64, self.DOUBLE_ERR_TOL)):
                 x = curand((n, m), dtype)
                 w = curand((n_filters, filter_width), dtype=dtype)
+                b = curand((n_filters,), dtype=dtype)
 
-                y_no_stride = self.gpu_conv1d(x, w, dtype, 1)
-                y_stride = self.gpu_conv1d(x, w, dtype, stride)
+                y_no_stride = self.gpu_conv1d(x, w, b, dtype, 1)
+                y_stride = self.gpu_conv1d(x, w, b, dtype, stride)
 
                 for f in range(n_filters):     
                     err = (y_no_stride.get()[f,:,::stride]-
@@ -190,13 +192,14 @@ class TestMaxPool(unittest.TestCase):
         for n in range(output.shape[0]):
             for i in range(output.shape[2]):
                 output[n,:,i] = np.max(mat[n,:, pool_size*i:pool_size*(i+1)], 1)
-        return output
+
+        return np.swapaxes(output, 0, 1)
 
     def max_pool_test(self, height, width, n_filters, pool_size):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
                                (np.float64, self.DOUBLE_ERR_TOL)):
             mat = curand((n_filters, height, width), dtype)
-            target = max_pool(mat, pool_size)
+            target, argmax = max_pool(mat, pool_size)
             target_cpu = target.get()
             target_np = self.max_pool_cpu(mat.get(), pool_size)
             for n in range(n_filters):
@@ -217,33 +220,38 @@ class TestMaxPoolGradient(unittest.TestCase):
     DOUBLE_ERR_TOL = 1e-20
 
     @staticmethod
-    def max_pool_grad_cpu(mat, mat_pooled, df_output, pool_size):
+    def max_pool_grad_cpu(mat, mat_pooled, argmax, df_output, pool_size):
+        n_filters = mat.shape[0]
+        height = mat.shape[1]
+        n_pooled = mat_pooled.shape[2]        
+        
         df_input = np.zeros_like(mat)
-
-        for n in range(mat.shape[0]):
-            for i in range(pool_size*mat_pooled.shape[2]):
-                if not i % pool_size:
-                    o = df_output[n,:,i/pool_size]
-                    p = mat_pooled[n,:,i/pool_size]
-                df_input[n,mat[n,:,i]==p, i] = o[mat[n,:,i]==p]
+        # import pudb; pudb.set_trace()
+        for n in range(n_filters):
+            for i in range(n_pooled):
+                df_input[height*[n], range(height), argmax[:, n, i]] = df_output[:, n, i]
+        
+        # for n in range(mat.shape[0]):
+        #     for i in range(pool_size*mat_pooled.shape[2]):
+        #         if not i % pool_size:
+        #             o = df_output[:,n, i/pool_size]
+        #             p = mat_pooled[:,n, i/pool_size]
+        #         df_input[n,mat[n,:,i]==p, i] = o[mat[n,:,i]==p]
         return df_input
 
     def max_pool_grad_test(self, height, width, n_filters, pool_size):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
                                (np.float64, self.DOUBLE_ERR_TOL)):
             mat = curand((n_filters, height, width), dtype)
-            mat_pooled = max_pool(mat, pool_size)
+            mat_pooled, argmax = max_pool(mat, pool_size)
             df_output = curand(mat_pooled.shape, dtype)
-            df_input = max_pool_gradient(mat, mat_pooled, df_output, pool_size)
+            df_input = max_pool_gradient(mat, argmax, df_output, pool_size)
             df_input_cpu = df_input.get()
-
             df_input_np = self.max_pool_grad_cpu(mat.get(), mat_pooled.get(), 
+                                                 argmax.get(),
                                                  df_output.get(), pool_size)
 
-            for n in range(n_filters):
-                self.assertLess(
-                    np.linalg.norm(df_input_cpu[0] - df_input_np[0], np.inf), 
-                    err_tol)
+            self.assertTrue(np.all(df_input_cpu == df_input_np))
 
     def test_max_pool_grad(self):
         for i in range(20):
@@ -266,14 +274,14 @@ class TestConvNet(unittest.TestCase):
 
         test_error = 1
         for i in range(10):
-            model = SequenceConvolutionNet(seq.shape[1], 2, 32, 1, 8, [], activation_function='tanh')
+            model = SequenceConvolutionNet(seq.shape[1], 2, 32, 5, 8, [], activation_function='tanh')
             
             train_data = MiniBatchDataProvider(seq, 10)
             train_targets = MiniBatchDataProvider(targets, 10)
 
             optimizer = SGD(model, SimpleSGDUpdate, train_data, train_targets, 
                             train_data, train_targets, 
-                            learning_rate_schedule=constant_scheduler(3.))
+                            learning_rate_schedule=constant_scheduler(1.))
 
             optimizer.run(20)
             test_error = np.min([optimizer.best_test_loss, test_error])
