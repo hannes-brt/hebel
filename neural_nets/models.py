@@ -620,11 +620,11 @@ class MultitaskTopLayer(TopLayer):
     def l2_penalty(self):
         return sum([task.l2_penalty for task in self.tasks])
 
-    def feed_forward(self, input, dropout_predict=False):
+    def feed_forward(self, input, prediction=False):
         activations = []
 
         for task in self.tasks:
-            activations_task = task.feed_forward(input, dropout_predict)
+            activations_task = task.feed_forward(input, prediction)
             activations.append(activations_task)
 
         return activations
@@ -666,7 +666,7 @@ class MultitaskTopLayer(TopLayer):
         return output
 
     def test_error(self, input, targets, average=True,
-                   cache=None, dropout_predict=False,
+                   cache=None, prediction=False,
                    sum_errors=True):
 
         test_error = []
@@ -676,7 +676,7 @@ class MultitaskTopLayer(TopLayer):
           izip(targets, cache, self.tasks):
           test_error.append(task.test_error(input, targets_task,
                                             average, cache_task,
-                                            dropout_predict).get())
+                                            prediction).get())
 
         if sum_errors:
             return sum(test_error)
@@ -684,7 +684,7 @@ class MultitaskTopLayer(TopLayer):
             return np.array(test_error)
 
     def cross_entropy_error(self, input, targets, average=True,
-                            cache=None, dropout_predict=False,
+                            cache=None, prediction=False,
                             sum_errors=True):
         """ Return the cross entropy error
         """
@@ -698,7 +698,7 @@ class MultitaskTopLayer(TopLayer):
             loss.append(task.cross_entropy_error(
                 input, targets_task, average=average,
                 cache=cache_task, 
-                dropout_predict=dropout_predict))
+                prediction=prediction))
 
         if sum_errors:
             return sum(loss)
