@@ -20,7 +20,24 @@ class TestNeuralNetMNIST(unittest.TestCase):
         optimizer = SGD(model, SimpleSGDUpdate, self.train_data,
                         self.train_labels, self.test_data, self.test_labels,
                         learning_rate_schedule=constant_scheduler(1.5))
-        # import pudb; pudb.set_trace()
+        optimizer.run(10)
+        self.assertLess(optimizer.train_error[-1], optimizer.train_error[0])
+
+    def test_momentum(self):
+        model = NeuralNet(self.D, self.n_out, [100], 'relu', dropout=True)
+        optimizer = SGD(model, MomentumUpdate, self.train_data,
+                        self.train_labels, self.test_data, self.test_labels,
+                        learning_rate_schedule=constant_scheduler(1.5),
+                        momentum_schedule=linear_scheduler_up(.5, .9, 5))
+        optimizer.run(10)
+        self.assertLess(optimizer.train_error[-1], optimizer.train_error[0])
+
+    def test_nesterov_momentum(self):
+        model = NeuralNet(self.D, self.n_out, [100], 'relu', dropout=True)
+        optimizer = SGD(model, NesterovMomentumUpdate, self.train_data,
+                        self.train_labels, self.test_data, self.test_labels,
+                        learning_rate_schedule=constant_scheduler(1.5),
+                        momentum_schedule=linear_scheduler_up(.5, .9, 5))
         optimizer.run(10)
         self.assertLess(optimizer.train_error[-1], optimizer.train_error[0])
 

@@ -151,13 +151,6 @@ class SGD(object):
 
                     test_loss_rate = test_loss / float(self.N_test)
                     
-                    # if not self.multitask:
-                    #     print 'Epoch %d, Test error: %.5g, Train Loss: %.3f' % \
-                    #       (self.epoch, test_loss_rate, train_loss),
-                    # else:
-                    #     print 'Epoch %d, Test error: %s, Train Loss: %.3f' % \
-                    #       (self.epoch, str(test_loss_rate), train_loss),
-
                     self.progress_monitor.report(self.epoch, train_loss, test_loss_rate)
                     self.test_error.append(test_loss_rate)
 
@@ -165,11 +158,8 @@ class SGD(object):
                         print ' (new best)'
                         self.best_test_loss = test_loss_rate
                         self.best_params = self.model.parameters
-                        # self.best_params_cpu = map(lambda param: param.get(), self.best_params)
                         self.best_epoch = self.epoch
                     else:
-                        # assert all([np.all(a.get() == b) for a, b 
-                        #             in izip(self.best_params, self.best_params_cpu)])
                         print
 
                 else:

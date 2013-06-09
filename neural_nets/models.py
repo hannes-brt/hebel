@@ -15,6 +15,8 @@ from .pycuda_ops.reductions import matrix_sum_out_axis
 from .pycuda_ops.softmax import softmax, cross_entropy
 
 class HiddenLayer(object):
+    n_parameters = 2
+    
     def __init__(self, n_in, n_units, 
                  activation_function='sigmoid',
                  dropout=False,
@@ -39,7 +41,7 @@ class HiddenLayer(object):
         self.n_in = n_in
         self.n_units = n_units
 
-        self.lr_multiplier = 1. / np.sqrt(self.n_units, dtype=np.float32)
+        self.lr_multiplier = 2 * [1. / np.sqrt(self.n_in, dtype=np.float32)]
 
         self.dropout = dropout
 
@@ -54,12 +56,12 @@ class HiddenLayer(object):
     def parameters(self, value):
         self.W, self.b = value
 
-    def update_parameters(self, values, multiplier, stream=None):
-        assert len(values) == 2
+    def update_parameters(self, values, stream=None):
+        assert len(values) == self.n_parameters
         
-        for (param, gparam) \
+        for (param, (gparam, mult)) \
             in izip((self.W, self.b), values):
-            param._axpbyz(1., gparam, -self.lr_multiplier*multiplier, param, 
+            param._axpbyz(1., gparam, mult, param, 
                           stream=stream)
 
     def _set_activation_fct(self, activation_function):
@@ -181,9 +183,9 @@ class LogisticLayer(TopLayer):
     """
 
     act_f = softmax
-
     loss_f = cross_entropy
-
+    n_parameters = 2
+    
     def __init__(self, n_in, n_out, 
                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  test_error_fct='class_error'):
@@ -206,7 +208,7 @@ class LogisticLayer(TopLayer):
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
-        self.lr_multiplier = 1. / np.sqrt(n_out, dtype=np.float32)
+        self.lr_multiplier = 2 * [1. / np.sqrt(n_in, dtype=np.float32)]
 
     def feed_forward(self, input, prediction=False):
         """ Propagate forward through the layer
@@ -403,34 +405,43 @@ class NeuralNet(object):
         if kwargs.has_key('test_error_fct'):
             self.test_error_fct_name = kwargs['test_error_fct']
         self.activation_function = activation_function
+        self.n_parameters = sum(hl.n_parameters for hl in self.hidden_layers) + \
+          self.top_layer.n_parameters
+
+        self.lr_multiplier = [lr for hl in self.hidden_layers + [self.top_layer]
+                              for lr in hl.lr_multiplier]
 
     @property
     def parameters(self):
         # Gather the parameters
         parameters = []
         for hl in self.hidden_layers:
-            parameters.append(hl.parameters)
-        parameters.append(self.top_layer.parameters)
+            parameters.extend(hl.parameters)
+        parameters.extend(self.top_layer.parameters)
         return parameters
 
     @parameters.setter
     def parameters(self, value):
-        if len(value) != self.n_layers + 1:
+        if len(value) != self.n_parameters:
             raise ValueError("Incorrect length of parameter vector. Model has %d parameters, but got %d" %
-                             (self.n_layers + 1, len(value)))
-        
-        for hl, val in izip(self.hidden_layers, value):
-            hl.parameters = val
+                             (self.n_parameters, len(value)))
 
-        self.top_layer.parameters = value[-1]
+        i = 0
+        for hl in self.hidden_layers:
+            hl.parameters = value[i:i+hl.n_parameters]
+            i += hl.n_parameters
 
-    def update_parameters(self, value, multiplier=1.):
-        assert len(value) == self.n_layers + 1
+        self.top_layer.parameters = value[-self.top_layer.n_parameters:]
 
-        for hl, val in izip(self.hidden_layers, value):
-            hl.update_parameters(val, multiplier)
+    def update_parameters(self, value):
+        assert len(value) == self.n_parameters
 
-        self.top_layer.update_parameters(value[-1], multiplier)
+        i = 0
+        for hl in self.hidden_layers:
+            hl.update_parameters(value[i:i+hl.n_parameters])
+            i += hl.n_parameters
+
+        self.top_layer.update_parameters(value[-self.top_layer.n_parameters:])
 
     def evaluate(self, input, targets, return_cache=False, prediction=True):
         """ Evaluate the loss function without computing gradients
@@ -473,7 +484,7 @@ class NeuralNet(object):
         df_top_layer = \
           self.top_layer.backprop(hidden_activations, targets,
                                   cache=logistic_cache)
-        gradients = [df_top_layer[0]]
+        gradients = list(df_top_layer[0][::-1])
         df_hidden = df_top_layer[1]
 
         hidden_inputs = [input] + [c[0] for c in hidden_cache[:-1]]
@@ -481,7 +492,7 @@ class NeuralNet(object):
             zip(self.hidden_layers[::-1], hidden_cache[::-1], 
                 hidden_inputs[::-1]):
             g, df_hidden = hl.backprop(hi, df_hidden, cache=hc)
-            gradients.append(g)
+            gradients.extend(g[::-1])
 
         gradients.reverse()
 
@@ -594,23 +605,30 @@ class MultitaskTopLayer(TopLayer):
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
+        self.n_parameters = sum(task.n_parameters for task in self.tasks)
+
     @property
     def parameters(self):
         parameters = []
         for task in self.tasks:
-            parameters.append(task.parameters)
+            parameters.extend(task.parameters)
         return parameters
 
     @parameters.setter
     def parameters(self, value):
-        assert len(value) == self.n_tasks
+        assert len(value) == self.n_parameters
 
-        for task, val in izip(self.tasks, value):
-            task.parameters = val
+        i = 0
+        for task in self.tasks:
+            task.parameters = value[i:i+task.n_parameters]
+            i += task.n_parameters
 
-    def update_parameters(self, value, multiplier=1.):
-        for task, val in izip(self.tasks, value):
-            task.update_parameters(val, multiplier)
+    def update_parameters(self, value):
+        assert len(value) == self.n_parameters
+        i = 0
+        for task in self.tasks:
+            task.update_parameters(value[i:i+task.n_parameters])
+            i += task.n_parameters
 
     @property
     def l1_penalty(self):
@@ -646,7 +664,7 @@ class MultitaskTopLayer(TopLayer):
   
             df_input.mul_add(1., df_input_task, task_weight)
 
-            gradients.append(gradients_task)
+            gradients.extend(gradients_task)
         
         return gradients, df_input
 
