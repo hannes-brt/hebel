@@ -50,7 +50,7 @@ class HiddenLayer(object):
 
     @property
     def parameters(self):
-        return (self.W.copy(), self.b.copy())
+        return (self.W, self.b)
 
     @parameters.setter
     def parameters(self, value):

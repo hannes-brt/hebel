@@ -157,7 +157,7 @@ class SGD(object):
                     if early_stopping and test_loss_rate < self.best_test_loss:
                         print ' (new best)'
                         self.best_test_loss = test_loss_rate
-                        self.best_params = self.model.parameters
+                        self.best_params = map(lambda param: param.copy(), self.model.parameters)
                         self.best_epoch = self.epoch
                     else:
                         print
