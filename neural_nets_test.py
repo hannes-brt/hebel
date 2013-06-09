@@ -1,4 +1,5 @@
 import unittest
+import numpy as np
 import pycuda.autoinit
 from neural_nets.models import NeuralNet
 from neural_nets.optimizers import SGD

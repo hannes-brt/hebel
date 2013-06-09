@@ -157,7 +157,8 @@ class SGD(object):
                     if early_stopping and test_loss_rate < self.best_test_loss:
                         print ' (new best)'
                         self.best_test_loss = test_loss_rate
-                        self.best_params = map(lambda param: param.copy(), self.model.parameters)
+                        self.best_params = [p.copy() for p in self.model.parameters]
+                        assert self.best_params[0] is not self.model.parameters[0]
                         self.best_epoch = self.epoch
                     else:
                         print
@@ -174,7 +175,7 @@ class SGD(object):
                   
             except KeyboardInterrupt:
                 print "Keyboard interrupt. Stopping training and cleaning up."
-                done_looping=True                
+                done_looping=True
 
         end_time = time.clock() 
         self.train_time = end_time - start_time / 60.
