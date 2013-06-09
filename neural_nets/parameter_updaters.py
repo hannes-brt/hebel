@@ -1,4 +1,5 @@
 from pycuda import gpuarray
+from itertools import izip
     
 class ParameterUpdater(object):
     def __init__(self, model):
@@ -15,14 +16,9 @@ class SimpleSGDUpdate(ParameterUpdater):
                              learning_parameters,
                              stream=None):
         learning_rate = learning_parameters[0]
-        
-        for param, gparam, lr_multiplier \
-          in zip(self.model.parameters, gradients, self.model.lr_multiplier):
-            # Update in place
-            # param += -(self.learning_rate * lr_multiplier) / batch_size * gparam
-            param._axpbyz(1., gparam, 
-                          -learning_rate * lr_multiplier / batch_size, 
-                          param, stream=stream)
+
+        multiplier = learning_rate/batch_size
+        self.model.update_parameters(gradients, multiplier)
 
 class MomentumUpdate(ParameterUpdater):
     def __init__(self, model):
@@ -35,7 +31,7 @@ class MomentumUpdate(ParameterUpdater):
         learning_rate, momentum = learning_parameters
         
         for param, gparam, vparam, lr_multiplier in \
-          zip(self.model.parameters, gradients, self.velocity, 
+          izip(self.model.parameters, gradients, self.velocity, 
               self.model.lr_multiplier):
                 # vparam = self.momentum * vparam \
                 #  -learning_rate * lr_multiplier / batch_size * gparam
@@ -50,7 +46,7 @@ class NesterovMomentumUpdate(MomentumUpdate):
         take step in direction of accumulated gradient
         """
 
-        for (param, vparam) in zip(self.model.parameters, self.velocity):
+        for (param, vparam) in izip(self.model.parameters, self.velocity):
                 # param += vparam
                 param._axpbyz(1., vparam, 1., param, stream=None)
 
@@ -63,7 +59,7 @@ class NesterovMomentumUpdate(MomentumUpdate):
         learning_rate, momentum = learning_parameters
 
         for param, gparam, vparam, lr_multiplier in \
-          zip(self.model.parameters, gradients, 
+          izip(self.model.parameters, gradients, 
               self.velocity, self.model.lr_multiplier):
 
             # param -= learning_rate*lr_multiplier/batch_size*gparam
@@ -78,7 +74,7 @@ class NesterovMomentumUpdate(MomentumUpdate):
     #     new_rmsprop_avg = []
     #     new_gradient = []
         
-    #     for r, g in zip(self.rmsprop_avg, gradient):
+    #     for r, g in izip(self.rmsprop_avg, gradient):
     #         new_r = self.rmsprop * r + (1 - self.rmsprop) * g**2. + eps
 
     #         if gpu.is_garray(g):

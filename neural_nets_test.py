@@ -20,6 +20,7 @@ class TestNeuralNetMNIST(unittest.TestCase):
         optimizer = SGD(model, SimpleSGDUpdate, self.train_data,
                         self.train_labels, self.test_data, self.test_labels,
                         learning_rate_schedule=constant_scheduler(1.5))
+        # import pudb; pudb.set_trace()
         optimizer.run(10)
         self.assertLess(optimizer.train_error[-1], optimizer.train_error[0])
 

@@ -39,10 +39,28 @@ class HiddenLayer(object):
         self.n_in = n_in
         self.n_units = n_units
 
+        self.lr_multiplier = 1. / np.sqrt(self.n_units, dtype=np.float32)
+
         self.dropout = dropout
 
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
+
+    @property
+    def parameters(self):
+        return (self.W.copy(), self.b.copy())
+
+    @parameters.setter
+    def parameters(self, value):
+        self.W, self.b = value
+
+    def update_parameters(self, values, multiplier, stream=None):
+        assert len(values) == 2
+        
+        for (param, gparam) \
+            in izip((self.W, self.b), values):
+            param._axpbyz(1., gparam, -self.lr_multiplier*multiplier, param, 
+                          stream=stream)
 
     def _set_activation_fct(self, activation_function):
         if activation_function == 'sigmoid':
@@ -92,10 +110,6 @@ class HiddenLayer(object):
 
         """
 
-        # if self.dropout and prediction:
-        #     activations = linalg.dot(input, .5 * self.W)
-        #     activations = add_vec_to_mat(activations, .5 * self.b, inplace=True)
-        # else:
         activations = linalg.dot(input, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
         
@@ -155,9 +169,9 @@ class HiddenLayer(object):
         if self.l2_penalty_weight:
             df_W -= self.l2_penalty_weight * self.W
         
-        return df_W, df_b, df_input
+        return (df_W, df_b), df_input
 
-class TopLayer(object):
+class TopLayer(HiddenLayer):
     n_tasks = 1
     
 class LogisticLayer(TopLayer):
@@ -192,13 +206,7 @@ class LogisticLayer(TopLayer):
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
-    @property
-    def l1_penalty(self):
-        return self.l1_penalty_weight * gpuarray.sum(abs(self.W)).get()
-
-    @property
-    def l2_penalty(self):
-        return self.l2_penalty_weight * 0.5 * gpuarray.sum(self.W ** 2.).get()
+        self.lr_multiplier = 1. / np.sqrt(n_out, dtype=np.float32)
 
     def feed_forward(self, input, prediction=False):
         """ Propagate forward through the layer
@@ -219,8 +227,8 @@ class LogisticLayer(TopLayer):
 
         return activations
 
-    def backprop(self, input, targets, get_df_input=True, 
-                 return_cache=False, cache=None):
+    def backprop(self, input, targets,
+                 cache=None):
         """ Backpropagate through the logistic layer
 
         Inputs:
@@ -244,11 +252,7 @@ class LogisticLayer(TopLayer):
         df_W = linalg.dot(input, delta, transa='T')    # Gradient wrt weights
         df_b = matrix_sum_out_axis(delta, 0)               # Gradient wrt bias
 
-        if get_df_input:
-            df_input = linalg.dot(delta, self.W, transb='T')   # Gradient wrt input
-            output = (df_W, df_b, df_input)
-        else:
-            output = (df_W, df_b)
+        df_input = linalg.dot(delta, self.W, transb='T')   # Gradient wrt input
 
         # L1 penalty
         if self.l1_penalty_weight:
@@ -258,10 +262,7 @@ class LogisticLayer(TopLayer):
         if self.l2_penalty_weight:
             df_W -= self.l2_penalty_weight * self.W
 
-        if return_cache:
-            output += (targets, activations)
-
-        return output
+        return (df_W, df_b), df_input
 
     def test_error(self, input, targets, average=True,
                    cache=None, prediction=True):
@@ -303,8 +304,6 @@ class LogisticLayer(TopLayer):
             activations = \
               self.feed_forward(input, prediction=prediction)
 
-        # if not is_integer_array(targets):
-        #     targets = targets_soft.argmax(1)
         targets = targets.get().argmax(1)
         class_error = np.sum(activations.get().argmax(1) != targets)
 
@@ -398,12 +397,6 @@ class NeuralNet(object):
                                             l2_penalty_weight=self.l2_penalty_weight_output,
                                             **kwargs)
 
-        # The scaling factor for the learning rate, based on the fan-in of the layer
-        self.lr_multiplier = 2 * self.top_layer.n_tasks * [1. / np.sqrt(n_in, dtype=np.float32)]
-        for i, n_hidden in enumerate(self.n_units_hidden):
-            self.lr_multiplier.extend(2 * [1. / np.sqrt(n_hidden, dtype=np.float32)])
-        self.lr_multiplier = np.array(self.lr_multiplier)
-            
         self.n_in = n_in
         self.n_out = n_out
         self.dropout=dropout
@@ -411,28 +404,33 @@ class NeuralNet(object):
             self.test_error_fct_name = kwargs['test_error_fct']
         self.activation_function = activation_function
 
-    def getParameters(self):
+    @property
+    def parameters(self):
         # Gather the parameters
         parameters = []
         for hl in self.hidden_layers:
-            parameters.extend([hl.W, hl.b])
-        parameters.extend([self.top_layer.W, self.top_layer.b])
+            parameters.append(hl.parameters)
+        parameters.append(self.top_layer.parameters)
         return parameters
 
-    def setParameters(self, value):
-        num_parameters = 2 * (len(self.hidden_layers) + 1)
-        if len(value) != num_parameters:
+    @parameters.setter
+    def parameters(self, value):
+        if len(value) != self.n_layers + 1:
             raise ValueError("Incorrect length of parameter vector. Model has %d parameters, but got %d" %
-                             (num_parameters, len(value)))
+                             (self.n_layers + 1, len(value)))
         
-        for i in range(len(self.hidden_layers)):
-            self.hidden_layers[i].W = value[2*i]
-            self.hidden_layers[i].b = value[2*i+1]
+        for hl, val in izip(self.hidden_layers, value):
+            hl.parameters = val
 
-        self.top_layer.W = value[-2]
-        self.top_layer.b = value[-1]
+        self.top_layer.parameters = value[-1]
 
-    parameters = property(getParameters, setParameters)
+    def update_parameters(self, value, multiplier=1.):
+        assert len(value) == self.n_layers + 1
+
+        for hl, val in izip(self.hidden_layers, value):
+            hl.update_parameters(val, multiplier)
+
+        self.top_layer.update_parameters(value[-1], multiplier)
 
     def evaluate(self, input, targets, return_cache=False, prediction=True):
         """ Evaluate the loss function without computing gradients
@@ -474,17 +472,16 @@ class NeuralNet(object):
 
         df_top_layer = \
           self.top_layer.backprop(hidden_activations, targets,
-                                  return_cache=False,
                                   cache=logistic_cache)
-        gradients = list(df_top_layer[:-1][::-1])
-        df_hidden = df_top_layer[-1]
+        gradients = [df_top_layer[0]]
+        df_hidden = df_top_layer[1]
 
         hidden_inputs = [input] + [c[0] for c in hidden_cache[:-1]]
         for hl, hc, hi in \
             zip(self.hidden_layers[::-1], hidden_cache[::-1], 
                 hidden_inputs[::-1]):
-            df_W, df_b, df_hidden = hl.backprop(hi, df_hidden, cache=hc)
-            gradients.extend([df_b, df_W])
+            g, df_hidden = hl.backprop(hi, df_hidden, cache=hc)
+            gradients.append(g)
 
         gradients.reverse()
 
@@ -597,20 +594,23 @@ class MultitaskTopLayer(TopLayer):
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
-    def getParameters(self):
+    @property
+    def parameters(self):
         parameters = []
         for task in self.tasks:
-            parameters.extend([task.W, task.b])
+            parameters.append(task.parameters)
         return parameters
 
-    def setParameters(self, value):
-        assert len(value) == 2 * self.n_tasks
+    @parameters.setter
+    def parameters(self, value):
+        assert len(value) == self.n_tasks
 
-        for i, task in enumerate(self.tasks):
-            task.W = value[2*i]
-            task.b = value[2*i + 1]
+        for task, val in izip(self.tasks, value):
+            task.parameters = val
 
-    parameters = property(getParameters, setParameters)
+    def update_parameters(self, value, multiplier=1.):
+        for task, val in izip(self.tasks, value):
+            task.update_parameters(val, multiplier)
 
     @property
     def l1_penalty(self):
@@ -629,41 +629,26 @@ class MultitaskTopLayer(TopLayer):
 
         return activations
 
-    def backprop(self, input, targets, get_df_input=True,
-                 return_cache=False, cache=None):
+    def backprop(self, input, targets, cache=None):
 
         output = []
         df_input = gpuarray.zeros_like(input)
         cache_out = []
 
         if cache is None: cache = self.n_tasks * [None]
-        
+
+        gradients = []
         for targets_task, cache_task, task, task_weight  in \
           izip(targets, cache, self.tasks, self.task_weights):
-            return_task = task.backprop(input, targets_task, get_df_input,
-                                        return_cache, cache_task)
-            if return_cache:
-                gradients_task, cache_out_task = return_task
-                cache_out.append(cache_out_task)
-            else:
-                gradients_task = return_task
+            gradients_task, df_input_task = \
+              task.backprop(input, targets_task,
+                            cache_task)
+  
+            df_input.mul_add(1., df_input_task, task_weight)
 
-            if not get_df_input:
-                df_W_task, df_b_task = gradients_task
-            else:
-                df_W_task, df_b_task, df_input_task = gradients_task
-                df_input.mul_add(1., df_input_task, task_weight)
-            output.append(df_W_task)
-            output.append(df_b_task)
-
-        if get_df_input:
-            # df_input = sum(df_input)
-            output.append(df_input)
-
-        if return_cache:
-            output.append(cache)
-
-        return output
+            gradients.append(gradients_task)
+        
+        return gradients, df_input
 
     def test_error(self, input, targets, average=True,
                    cache=None, prediction=False,
@@ -708,27 +693,27 @@ class MultitaskTopLayer(TopLayer):
 class MultitaskNeuralNet(NeuralNet):
     TopLayerClass = MultitaskTopLayer
     
-    def getParameters(self):
-        # Gather the parameters
-        parameters = []
-        for hl in self.hidden_layers:
-            parameters.extend([hl.W, hl.b])
-        parameters.extend(self.top_layer.parameters)
-        return parameters
+    # def getParameters(self):
+    #     # Gather the parameters
+    #     parameters = []
+    #     for hl in self.hidden_layers:
+    #         parameters.extend([hl.W, hl.b])
+    #     parameters.extend(self.top_layer.parameters)
+    #     return parameters
 
-    def setParameters(self, value):
-        num_parameters = 2 * (len(self.hidden_layers) + self.top_layer.n_tasks)
-        if len(value) != num_parameters:
-            raise ValueError("Incorrect length of parameter vector. Model has %d parameters, but got %d" %
-                             (num_parameters, len(value)))
+    # def setParameters(self, value):
+    #     num_parameters = 2 * (len(self.hidden_layers) + self.top_layer.n_tasks)
+    #     if len(value) != num_parameters:
+    #         raise ValueError("Incorrect length of parameter vector. Model has %d parameters, but got %d" %
+    #                          (num_parameters, len(value)))
         
-        for i in range(len(self.hidden_layers)):
-            self.hidden_layers[i].W = value[2*i]
-            self.hidden_layers[i].b = value[2*i+1]
+    #     for i in range(len(self.hidden_layers)):
+    #         self.hidden_layers[i].W = value[2*i]
+    #         self.hidden_layers[i].b = value[2*i+1]
 
-        self.top_layer.parameters = value[2*len(self.hidden_layers):]
+    #     self.top_layer.parameters = value[2*len(self.hidden_layers):]
 
-    parameters = property(getParameters, setParameters)
+    # parameters = property(getParameters, setParameters)
 
 
 ################################################################################
