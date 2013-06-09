@@ -13,6 +13,8 @@ from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
 STRIDE = 4
 
 class SequenceConvolutionLayer(HiddenLayer):
+    n_parameters = 2
+    
     def __init__(self, n_in, filter_width, n_filters, activation_function='sigmoid',
                  weights_scale=.01, W=None, b=None):
         if W is None:
@@ -40,7 +42,7 @@ class SequenceConvolutionLayer(HiddenLayer):
         self.l1_penalty_weight = 0.
         self.l2_penalty_weight = 0.
 
-        self.lr_multiplier = 1.
+        self.lr_multiplier = [1., 1.]
 
     @property
     def l1_penalty(self):
@@ -74,21 +76,22 @@ class SequenceConvolutionLayer(HiddenLayer):
         return (df_W, df_b), None
 
 class MaxPoolingLayer(HiddenLayer):
-    def __init__(self, pool_size, n_filters):
+    n_parameters = 0
+    lr_multiplier = []
+    
+    def __init__(self, n_in, pool_size, n_filters):
+        self.n_in = n_in
         self.pool_size = pool_size
         self.n_filters = n_filters
 
         self.l1_penalty_weight = 0.
         self.l2_penalty_weight = 0.
 
-        self.n_units = 1
-
-        self.W = gpuarray.zeros(1, np.float32)
-        self.b = gpuarray.zeros(1, np.float32)
+        self.n_units = n_in / pool_size
 
     @property
     def parameters(self):
-        return None
+        return []
 
     @parameters.setter
     def parameters(self, value):
@@ -97,7 +100,6 @@ class MaxPoolingLayer(HiddenLayer):
     def update_parameters(self, values, stream=None):
         pass
         
-
     @property
     def l1_penalty(self):
         return 0.
@@ -132,8 +134,14 @@ class SequenceConvolutionNet(NeuralNet):
                  **kwargs):
 
         n_in_nn = n_filters * n_in / STRIDE / pool_size
+        conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters, 
+                                                   activation_function=activation_function)
+        max_pool_layer = MaxPoolingLayer(conv_layer.n_units, 
+                                         pool_size, n_filters)
+        hidden_layers = [conv_layer, max_pool_layer] + layers
+        
         super(SequenceConvolutionNet, self)\
-          .__init__(n_in_nn, n_out, layers, activation_function,
+          .__init__(n_in, n_out, hidden_layers, activation_function,
                     dropout, l1_penalty_weight, l2_penalty_weight, **kwargs)
 
         self.n_layers = len(layers) + 2
@@ -143,9 +151,6 @@ class SequenceConvolutionNet(NeuralNet):
         self.n_filters = n_filters
         self.pool_size = pool_size
         
-        self.conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters, 
-                                                   activation_function=activation_function)
-        self.max_pool_layer = MaxPoolingLayer(pool_size, n_filters)
-        self.fully_connected_layers = self.hidden_layers
-        self.hidden_layers = [self.conv_layer, self.max_pool_layer] + self.fully_connected_layers
+        # self.fully_connected_layers = self.hidden_layers
+        # self.hidden_layers = [self.conv_layer, self.max_pool_layer] + self.fully_connected_layers
         

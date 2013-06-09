@@ -274,7 +274,8 @@ class TestConvNet(unittest.TestCase):
 
         test_error = 1
         for i in range(10):
-            model = SequenceConvolutionNet(seq.shape[1], 2, 32, 5, 8, [], activation_function='tanh')
+            model = SequenceConvolutionNet(seq.shape[1], 2, 32, 5, 8, [], 
+                                           activation_function='tanh')
             
             train_data = MiniBatchDataProvider(seq, 10)
             train_targets = MiniBatchDataProvider(targets, 10)
@@ -287,7 +288,6 @@ class TestConvNet(unittest.TestCase):
             test_error = np.min([optimizer.best_test_loss, test_error])
 
         self.assertEqual(test_error, 0.)
-        
             
 if __name__ == '__main__':
     unittest.main()
