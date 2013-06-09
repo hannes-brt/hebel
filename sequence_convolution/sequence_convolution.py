@@ -40,6 +40,8 @@ class SequenceConvolutionLayer(HiddenLayer):
         self.l1_penalty_weight = 0.
         self.l2_penalty_weight = 0.
 
+        self.lr_multiplier = 1.
+
     @property
     def l1_penalty(self):
         return 0.
@@ -69,7 +71,7 @@ class SequenceConvolutionLayer(HiddenLayer):
             input, delta,
             self.filter_width, self.n_filters)
 
-        return (df_W, df_b, gpuarray.zeros(1, np.float32))
+        return (df_W, df_b), None
 
 class MaxPoolingLayer(HiddenLayer):
     def __init__(self, pool_size, n_filters):
@@ -83,6 +85,18 @@ class MaxPoolingLayer(HiddenLayer):
 
         self.W = gpuarray.zeros(1, np.float32)
         self.b = gpuarray.zeros(1, np.float32)
+
+    @property
+    def parameters(self):
+        return None
+
+    @parameters.setter
+    def parameters(self, value):
+        pass
+        
+    def update_parameters(self, values, stream=None):
+        pass
+        
 
     @property
     def l1_penalty(self):
@@ -109,7 +123,7 @@ class MaxPoolingLayer(HiddenLayer):
         df_input = pycuda_ops.max_pool_gradient(input, argmax,
                                                 df_output,
                                                 self.pool_size)
-        return (gpuarray.zeros(1, np.float32), gpuarray.zeros(1, np.float32), df_input)
+        return tuple(), df_input
 
 class SequenceConvolutionNet(NeuralNet):
     def __init__(self, n_in, n_out, filter_width, n_filters, 
@@ -134,5 +148,4 @@ class SequenceConvolutionNet(NeuralNet):
         self.max_pool_layer = MaxPoolingLayer(pool_size, n_filters)
         self.fully_connected_layers = self.hidden_layers
         self.hidden_layers = [self.conv_layer, self.max_pool_layer] + self.fully_connected_layers
-
-        self.lr_multiplier = [np.array(1.)] + self.lr_multiplier
+        
