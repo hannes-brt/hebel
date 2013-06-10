@@ -6,8 +6,6 @@ from math import sqrt
 from scikits.cuda import linalg
 from . import pycuda_ops
 from neural_nets.models import HiddenLayer, NeuralNet
-from neural_nets.pycuda_ops.elementwise import sigmoid_kernel, df_sigmoid, \
-     tanh_kernel, df_tanh, relu_kernel, df_relu
 from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
 
 STRIDE = 4
@@ -16,16 +14,16 @@ class SequenceConvolutionLayer(HiddenLayer):
     n_parameters = 2
     
     def __init__(self, n_in, filter_width, n_filters, activation_function='sigmoid',
-                 weights_scale=.01, W=None, b=None):
+                 weights_scale=.01, W=None, b=None, dtype=np.float32):
         if W is None:
             self.W = weights_scale * \
-              curand((n_filters, filter_width), dtype=np.float32) \
+              curand((n_filters, filter_width), dtype=dtype) \
               -.5 * weights_scale
         else:
             self.W = W
 
         if b is None:
-            self.b = gpuarray.zeros((n_filters,), np.float32)
+            self.b = gpuarray.zeros((n_filters,), dtype)
         else:
             self.b = b
             
@@ -61,7 +59,7 @@ class SequenceConvolutionLayer(HiddenLayer):
 
     def backprop(self, input, df_output, cache=None):
         if cache is None:
-            activations = self.feed_forward(input)
+            activations = self.feed_forward(input)[0]
         else:
             activations = cache[0]
 

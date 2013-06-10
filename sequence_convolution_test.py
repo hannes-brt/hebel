@@ -5,13 +5,61 @@ from sequence_convolution.pycuda_ops import convolve_sequence, \
      convolve_sequence_gradient, max_pool, max_pool_gradient
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
-from sequence_convolution.sequence_convolution import SequenceConvolutionNet
+from sequence_convolution.sequence_convolution import SequenceConvolutionNet, \
+     SequenceConvolutionLayer
 from neural_nets.data_providers import MiniBatchDataProvider
 from neural_nets.optimizers import SGD
 from neural_nets.schedulers import constant_scheduler
 from neural_nets.parameter_updaters import SimpleSGDUpdate
 from create_features import encode_seq
+from copy import copy
 
+import numpy as np
+
+def checkgrad_model(layer, input, epsilon=1e-4, **kwargs):
+    cache = layer.feed_forward(input)
+    f0 = np.sum(cache[0].get())
+    df_output = gpuarray.empty_like(cache[0]).fill(1.)
+    grads = layer.backprop(input, df_output, cache)[0]
+
+    grad_approx = [np.empty_like(p.get()) for p in layer.parameters]
+    loss = 0
+
+    parameters = layer.parameters
+    for i in range(len(layer.parameters)):        
+        param_i = parameters[i].get()
+        grad_approx_i = grad_approx[i]
+
+        assert param_i.shape == grad_approx_i.shape
+
+        for idx, _ in np.ndenumerate(grad_approx_i):
+            p = list(copy(parameters))
+            w0 = param_i[idx]
+
+            # Get f(x - epsilon)
+            param_i[idx] += epsilon
+            p[i] = gpuarray.to_gpu(param_i)
+            layer.parameters = p
+            f1 = np.sum(layer.feed_forward(input)[0].get())
+
+            # Get f(x + epsilon)
+            param_i[idx] -= 2 * epsilon
+            p[i] = gpuarray.to_gpu(param_i)
+            layer.parameters = p
+            f2 = np.sum(layer.feed_forward(input)[0].get())
+
+            # Reset weight
+            param_i[idx] = w0
+            p[i] = gpuarray.to_gpu(param_i)
+            layer.parameters = p
+
+            # Compute gradient approximation
+            grad_approx_i[idx] = (f1 - f2) / (2 * epsilon)
+
+        loss += np.sum(((grads[i].get() - grad_approx_i) / grads[i].get()) ** 2)
+    loss = np.sqrt(loss)
+
+    return loss
 
 class TestConvolution(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-4
@@ -226,17 +274,10 @@ class TestMaxPoolGradient(unittest.TestCase):
         n_pooled = mat_pooled.shape[2]        
         
         df_input = np.zeros_like(mat)
-        # import pudb; pudb.set_trace()
         for n in range(n_filters):
             for i in range(n_pooled):
                 df_input[height*[n], range(height), argmax[:, n, i]] = df_output[:, n, i]
         
-        # for n in range(mat.shape[0]):
-        #     for i in range(pool_size*mat_pooled.shape[2]):
-        #         if not i % pool_size:
-        #             o = df_output[:,n, i/pool_size]
-        #             p = mat_pooled[:,n, i/pool_size]
-        #         df_input[n,mat[n,:,i]==p, i] = o[mat[n,:,i]==p]
         return df_input
 
     def max_pool_grad_test(self, height, width, n_filters, pool_size):
@@ -288,6 +329,21 @@ class TestConvNet(unittest.TestCase):
             test_error = np.min([optimizer.best_test_loss, test_error])
 
         self.assertEqual(test_error, 0.)
+
+class TestConvolutionGradient(unittest.TestCase):
+    EPSILON = 1e-3
+    TOL = 1e-4
+    
+    def test_convolution_gradient(self):
+        for i in range(20):
+            n_in = 400
+            filter_width = 32
+            n_filters = 20
+            conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters, 
+                                                  dtype=np.float64)
+            x = curand((100, n_in), dtype=np.float64)
+            loss = checkgrad_model(conv_layer, x, epsilon=self.EPSILON)
+            self.assertLess(loss, self.TOL)
             
 if __name__ == '__main__':
     unittest.main()
