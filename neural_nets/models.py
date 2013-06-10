@@ -6,10 +6,10 @@ from pycuda import cumath
 from math import sqrt
 from scikits.cuda import linalg
 from .pycuda_ops import eps
-from .pycuda_ops.elementwise import sigmoid_kernel, df_sigmoid, \
-     tanh_kernel, df_tanh, relu_kernel, df_relu, \
+from .pycuda_ops.elementwise import sigmoid, df_sigmoid, \
+     tanh, df_tanh, relu, df_relu, \
      sample_dropout_mask, apply_dropout_mask, sign, \
-     nan_to_zeros_kernel
+     nan_to_zeros
 from .pycuda_ops.matrix import add_vec_to_mat
 from .pycuda_ops.reductions import matrix_sum_out_axis
 from .pycuda_ops.softmax import softmax, cross_entropy
@@ -66,13 +66,13 @@ class HiddenLayer(object):
 
     def _set_activation_fct(self, activation_function):
         if activation_function == 'sigmoid':
-            self.f = sigmoid_kernel
+            self.f = sigmoid
             self.df = df_sigmoid
         elif activation_function == 'tanh':
-            self.f = tanh_kernel
+            self.f = tanh
             self.df = df_tanh
         elif activation_function == 'relu':
-            self.f = relu_kernel
+            self.f = relu
             self.df = df_relu
         else:
             raise ValueError
@@ -249,7 +249,7 @@ class LogisticLayer(TopLayer):
             activations = self.feed_forward(input, prediction=False)
 
         delta = activations - targets
-        nan_to_zeros_kernel(delta, delta)
+        nan_to_zeros(delta, delta)
         
         df_W = linalg.dot(input, delta, transa='T')    # Gradient wrt weights
         df_b = matrix_sum_out_axis(delta, 0)               # Gradient wrt bias
@@ -324,7 +324,7 @@ class LogisticLayer(TopLayer):
               self.feed_forward(input, prediction=prediction)
 
         targets_non_nan = gpuarray.empty_like(targets)
-        nan_to_zeros_kernel(targets, targets_non_nan)
+        nan_to_zeros(targets, targets_non_nan)
         kl_error = gpuarray.sum(targets_non_nan * 
                                 (cumath.log(targets_non_nan + eps) -
                                  cumath.log(activations + eps)))
@@ -606,6 +606,7 @@ class MultitaskTopLayer(TopLayer):
         self.l2_penalty_weight = l2_penalty_weight
 
         self.n_parameters = sum(task.n_parameters for task in self.tasks)
+        self.lr_multiplier = [lr for task in self.tasks for lr in task.lr_multiplier]
 
     @property
     def parameters(self):
