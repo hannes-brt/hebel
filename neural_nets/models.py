@@ -16,34 +16,44 @@ from .pycuda_ops.softmax import softmax, cross_entropy
 
 class HiddenLayer(object):
     n_parameters = 2
+    W = None
+    b = None
     
     def __init__(self, n_in, n_units, 
                  activation_function='sigmoid',
                  dropout=False,
                  W = None, b = None,
+                 parameters=None,
+                 weights_scale=None,
+                 lr_multiplier=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.):
 
         self._set_activation_fct(activation_function)
-        self._set_weights_scale(activation_function, n_in, n_units)
-        if W is None:
+
+        if weights_scale is None:
+            self._set_weights_scale(activation_function, n_in, n_units)
+        else:
+            self.weights_scale = weights_scale
+
+        if parameters is not None:
+            if isinstance(parameters, basestring):
+                self.parameters = cPickle.loads(open(parameters, 'b'))
+            else:
+                self.W, self.b = parameters
+        else:
             self.W = self.weights_scale * curand((n_in, n_units), dtype=np.float32) \
               - .5 * self.weights_scale
-        else:
-            self.W = W
-        assert self.W.shape == (n_in, n_units)
 
-        if b is None:
             self.b = gpuarray.zeros((n_units,), dtype=np.float32)
-        else:
-            self.b
+
+        assert self.W.shape == (n_in, n_units)
         assert self.b.shape == (n_units,)
             
         self.n_in = n_in
         self.n_units = n_units
 
-        self.lr_multiplier = 2 * [1. / np.sqrt(self.n_in, dtype=np.float32)]
-
-        self.dropout = dropout
+        self.lr_multiplier = lr_multiplier if lr_multiplier is not None else \
+            2 * [1. / np.sqrt(self.n_in, dtype=np.float32)]
 
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
@@ -339,7 +349,8 @@ class NeuralNet(object):
     TopLayerClass = LogisticLayer
 
     def __init__(self, n_in, n_out, layers, activation_function='sigmoid', 
-                 dropout=False, l1_penalty_weight=0., l2_penalty_weight=0.,
+                  dropout=False, top_layer=None,
+                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  **kwargs):
         self.layers = layers
         self.n_layers = len(layers)
@@ -394,10 +405,14 @@ class NeuralNet(object):
         n_in_top_layer = self.n_units_hidden[-1] if self.n_units_hidden else n_in
 
         assert issubclass(self.TopLayerClass, TopLayer)
-        self.top_layer = self.TopLayerClass(n_in_top_layer, n_out, 
-                                            l1_penalty_weight=self.l1_penalty_weight_output,
-                                            l2_penalty_weight=self.l2_penalty_weight_output,
-                                            **kwargs)
+
+        if top_layer is None:
+            self.top_layer = self.TopLayerClass(n_in_top_layer, n_out, 
+                                                l1_penalty_weight=self.l1_penalty_weight_output,
+                                                l2_penalty_weight=self.l2_penalty_weight_output,
+                                                **kwargs)
+        else:
+            self.top_layer = top_layer
 
         self.n_in = n_in
         self.n_out = n_out
@@ -410,6 +425,14 @@ class NeuralNet(object):
 
         self.lr_multiplier = [lr for hl in self.hidden_layers + [self.top_layer]
                               for lr in hl.lr_multiplier]
+
+    @classmethod
+    def from_layers(cls, hidden_layers, top_layer):
+        n_in = hidden_layers[0].n_in
+        n_out = top_layer.n_out
+        return cls(n_in, n_out, 
+                   layers=hidden_layers,
+                   top_layer=top_layer)
 
     @property
     def parameters(self):
@@ -712,29 +735,6 @@ class MultitaskTopLayer(TopLayer):
 class MultitaskNeuralNet(NeuralNet):
     TopLayerClass = MultitaskTopLayer
     
-    # def getParameters(self):
-    #     # Gather the parameters
-    #     parameters = []
-    #     for hl in self.hidden_layers:
-    #         parameters.extend([hl.W, hl.b])
-    #     parameters.extend(self.top_layer.parameters)
-    #     return parameters
-
-    # def setParameters(self, value):
-    #     num_parameters = 2 * (len(self.hidden_layers) + self.top_layer.n_tasks)
-    #     if len(value) != num_parameters:
-    #         raise ValueError("Incorrect length of parameter vector. Model has %d parameters, but got %d" %
-    #                          (num_parameters, len(value)))
-        
-    #     for i in range(len(self.hidden_layers)):
-    #         self.hidden_layers[i].W = value[2*i]
-    #         self.hidden_layers[i].b = value[2*i+1]
-
-    #     self.top_layer.parameters = value[2*len(self.hidden_layers):]
-
-    # parameters = property(getParameters, setParameters)
-
-
 ################################################################################
 ### Logistic Regression Class
 ###
