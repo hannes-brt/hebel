@@ -1,6 +1,7 @@
 import numpy as np
 from itertools import izip
 from pycuda import gpuarray
+from pycuda.gpuarray import GPUArray
 from pycuda.curandom import rand as curand
 from pycuda import cumath
 from math import sqrt
@@ -58,13 +59,17 @@ class HiddenLayer(object):
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
+        self.dropout = dropout
+
     @property
     def parameters(self):
         return (self.W, self.b)
 
     @parameters.setter
     def parameters(self, value):
-        self.W, self.b = value
+        for param, val in izip((self.W, self.b), value):
+            param = val if isinstance(val, GPUArray) else \
+              gpuarray.to_gpu(val)
 
     def update_parameters(self, values, stream=None):
         assert len(values) == self.n_parameters
@@ -197,6 +202,8 @@ class LogisticLayer(TopLayer):
     n_parameters = 2
     
     def __init__(self, n_in, n_out, 
+                 parameters=None,
+                 weights_scale=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  test_error_fct='class_error'):
         """ Inputs:
@@ -207,9 +214,20 @@ class LogisticLayer(TopLayer):
         """
 
         # Initialize weight using Bengio's rule
-        weights_scale = 4 * sqrt(6. / (n_in + n_out))
-        self.W = weights_scale * curand((n_in, n_out), dtype=np.float32) - .5 * weights_scale
-        self.b = gpuarray.zeros((n_out,), np.float32)
+        self.weights_scale = 4 * sqrt(6. / (n_in + n_out)) if weights_scale is None \
+          else weights_scale
+
+        if parameters is not None:
+            if isinstance(parameters, basestring):
+                self.parameters = cPickle.loads(open(parameters, 'b'))
+            else:
+                self.W, self.b = parameters
+        else:
+            self.W = self.weights_scale * curand((n_in, n_out), dtype=np.float32) \
+              - .5 * self.weights_scale
+
+            self.b = gpuarray.zeros((n_out,), dtype=np.float32)
+
         self.n_in = n_in
         self.n_out = n_out
 
@@ -411,7 +429,7 @@ class NeuralNet(object):
         else:
             self.top_layer = top_layer
 
-        self.n_in = self.hidden_layer.n_in[0]
+        self.n_in = self.hidden_layers[0].n_in
         self.n_out = self.top_layer.n_out
 
         self.n_parameters = sum(hl.n_parameters for hl in self.hidden_layers) + \

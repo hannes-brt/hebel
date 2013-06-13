@@ -152,7 +152,7 @@ class MNISTDataProvider(DataProvider):
     N_test = mnist_data.arrays['test_images'].shape[0]
     D = d**2
 
-    def __init__(self, batch_size, array):
+    def __init__(self, array, batch_size=None):
         if array == 'train_images':
             self.data = gpuarray.to_gpu(self.mnist_data.arrays['train_images']
                                    .reshape((self.N_train, self.D))
@@ -178,7 +178,7 @@ class MNISTDataProvider(DataProvider):
         else:
             raise ValueError
 
-        self.batch_size = batch_size
+        self.batch_size = batch_size if batch_size is not None else self.N
         self.i = 0
 
     def __getitem__(self, batch_idx):
