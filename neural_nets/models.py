@@ -348,11 +348,10 @@ class NeuralNet(object):
 
     TopLayerClass = LogisticLayer
 
-    def __init__(self, n_in, n_out, layers, activation_function='sigmoid', 
-                  dropout=False, top_layer=None,
+    def __init__(self, layers, top_layer, activation_function='sigmoid', 
+                  dropout=False,
                   l1_penalty_weight=0., l2_penalty_weight=0.,
                  **kwargs):
-        self.layers = layers
         self.n_layers = len(layers)
 
         if l1_penalty_weight is not None and \
@@ -401,12 +400,10 @@ class NeuralNet(object):
                                 l2_penalty_weight=self.l2_penalty_weight_hidden[i]))
                 
         self.n_units_hidden = [hl.n_units for hl in self.hidden_layers]
-        
-        n_in_top_layer = self.n_units_hidden[-1] if self.n_units_hidden else n_in
-
-        assert issubclass(self.TopLayerClass, TopLayer)
 
         if top_layer is None:
+            assert issubclass(self.TopLayerClass, TopLayer)
+            n_in_top_layer = self.n_units_hidden[-1] if self.n_units_hidden else n_in
             self.top_layer = self.TopLayerClass(n_in_top_layer, n_out, 
                                                 l1_penalty_weight=self.l1_penalty_weight_output,
                                                 l2_penalty_weight=self.l2_penalty_weight_output,
@@ -414,25 +411,14 @@ class NeuralNet(object):
         else:
             self.top_layer = top_layer
 
-        self.n_in = n_in
-        self.n_out = n_out
-        self.dropout=dropout
-        if kwargs.has_key('test_error_fct'):
-            self.test_error_fct_name = kwargs['test_error_fct']
-        self.activation_function = activation_function
+        self.n_in = self.hidden_layer.n_in[0]
+        self.n_out = self.top_layer.n_out
+
         self.n_parameters = sum(hl.n_parameters for hl in self.hidden_layers) + \
           self.top_layer.n_parameters
 
         self.lr_multiplier = [lr for hl in self.hidden_layers + [self.top_layer]
                               for lr in hl.lr_multiplier]
-
-    @classmethod
-    def from_layers(cls, hidden_layers, top_layer):
-        n_in = hidden_layers[0].n_in
-        n_out = top_layer.n_out
-        return cls(n_in, n_out, 
-                   layers=hidden_layers,
-                   top_layer=top_layer)
 
     @property
     def parameters(self):
