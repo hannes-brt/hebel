@@ -2,66 +2,56 @@ import numpy as np
 from pycuda import gpuarray
 from pycuda.elementwise import ElementwiseKernel, get_elwise_kernel
 from pycuda.curandom import md5_code
-from . import _kernel_idx
 
-sign_kernel = [ElementwiseKernel(
-    "%(dtype)s *mat, %(dtype)s *target" % {'dtype': dtype},
+sign_kernel = ElementwiseKernel(
+    "float *mat, float *target",
     "target[i] = (mat[i] > 0.) - (mat[i] < 0);",
-    "sign") for dtype in ('float', 'double')]
+    "sign")
 
 def sign(x):
     target = gpuarray.GPUArray(x.shape, dtype=x.dtype)
-    sign_kernel[_kernel_idx(x.dtype)](x, target)
+    sign_kernel(x, target)
     return target
 
-sigmoid_kernel = [ElementwiseKernel(
-        "%(dtype)s *mat" % {'dtype': dtype},
+sigmoid_kernel = ElementwiseKernel(
+        "float *mat",
         "mat[i] = 1. / (1. + __expf(-mat[i]))",
-        "sigmoid") for dtype in ('float', 'double')]
-
-def sigmoid(x):
-    sigmoid_kernel[_kernel_idx(x.dtype)](x)
+        "sigmoid")
 
 def df_sigmoid(f):
     df = f * (1 - f)
     return df
 
-tanh_kernel = [ElementwiseKernel(
-    "%(dtype)s *mat" % {'dtype': dtype},
+tanh_kernel = ElementwiseKernel(
+    "float *mat",
     "mat[i] = tanhf(mat[i]);",
-    "tanh_inplace") for dtype in ('float', 'double')]
-
-def tanh(x):
-    tanh_kernel[_kernel_idx(x.dtype)](x)
+    "tanh_inplace")
 
 def df_tanh(f):
     df = 1 - f**2.
     return df
 
-relu_kernel = [ElementwiseKernel(
-    "%(dtype)s *mat" % {'dtype': dtype},
+relu_kernel = ElementwiseKernel(
+    "float *mat",
     "if (mat[i] < 0.) mat[i] = 0.",
-    "relu") for dtype in ('float', 'double')]
+    "relu")
 
-def relu(x):
-    relu_kernel[_kernel_idx(x.dtype)](x)
-
-df_relu_kernel = [ElementwiseKernel(
-    "%(dtype)s *mat, %(dtype)s *target" % {'dtype': dtype},
+df_relu_kernel = ElementwiseKernel(
+    "float *mat, float *target",
     """if (mat[i] <= 0.) 
          target[i] = 0.;
        else
          target[i] = 1.;
     """,
-    "df_relu") for dtype in ('float', 'double')]
+    "df_relu")
 
 def df_relu(x):
     df = gpuarray.empty_like(x)
-    df_relu_kernel[_kernel_idx(x.dtype)](x, df)
+    df_relu_kernel(x, df)
     return df
 
-sample_dropout_mask_kernel = [get_elwise_kernel(
-    "%(dtype)s *mat, %(dtype)s *dest, unsigned int seed" % {'dtype': dtype},
+sample_dropout_mask_kernel = get_elwise_kernel(
+    "float *mat, float *dest, unsigned int seed",
     md5_code + """
     #define POW_2_M32 (1/4294967296.0f)
 
@@ -81,7 +71,7 @@ sample_dropout_mask_kernel = [get_elwise_kernel(
          dest[i] = 1.;
     }
     """,
-    "sample_dropout_mask") for dtype in ('float', 'double')]
+    "sample_dropout_mask")
 
 def sample_dropout_mask(x, stream=None):
     """ Samples a dropout mask and applies it in place"""
@@ -89,29 +79,23 @@ def sample_dropout_mask(x, stream=None):
     shape = x.shape
     result = gpuarray.GPUArray(shape, np.float32)
 
-    sample_dropout_mask_kernel[_kernel_idx(x.dtype)]\
-      .prepared_async_call(
-          result._grid, result._block, stream,
-          x. gpudata, result.gpudata, np.random.randint(2**31-1), result.size)
+    sample_dropout_mask_kernel.prepared_async_call(
+        result._grid, result._block, stream,
+        x. gpudata, result.gpudata, np.random.randint(2**31-1), result.size)
     return result
 
-apply_dropout_mask_kernel = [get_elwise_kernel(
-    "%(dtype)s *mat, %(dtype)s *mask" % {'dtype': dtype},
+apply_dropout_mask_kernel = get_elwise_kernel(
+    "float *mat, float *mask",
     "if (mask[i] == 0.) mat[i] = 0;",
-    "apply_dropout_mask") for dtype in ('float', 'double')]
+    "apply_dropout_mask")
 
 def apply_dropout_mask(x, mask, stream=None):
     assert x.shape == mask.shape
     shape = x.shape
 
-    apply_dropout_mask_kernel[_kernel_idx(x.dtype)]\
-      .prepared_async_call(x._grid, x._block, stream,
-                           x.gpudata, mask.gpudata, x.size)
+    apply_dropout_mask_kernel.prepared_async_call(x._grid, x._block, stream,
+        x.gpudata, mask.gpudata, x.size)
 
-nan_to_zeros_kernel = [ElementwiseKernel(
-    "%(dtype)s *mat, %(dtype)s *target" % {'dtype': dtype},
+nan_to_zeros_kernel = ElementwiseKernel("float *mat, float *target",
     "target[i] = isnan(mat[i]) ? 0. : mat[i];",
-    "nan_to_zeros_kernel") for dtype in ('float', 'double')]
-
-def nan_to_zeros(x, target):
-    nan_to_zeros_kernel[_kernel_idx(x.dtype)](x, target)
+    "nan_to_zeros_kernel")

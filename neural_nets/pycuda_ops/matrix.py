@@ -1,11 +1,9 @@
 import numpy as np
 from pycuda import gpuarray
 from pycuda.compiler import SourceModule
-from . import _kernel_idx
 
 code = """
-__global__ void addRowVecToMat(%(data_type)s *mat, %(data_type)s *vec, 
-                               %(data_type)s *target, int32_t n, int32_t m)
+__global__ void addRowVecToMat(float *mat, float *vec, float *target, int32_t n, int32_t m)
 {
   int tx = blockIdx.x * blockDim.x + threadIdx.x;
   int ty = blockIdx.y * blockDim.y + threadIdx.y;
@@ -16,8 +14,7 @@ __global__ void addRowVecToMat(%(data_type)s *mat, %(data_type)s *vec,
   }
 }
 
-__global__ void addColVecToMat(%(data_type)s *mat, %(data_type)s *vec, 
-                               %(data_type)s *target, int32_t n, int32_t m)
+__global__ void addColVecToMat(float *mat, float *vec, float *target, int32_t n, int32_t m)
 {
   int tx = blockIdx.x * blockDim.x + threadIdx.x;
   int ty = blockIdx.y * blockDim.y + threadIdx.y;
@@ -28,12 +25,12 @@ __global__ void addColVecToMat(%(data_type)s *mat, %(data_type)s *vec,
   }
 }
 
-__global__ void kVectorNormalize(%(data_type)s* mat, %(data_type)s max_vec_norm, 
+__global__ void kVectorNormalize(float* mat, float max_vec_norm, 
     unsigned int width, unsigned int height) {
     
-    __shared__ %(data_type)s sum_shared[32];
-    __shared__ %(data_type)s vec_norm;
-    %(data_type)s sum = 0;
+    __shared__ float sum_shared[32];
+    __shared__ float vec_norm;
+    float sum = 0;
  
     for (unsigned int i = threadIdx.x; i < height; i += 32)
         sum += powf(mat[blockIdx.x + i * width], 2);
@@ -59,10 +56,10 @@ __global__ void kVectorNormalize(%(data_type)s* mat, %(data_type)s max_vec_norm,
 }
 """
 
-mod = [SourceModule(code % {'data_type': dtype}) for dtype in ('float', 'double')]
-add_row_vec_kernel = [m.get_function('addRowVecToMat') for m in mod]
-add_col_vec_kernel = [m.get_function('addColVecToMat') for m in mod]
-vector_normalize_kernel = [m.get_function("kVectorNormalize") for m in mod]
+mod = SourceModule(code)
+add_row_vec_kernel = mod.get_function('addRowVecToMat')
+add_col_vec_kernel = mod.get_function('addColVecToMat')
+vector_normalize_kernel = mod.get_function("kVectorNormalize")
 
 def add_vec_to_mat(mat, vec, axis=None, inplace=False):
     """ Add a vector to a matrix
@@ -90,14 +87,12 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False):
     
     if axis == 0:
         assert vec.shape[0] == mat.shape[0]
-        add_col_vec_kernel[_kernel_idx(mat.dtype)](
-            mat, vec, target, np.uint32(n), np.uint32(m),
-            block=block, grid=grid)
+        add_col_vec_kernel(mat, vec, target, np.uint32(n), np.uint32(m),
+                           block=block, grid=grid)
     elif axis == 1:
         assert vec.shape[0] == mat.shape[1]
-        add_row_vec_kernel[_kernel_idx(mat.dtype)](
-            mat, vec, target, np.uint32(n), np.uint32(m),
-            block=block, grid=grid)
+        add_row_vec_kernel(mat, vec, target, np.uint32(n), np.uint32(m),
+                           block=block, grid=grid)
     return target
 
 def vector_normalize(mat, max_vec_norm=1.):
@@ -105,7 +100,6 @@ def vector_normalize(mat, max_vec_norm=1.):
     max_vec_norm
     """
     n,m = mat.shape
-    max_vec_norm = np.asscalar(max_vec_norm).astype(mat.dtype)
-    vector_normalize_kernel[_kernel_idx(mat.dtype)](
-        mat, max_vec_norm, 
-        np.uint32(m), np.uint32(n), block=(32,1,1), grid=(m,1,1))
+    
+    vector_normalize_kernel(mat, np.float32(max_vec_norm), 
+                            np.int32(m), np.int32(n), block=(32,1,1), grid=(m,1,1))

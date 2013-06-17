@@ -1,5 +1,5 @@
 import numpy as np
-import time, datetime, operator
+import time, datetime, operator, cPickle
 from .pycuda_ops import eps
 from .pycuda_ops.matrix import vector_normalize
 from itertools import izip
@@ -12,16 +12,35 @@ class ProgressMonitor(object):
         self.model = model
         self.train_error = []
         self.test_error = []
+        self.avg_epoch_t = None
+
+    def start_training(self):
+        self.start_time = time.clock()
+
+    def finish_training(self, save_model_path=None):
+        end_time = time.clock()
+        self.train_time = (end_time - self.start_time) / 60.
+        print "Runtime: %.2fm" % self.train_time
+        print "Avg. time per epoch %.2fs" % self.avg_epoch_t
+
+        if save_model_path is not None:
+            print "Saving model to %s" % save_model_path
+            cPickle.dump(self.model, open(save_model_path, 'wb'))
 
     def report(self, epoch, train_error, test_error=None):
         raise NotImplementedError
 
 class SimpleProgressMonitor(ProgressMonitor):
-    def report(self, epoch, train_error, test_error=None):
+    def report(self, epoch, train_error, test_error=None, epoch_t=None):
         self.train_error.append((epoch, train_error))
         if test_error is not None:
             self.test_error.append(test_error)
         self.print_error(epoch, train_error, test_error)
+
+        if epoch_t is not None:
+            self.avg_epoch_t = ((epoch - 1) * \
+                                self.avg_epoch_t + epoch_t) / epoch \
+                                if self.avg_epoch_t is not None else epoch_t
 
     def print_error(self, epoch, train_error, test_error=None):
         if test_error is not None:
@@ -107,12 +126,11 @@ class SGD(object):
         self.early_stopping_module = EarlyStoppingModule(self.model)
 
     def run(self, iter=200, test_interval=5, 
-            early_stopping=True):
+            early_stopping=True, save_model_path=None):
         # Initialize variables
         self.epoch = 0
         done_looping = False
-        start_time = time.clock()
-        self.avg_epoch_t = None           # Average time for one epoch
+        self.progress_monitor.start_training()
 
         # Main loop
         for self.epoch in range(self.epoch, self.epoch + iter):
@@ -151,29 +169,22 @@ class SGD(object):
 
                     if self.early_stopping_module is not None:
                         self.early_stopping_module.update(self.epoch, test_loss_rate)
-                                        
-                    self.progress_monitor.report(self.epoch, train_loss, test_loss_rate)
 
+                    epoch_t = time.time() - t
+                    self.progress_monitor.report(self.epoch, train_loss, test_loss_rate,
+                                                 epoch_t=epoch_t)
                 else:
-                    self.progress_monitor.report(self.epoch, train_loss)
+                    epoch_t = time.time() - t
+                    self.progress_monitor.report(self.epoch, train_loss, epoch_t=epoch_t)
 
-                epoch_t = time.time() - t
-                self.avg_epoch_t = ((self.epoch - 1) * self.avg_epoch_t + epoch_t) / self.epoch \
-                  if self.avg_epoch_t is not None else epoch_t
-                  
             except KeyboardInterrupt:
                 print "Keyboard interrupt. Stopping training and cleaning up."
                 done_looping=True
 
-        end_time = time.clock() 
-        self.train_time = end_time - start_time / 60.
-        
         if self.early_stopping_module is not None:
             self.early_stopping_module.finish()
 
-        print "Runtime: %.2fm" % self.train_time
-        print "Avg. time per epoch %.2fs" % self.avg_epoch_t
-        self.time = datetime.datetime.now()
+        self.progress_monitor.finish_training(save_model_path)
 
     def norm_v_norm(self):
         if self.max_vec_norm:

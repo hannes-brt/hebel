@@ -7,10 +7,10 @@ from pycuda import cumath
 from math import sqrt
 from scikits.cuda import linalg
 from .pycuda_ops import eps
-from .pycuda_ops.elementwise import sigmoid, df_sigmoid, \
-     tanh, df_tanh, relu, df_relu, \
+from .pycuda_ops.elementwise import sigmoid_kernel, df_sigmoid, \
+     tanh_kernel, df_tanh, relu_kernel, df_relu, \
      sample_dropout_mask, apply_dropout_mask, sign, \
-     nan_to_zeros
+     nan_to_zeros_kernel
 from .pycuda_ops.matrix import add_vec_to_mat
 from .pycuda_ops.reductions import matrix_sum_out_axis
 from .pycuda_ops.softmax import softmax, cross_entropy
@@ -81,13 +81,13 @@ class HiddenLayer(object):
 
     def _set_activation_fct(self, activation_function):
         if activation_function == 'sigmoid':
-            self.f = sigmoid
+            self.f = sigmoid_kernel
             self.df = df_sigmoid
         elif activation_function == 'tanh':
-            self.f = tanh
+            self.f = tanh_kernel
             self.df = df_tanh
         elif activation_function == 'relu':
-            self.f = relu
+            self.f = relu_kernel
             self.df = df_relu
         else:
             raise ValueError
@@ -277,7 +277,7 @@ class LogisticLayer(TopLayer):
             activations = self.feed_forward(input, prediction=False)
 
         delta = activations - targets
-        nan_to_zeros(delta, delta)
+        nan_to_zeros_kernel(delta, delta)
         
         df_W = linalg.dot(input, delta, transa='T')    # Gradient wrt weights
         df_b = matrix_sum_out_axis(delta, 0)               # Gradient wrt bias
@@ -366,9 +366,9 @@ class NeuralNet(object):
 
     TopLayerClass = LogisticLayer
 
-    def __init__(self, layers, top_layer, activation_function='sigmoid', 
-                  dropout=False,
-                  l1_penalty_weight=0., l2_penalty_weight=0.,
+    def __init__(self, layers, top_layer=None, activation_function='sigmoid', 
+                 dropout=False, n_in=None, n_out=None,
+                 l1_penalty_weight=0., l2_penalty_weight=0.,
                  **kwargs):
         self.n_layers = len(layers)
 
