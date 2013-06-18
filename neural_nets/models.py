@@ -1,5 +1,6 @@
 import numpy as np
 from itertools import izip
+from hashlib import md5
 from pycuda import gpuarray
 from pycuda.gpuarray import GPUArray
 from pycuda.curandom import rand as curand
@@ -7,10 +8,10 @@ from pycuda import cumath
 from math import sqrt
 from scikits.cuda import linalg
 from .pycuda_ops import eps
-from .pycuda_ops.elementwise import sigmoid_kernel, df_sigmoid, \
-     tanh_kernel, df_tanh, relu_kernel, df_relu, \
+from .pycuda_ops.elementwise import sigmoid, df_sigmoid, \
+     tanh, df_tanh, relu, df_relu, \
      sample_dropout_mask, apply_dropout_mask, sign, \
-     nan_to_zeros_kernel
+     nan_to_zeros
 from .pycuda_ops.matrix import add_vec_to_mat
 from .pycuda_ops.reductions import matrix_sum_out_axis
 from .pycuda_ops.softmax import softmax, cross_entropy
@@ -79,15 +80,22 @@ class HiddenLayer(object):
             param._axpbyz(1., gparam, mult, param, 
                           stream=stream)
 
+    @property
+    def architecture(self):
+        return {'class': self.__class__,
+                'n_in': self.n_in, 
+                'n_units': self.n_units, 
+                'activation_function': self.activation_function}
+
     def _set_activation_fct(self, activation_function):
         if activation_function == 'sigmoid':
-            self.f = sigmoid_kernel
+            self.f = sigmoid
             self.df = df_sigmoid
         elif activation_function == 'tanh':
-            self.f = tanh_kernel
+            self.f = tanh
             self.df = df_tanh
         elif activation_function == 'relu':
-            self.f = relu_kernel
+            self.f = relu
             self.df = df_relu
         else:
             raise ValueError
@@ -238,6 +246,12 @@ class LogisticLayer(TopLayer):
 
         self.lr_multiplier = 2 * [1. / np.sqrt(n_in, dtype=np.float32)]
 
+    @property
+    def architecture(self):
+        return {'class': self.__class__,
+                'n_in': self.n_in, 
+                'n_out': self.n_out}
+
     def feed_forward(self, input, prediction=False):
         """ Propagate forward through the layer
 
@@ -277,7 +291,7 @@ class LogisticLayer(TopLayer):
             activations = self.feed_forward(input, prediction=False)
 
         delta = activations - targets
-        nan_to_zeros_kernel(delta, delta)
+        nan_to_zeros(delta, delta)
         
         df_W = linalg.dot(input, delta, transa='T')    # Gradient wrt weights
         df_b = matrix_sum_out_axis(delta, 0)               # Gradient wrt bias
@@ -470,6 +484,14 @@ class NeuralNet(object):
 
         self.top_layer.update_parameters(value[-self.top_layer.n_parameters:])
 
+    @property
+    def checksum(self):
+        m = md5()
+        for hl in self.hidden_layers:
+            m.update(str(hl.architecture))
+        m.update(str(self.top_layer.architecture))
+        return m.hexdigest()
+
     def evaluate(self, input, targets, return_cache=False, prediction=True):
         """ Evaluate the loss function without computing gradients
         """
@@ -657,6 +679,10 @@ class MultitaskTopLayer(TopLayer):
         for task in self.tasks:
             task.update_parameters(value[i:i+task.n_parameters])
             i += task.n_parameters
+
+    @property
+    def architecture(self):
+        return [task.architecture for task in self.tasks]
 
     @property
     def l1_penalty(self):

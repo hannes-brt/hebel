@@ -18,6 +18,9 @@ sigmoid_kernel = ElementwiseKernel(
         "mat[i] = 1. / (1. + __expf(-mat[i]))",
         "sigmoid")
 
+def sigmoid(x):
+    sigmoid_kernel(x)
+
 def df_sigmoid(f):
     df = f * (1 - f)
     return df
@@ -27,6 +30,9 @@ tanh_kernel = ElementwiseKernel(
     "mat[i] = tanhf(mat[i]);",
     "tanh_inplace")
 
+def tanh(x):
+    tanh_kernel(x)
+
 def df_tanh(f):
     df = 1 - f**2.
     return df
@@ -35,6 +41,9 @@ relu_kernel = ElementwiseKernel(
     "float *mat",
     "if (mat[i] < 0.) mat[i] = 0.",
     "relu")
+
+def relu(x):
+    relu_kernel(x)
 
 df_relu_kernel = ElementwiseKernel(
     "float *mat, float *target",
@@ -99,3 +108,9 @@ def apply_dropout_mask(x, mask, stream=None):
 nan_to_zeros_kernel = ElementwiseKernel("float *mat, float *target",
     "target[i] = isnan(mat[i]) ? 0. : mat[i];",
     "nan_to_zeros_kernel")
+
+def nan_to_zeros(x, target=None):
+    if target is None:
+        target = gpuarray.empty_like(x)
+    nan_to_zeros_kernel(x, target)
+    return target
