@@ -1,0 +1,66 @@
+run_conf:
+  iter: 500
+optimizer: !obj:neural_nets.optimizers.SGD {
+  model: !obj:neural_nets.models.NeuralNet {
+    layers: [
+      !obj:neural_nets.models.HiddenLayer {
+        n_in: 784,
+        n_units: 2000,
+        dropout: yes,
+        l2_penalty_weight: .0
+      },
+      !obj:neural_nets.models.HiddenLayer {
+        n_in: 2000,
+        n_units: 2000,
+        dropout: yes,
+        l2_penalty_weight: .0
+      },
+      !obj:neural_nets.models.HiddenLayer {
+        n_in: 2000,
+        n_units: 500,
+        dropout: yes,
+        l2_penalty_weight: .0
+      },
+      !obj:neural_nets.models.HiddenLayer {
+        n_in: 500,
+        n_units: 500,
+        dropout: yes,
+        l2_penalty_weight: .0
+      }    
+    ],
+    top_layer: !obj:neural_nets.models.LogisticLayer {
+      n_in: 500,
+      n_out: 10     
+    }
+  },
+  parameter_updater: !import neural_nets.parameter_updaters.MomentumUpdate,
+  train_data: !obj:neural_nets.data_providers.MNISTDataProvider {
+    batch_size: 100,
+    array: train_images
+  },
+  test_data: !obj:neural_nets.data_providers.MNISTDataProvider {
+    array: test_images
+  },
+  train_targets: !obj:neural_nets.data_providers.MNISTDataProvider {
+    batch_size: 100,
+    array: train_labels
+  },
+  test_targets: !obj:neural_nets.data_providers.MNISTDataProvider {
+    array: test_labels
+  },
+  learning_rate_schedule: !obj:neural_nets.schedulers.exponential_scheduler {
+    init_value: 30., decay: .995
+  },
+  momentum_schedule: !obj:neural_nets.schedulers.linear_scheduler_up {
+    init_value: .5, target_value: .9, duration: 10
+  },
+  progress_monitors: [
+    !import neural_nets.monitors.SimpleProgressMonitor,
+    !obj:neural_nets.monitors.ModelSaver {
+      experiment_name: mnist,
+      save_model_path: examples/mnist,
+      save_interval: 10
+    }
+  ] 
+}
+
