@@ -144,33 +144,45 @@ class DummyDataProvider(DataProvider):
         return None
 
 class MNISTDataProvider(DataProvider):
-    from skdata import mnist
-    mnist_data = mnist.views.MNIST()
-    _ = mnist_data.build_meta()
+    from skdata.mnist.views import OfficialVectorClassification
+    mnist = OfficialVectorClassification()
 
-    N_train, d = mnist_data.arrays['train_images'].shape[:2]
-    N_test = mnist_data.arrays['test_images'].shape[0]
-    D = d**2
+    train_idx = mnist.fit_idxs
+    val_idx = mnist.val_idxs
+    test_idx = mnist.tst_idxs
+
+    N_train = train_idx.shape[0]
+    N_val = val_idx.shape[0]
+    N_test = test_idx.shape[0]
+    D = mnist.all_vectors.shape[1]
 
     def __init__(self, array, batch_size=None):
         if array == 'train_images':
-            self.data = gpuarray.to_gpu(self.mnist_data.arrays['train_images']
-                                   .reshape((self.N_train, self.D))
+            self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.train_idx]
                                    .astype(np.float32) / 255.)
             self.N = self.N_train
+        elif array == 'val_images':
+            self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.val_idx]
+                                   .astype(np.float32) / 255.)
+            self.N = self.N_val
         elif array == 'test_images':
-            self.data = gpuarray.to_gpu(self.mnist_data.arrays['test_images']
-                                   .reshape((self.N_test, self.D))
+            self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.test_idx]
                                    .astype(np.float32) / 255.)
             self.N = self.N_test
         elif array == 'train_labels':
-            targets = self.mnist_data.arrays['train_labels']
+            targets = self.mnist.all_labels[self.train_idx]
             labels_soft = np.zeros((self.N_train, 10), dtype=np.float32)
             labels_soft[range(self.N_train), targets] = 1.
             self.data = gpuarray.to_gpu(labels_soft)
             self.N = self.N_train
+        elif array == 'val_labels':
+            targets = self.mnist.all_labels[self.val_idx]
+            labels_soft = np.zeros((self.N_train, 10), dtype=np.float32)
+            labels_soft[range(self.N_train), targets] = 1.
+            self.data = gpuarray.to_gpu(labels_soft)
+            self.N = self.N_val
         elif array == 'test_labels':
-            targets = self.mnist_data.arrays['test_labels']
+            targets = self.mnist.all_labels[self.test_idx]
             labels_soft = np.zeros((self.N_test, 10), dtype=np.float32)
             labels_soft[range(self.N_test), targets] = 1.
             self.data = gpuarray.to_gpu(labels_soft)

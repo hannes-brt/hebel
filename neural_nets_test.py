@@ -25,8 +25,8 @@ class TestNeuralNetMNIST(unittest.TestCase):
                         self.train_labels, self.test_data, self.test_labels,
                         learning_rate_schedule=exponential_scheduler(1., .99))
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
-                        optimizer.progress_monitor.train_error[0][1])
+        self.assertLess(optimizer.progress_monitors[0].train_error[-1][1], 
+                        optimizer.progress_monitors[0].train_error[0][1])
         del model, optimizer
 
     def test_momentum(self):
@@ -38,8 +38,8 @@ class TestNeuralNetMNIST(unittest.TestCase):
                         learning_rate_schedule=exponential_scheduler(1., .99),
                         momentum_schedule=linear_scheduler_up(.5, .9, 5))
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
-                        optimizer.progress_monitor.train_error[0][1])
+        self.assertLess(optimizer.progress_monitors[0].train_error[-1][1], 
+                        optimizer.progress_monitors[0].train_error[0][1])
         del model, optimizer
 
     def test_nesterov_momentum(self):
@@ -51,8 +51,8 @@ class TestNeuralNetMNIST(unittest.TestCase):
                         learning_rate_schedule=exponential_scheduler(1., .99),
                         momentum_schedule=linear_scheduler_up(.5, .9, 5))
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
-                        optimizer.progress_monitor.train_error[0][1])
+        self.assertLess(optimizer.progress_monitors[0].train_error[-1][1], 
+                        optimizer.progress_monitors[0].train_error[0][1])
         del model, optimizer
 
 if __name__ == '__main__':

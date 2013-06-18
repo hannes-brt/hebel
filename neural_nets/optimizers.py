@@ -1,66 +1,13 @@
 import numpy as np
-import time, datetime, operator, cPickle
+import time, cPickle, os, inspect
+from datetime import datetime
 from .pycuda_ops import eps
 from .pycuda_ops.matrix import vector_normalize
 from itertools import izip
-from data_providers import DataProvider, MiniBatchDataProvider
-from schedulers import constant_scheduler
+from .data_providers import DataProvider, MiniBatchDataProvider
+from .schedulers import constant_scheduler
+from .monitors import SimpleProgressMonitor
 from pycuda import gpuarray, cumath
-
-class ProgressMonitor(object):
-    def __init__(self, model):
-        self.model = model
-        self.train_error = []
-        self.test_error = []
-        self.avg_epoch_t = None
-
-    def start_training(self):
-        self.start_time = time.clock()
-
-    def finish_training(self, save_model_path=None):
-        end_time = time.clock()
-        self.train_time = (end_time - self.start_time) / 60.
-        print "Runtime: %.2fm" % self.train_time
-        print "Avg. time per epoch %.2fs" % self.avg_epoch_t
-
-        if save_model_path is not None:
-            print "Saving model to %s" % save_model_path
-            cPickle.dump(self.model, open(save_model_path, 'wb'))
-
-    def report(self, epoch, train_error, test_error=None):
-        raise NotImplementedError
-
-class SimpleProgressMonitor(ProgressMonitor):
-    def report(self, epoch, train_error, test_error=None, epoch_t=None):
-        self.train_error.append((epoch, train_error))
-        if test_error is not None:
-            self.test_error.append(test_error)
-        self.print_error(epoch, train_error, test_error)
-
-        if epoch_t is not None:
-            self.avg_epoch_t = ((epoch - 1) * \
-                                self.avg_epoch_t + epoch_t) / epoch \
-                                if self.avg_epoch_t is not None else epoch_t
-
-    def print_error(self, epoch, train_error, test_error=None):
-        if test_error is not None:
-            print 'Epoch %d, Test error: %.5g, Train Loss: %.3f' % \
-              (epoch, test_error, train_error)
-        else:
-            print 'Epoch %d, Train Loss: %.3f' % \
-              (epoch, train_error)
-
-    def avg_weight(self):
-        print "\nAvg weights:"
-
-        i = 0
-        for param in self.model.parameters:
-            if len(param.shape) != 2: continue
-            param_cpu = np.abs(param.get())
-            mean_weight = param_cpu.mean()
-            std_weight = param_cpu.std()
-            print 'Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight) 
-            i += 1
 
 class EarlyStoppingModule(object):
     def __init__(self, model):
@@ -86,6 +33,7 @@ class SGD(object):
                  model, parameter_updater, 
                  train_data, train_targets, 
                  test_data=None, test_targets=None,
+                 progress_monitors=None,
                  learning_rate_schedule=constant_scheduler(.1),
                  momentum_schedule=None,
                  batch_size_train=100, batch_size_test=100):
@@ -122,15 +70,29 @@ class SGD(object):
         if momentum_schedule is not None:
             self.learning_parameter_iterators.append(momentum_schedule)
 
-        self.progress_monitor = SimpleProgressMonitor(self.model)
+        if progress_monitors is None:
+            self.progress_monitors = [SimpleProgressMonitor(self.model)]
+        else:
+            self.progress_monitors = progress_monitors
+
+        for i in range(len(self.progress_monitors)):
+            if inspect.isclass(self.progress_monitors[i]):
+                self.progress_monitors[i] = self.progress_monitors[i]()
+            if self.progress_monitors[i].model is None:
+                self.progress_monitors[i].model = model
+            
         self.early_stopping_module = EarlyStoppingModule(self.model)
 
-    def run(self, iter=200, test_interval=5, 
-            early_stopping=True, save_model_path=None):
+    def run(self, iter=200, test_interval=5,
+            early_stopping=True, yaml_config=None):
         # Initialize variables
         self.epoch = 0
         done_looping = False
-        self.progress_monitor.start_training()
+        
+        map(lambda pm: pm.start_training(), self.progress_monitors)
+
+        for pm in self.progress_monitors:
+            pm.yaml_config = yaml_config
 
         # Main loop
         for self.epoch in range(self.epoch, self.epoch + iter):
@@ -171,11 +133,13 @@ class SGD(object):
                         self.early_stopping_module.update(self.epoch, test_loss_rate)
 
                     epoch_t = time.time() - t
-                    self.progress_monitor.report(self.epoch, train_loss, test_loss_rate,
-                                                 epoch_t=epoch_t)
+
+                    map(lambda pm: pm.report(self.epoch, train_loss, test_loss_rate,
+                        epoch_t=epoch_t), self.progress_monitors)
                 else:
-                    epoch_t = time.time() - t
-                    self.progress_monitor.report(self.epoch, train_loss, epoch_t=epoch_t)
+                    epoch_t = time.time() - t                    
+                    map(lambda pm: pm.report(self.epoch, train_loss, epoch_t=epoch_t),
+                        self.progress_monitors)
 
             except KeyboardInterrupt:
                 print "Keyboard interrupt. Stopping training and cleaning up."
@@ -184,7 +148,7 @@ class SGD(object):
         if self.early_stopping_module is not None:
             self.early_stopping_module.finish()
 
-        self.progress_monitor.finish_training(save_model_path)
+        map(lambda pm: pm.finish_training(), self.progress_monitors)
 
     def norm_v_norm(self):
         if self.max_vec_norm:
