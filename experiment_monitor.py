@@ -6,7 +6,7 @@ from time import sleep
 def draw_plot_loop(experiment, loop_delay, 
                    max_epochs=None, log_scale=False):
     plt.ion()
-    fig = plt.figure()
+    fig = plt.figure(figsize=(10, 8))
     ax1 = fig.add_subplot(111)
     if log_scale:
         ax1.set_yscale('log')
@@ -35,6 +35,17 @@ def draw_plot_loop(experiment, loop_delay,
     validation_plot, = ax2.plot(validation_epochs, 
                                 validation_values, 'r')
 
+    min_train = train_values.min()
+    min_train_epoch = train_epochs[train_values == min_train]
+
+    min_validation = validation_values.min()
+    min_validation_epoch = validation_epochs[validation_values == min_validation]
+
+    annot = plt.suptitle('Epoch: %d, Train error: %.3f (min: %.3f @ %d), '
+                         'validation error: %.3f (min: %.3f @ %d)' %
+                         (epochs, train_values[-1], min_train, min_train_epoch,
+                          validation_values[-1], min_validation, min_validation_epoch))
+    
     fig.canvas.draw()
     
     while True:
@@ -59,7 +70,18 @@ def draw_plot_loop(experiment, loop_delay,
                 validation_values = validation_values[validation_epochs >= epochs - max_epochs]
                 
             validation_plot.set_data(validation_epochs, validation_values)
-    
+
+            min_train = train_values.min()
+            min_train_epoch = train_epochs[train_values == min_train]
+
+            min_validation = validation_values.min()
+            min_validation_epoch = validation_epochs[validation_values == min_validation]
+            
+            annot.set_text('Epoch: %d, Train error: %.3f (min: %.3f @ %d), '
+                           'validation error: %.5f (min: %.5f @ %d)' %
+                           (epochs, train_values[-1], min_train, min_train_epoch,
+                            validation_values[-1], min_validation, min_validation_epoch))
+
             ax1.relim()
             ax2.relim()
             ax1.autoscale_view()
