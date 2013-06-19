@@ -178,7 +178,7 @@ class MNISTDataProvider(DataProvider):
         elif array == 'val_labels':
             targets = self.mnist.all_labels[self.val_idx]
             labels_soft = np.zeros((self.N_train, 10), dtype=np.float32)
-            labels_soft[range(self.N_train), targets] = 1.
+            labels_soft[range(self.N_val), targets] = 1.
             self.data = gpuarray.to_gpu(labels_soft)
             self.N = self.N_val
         elif array == 'test_labels':

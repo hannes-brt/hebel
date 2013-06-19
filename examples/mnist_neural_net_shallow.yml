@@ -21,14 +21,14 @@ optimizer: !obj:neural_nets.optimizers.SGD {
     array: train_images
   },
   validation_data: !obj:neural_nets.data_providers.MNISTDataProvider {
-    array: test_images
+    array: val_images
   },
   train_targets: !obj:neural_nets.data_providers.MNISTDataProvider {
     batch_size: 100,
     array: train_labels
   },
   validation_targets: !obj:neural_nets.data_providers.MNISTDataProvider {
-    array: test_labels
+    array: val_labels
   },
   learning_rate_schedule: !obj:neural_nets.schedulers.exponential_scheduler {
     init_value: 30., decay: .995
@@ -44,4 +44,11 @@ optimizer: !obj:neural_nets.optimizers.SGD {
       output_to_log: yes,
       dataset: mnist
     }
-}
+  }
+test_dataset:
+  test_data: !obj:neural_nets.data_providers.MNISTDataProvider {
+    array: test_images
+  }
+  test_targets: !obj:neural_nets.data_providers.MNISTDataProvider {
+    array: test_labels
+  }

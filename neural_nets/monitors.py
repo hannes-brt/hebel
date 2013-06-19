@@ -77,6 +77,15 @@ class ProgressMonitor(object):
             open(os.path.join(self.save_path, 'task_id'), 'w')\
               .write(self.experiment.task_id)
 
+    @property
+    def test_error(self):
+        return self.experiment.test_error
+
+    @test_error.setter
+    def test_error(self, test_error):
+        self.experiment.test_error = test_error
+        self.experiment.save()
+
     def makedir(self):
         experiment_dir_name = '_'.join((
             self.experiment_name,
@@ -152,8 +161,9 @@ class ProgressMonitor(object):
     def finish_training(self):
         # Print logs
         end_time = datetime.now()
-        self.train_time = (end_time - self.start_time).total_seconds()
-        print "Runtime: %dm %ds" % (self.train_time // 60, self.train_time % 60)
+        self.train_time = end_time - self.start_time
+        print "Runtime: %dm %ds" % (self.train_time.total_seconds() // 60, 
+                                    self.train_time.total_seconds() % 60)
         print "Avg. time per epoch %.2fs" % self.avg_epoch_t
 
         # Pickle model
@@ -172,6 +182,7 @@ class ProgressMonitor(object):
         # Save to database
         self.experiment.runtime = self.train_time
         self.experiment.date_finished = end_time
+        self.experiment.save()
 
     
 
