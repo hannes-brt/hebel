@@ -3,6 +3,7 @@ from billiard import current_process
 from neural_nets.config import load
 import os
 from itertools import izip
+import pycuda.driver as cuda
 
 celery = Celery('tasks', broker='amqp://guest:guest@128.100.241.98:5672//')
 
@@ -10,8 +11,7 @@ class ExperimentRunner(Task):
     ignore_result = True
     abstract = True
     
-    def __init__(self):
-        import pycuda.driver as cuda
+    def make_context(self):
         cuda.init()
         self.ndevices = cuda.Device.count()
 
@@ -19,15 +19,16 @@ class ExperimentRunner(Task):
         cuda.init()
         device_id = process_id % self.ndevices
         self.context = cuda.Device(device_id).make_context()
-        context.push()
+        self.context.push()
 
         from scikits.cuda import linalg
         linalg.init()
 
 @celery.task(base=ExperimentRunner)
 def run_experiment(yaml_config):
-    context = run_experiment.context
-
+    if cuda.Context.get_current() is None:
+        run_experiment.make_context()
+    
     config = load(yaml_config)
     optimizer = config['optimizer']
     run_conf = config['run_conf']
