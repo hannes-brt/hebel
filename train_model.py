@@ -22,4 +22,6 @@ if __name__ == "__main__":
         print task.task_id
     else:
         import pycuda.autoinit
+        from scikits.cuda import linalg
+        linalg.init()
         run_from_config(yaml_src)
