@@ -3,14 +3,32 @@ Heavily copied from pylearn2
 """
 
 import re, yaml, os
-from neural_nets.utils.call_check import checked_call
-from neural_nets.utils import serial
-# from neural_nets.utils.string_utils import preprocess
-from neural_nets.utils.string_utils import match
+from .utils.call_check import checked_call
+from .utils import serial
+from .utils.string_utils import match
 import warnings
 
 is_initialized = False
 root = os.path.curdir
+
+def run_from_config(yaml_src):
+    config = load(yaml_src)
+    optimizer = config['optimizer']
+    run_conf = config['run_conf']
+    run_conf['yaml_config'] = yaml_src
+    optimizer.run(**run_conf)
+
+    if config.has_key('test_dataset'):
+        test_data = config['test_dataset']['test_data']
+        test_targets = config['test_dataset']['test_targets']
+        model = optimizer.model
+        progress_monitor = optimizer.progress_monitor
+
+        test_error = 0
+        for batch_data, batch_targets in izip(test_data, test_targets):
+            test_error += model.test_error(batch_data, batch_targets, average=False)
+        test_error /= float(test_data.N)
+        progress_monitor.test_error = test_error
 
 def load(stream, overrides=None, **kwargs):
     """

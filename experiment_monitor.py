@@ -72,10 +72,10 @@ def draw_plot_loop(experiment, loop_delay,
             validation_plot.set_data(validation_epochs, validation_values)
 
             min_train = train_values.min()
-            min_train_epoch = train_epochs[train_values == min_train]
+            min_train_epoch = train_epochs[train_values == min_train][0]
 
             min_validation = validation_values.min()
-            min_validation_epoch = validation_epochs[validation_values == min_validation]
+            min_validation_epoch = validation_epochs[validation_values == min_validation][0]
             
             annot.set_text('Epoch: %d, Train error: %.3f (min: %.3f @ %d), '
                            'validation error: %.5f (min: %.5f @ %d)' %

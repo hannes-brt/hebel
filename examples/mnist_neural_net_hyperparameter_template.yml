@@ -1,0 +1,4 @@
+l2_penalty: !obj:neural_nets.random.LogParameterSampler {
+  low: !!float 1e-4,
+  high: !!float 1e-1
+}
