@@ -7,6 +7,7 @@ from .utils.call_check import checked_call
 from .utils import serial
 from .utils.string_utils import match
 import warnings
+from itertools import izip
 
 is_initialized = False
 root = os.path.curdir
