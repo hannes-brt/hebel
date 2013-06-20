@@ -5,8 +5,6 @@ from mongoengine import DoesNotExist
 from .schema import Dataset, Experiment, ErrorLog
 
 class ProgressMonitor(object):
-    task_id = None
-    
     def __init__(self, experiment_name=None, save_model_path=None, 
                  save_interval=0, output_to_log=False, model=None,
                  dataset=None, task_id=None):
@@ -84,7 +82,8 @@ class ProgressMonitor(object):
     @test_error.setter
     def test_error(self, test_error):
         self.experiment.test_error = test_error
-        self.experiment.save()
+        if self.experiment.task_id is not None:
+            self.experiment.save()
 
     def makedir(self):
         experiment_dir_name = '_'.join((
@@ -136,7 +135,8 @@ class ProgressMonitor(object):
             self.experiment.validation_error.epoch.append(epoch)
             self.experiment.validation_error.value.append(validation_error)
 
-        self.experiment.save()
+        if self.experiment.task_id is not None:
+            self.experiment.save()
 
     def print_error(self, epoch, train_error, validation_error=None):
         if validation_error is not None:
@@ -182,7 +182,9 @@ class ProgressMonitor(object):
         # Save to database
         self.experiment.runtime = self.train_time
         self.experiment.date_finished = end_time
-        self.experiment.save()
+
+        if self.experiment.task_id is not None:
+            self.experiment.save()
 
     
 
