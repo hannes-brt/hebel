@@ -3,61 +3,60 @@
 #define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
 
 __global__ void convolve_sequence(const {{ data_type }} *input,
-    {{ data_type }} *target, const {{ data_type }} *filter,
-    const {{ data_type }} *bias, const unsigned int width, 
-    const unsigned int height, const unsigned int filter_width, 
-    const unsigned int n_filters, const unsigned int stride) {
+				  {{ data_type }} *target, const {{ data_type }} *filter,
+				  const {{ data_type }} *bias, const unsigned int width, 
+				  const unsigned int height, const unsigned int filter_width, 
+				  const unsigned int n_filters, const unsigned int stride) {
 
-    /* Performs a 1D convolution on each row of a matrix with 
-       multiple filters. Filter size must be even and input is
-       padded on the right with zeros.
-    */
+  /* Performs a 1D convolution on each row of a matrix with 
+     multiple filters. Filter size must be even and input is
+     padded on the right with zeros.
+  */
     
-    const unsigned int i = blockIdx.y;
-    const unsigned int j = blockIdx.x*blockDim.x+threadIdx.x;
-    const unsigned int lin_idx = i*width+j;
-    const unsigned int row_start = i*width;
-    const unsigned int target_width = CEILING((double) width / stride);
-    unsigned int shared_idx, input_idx;    
+  const unsigned int i = blockIdx.y;
+  const unsigned int j = blockIdx.x*blockDim.x+threadIdx.x;
+  const unsigned int f = blockIdx.z;
+  const unsigned int lin_idx = i*width+j;
+  const unsigned int row_start = i*width;
+  const unsigned int target_width = CEILING((double) width / stride);
+  unsigned int shared_idx, input_idx;    
     
-    const unsigned int shared_width = blockDim.x+filter_width-1;
-    extern __shared__ {{ data_type }} sdata[];
-    {{ data_type }} *input_shared = sdata;
-    {{ data_type }} *bias_shared = input_shared + shared_width;
+  const unsigned int shared_width = blockDim.x+filter_width-1;
+  extern __shared__ {{ data_type }} sdata[];
+  {{ data_type }} *input_shared = sdata;
+  {{ data_type }} *bias_shared = input_shared + shared_width;
     
-    const unsigned int halo_width = filter_width - 1;
+  const unsigned int halo_width = filter_width - 1;
     
-    shared_idx = threadIdx.x;
-    input_shared[shared_idx] = (j < width && i < height) ? input[lin_idx] : 0;
-    __syncthreads();
+  shared_idx = threadIdx.x;
+  input_shared[shared_idx] = (j < width && i < height) ? input[lin_idx] : 0;
+  __syncthreads();
 
-    if (i < height) {
-        int halo_index_right = (blockIdx.x+1)*blockDim.x+threadIdx.x;
-        if (threadIdx.x < halo_width) {
-            shared_idx = blockDim.x+threadIdx.x;
-            input_idx = row_start+halo_index_right;
-            input_shared[shared_idx] =
-                (halo_index_right >= width) ? 0 : input[input_idx];
-        }
+  if (i < height) {
+    int halo_index_right = (blockIdx.x+1)*blockDim.x+threadIdx.x;
+    if (threadIdx.x < halo_width) {
+      shared_idx = blockDim.x+threadIdx.x;
+      input_idx = row_start+halo_index_right;
+      input_shared[shared_idx] =
+	(halo_index_right >= width) ? 0 : input[input_idx];
     }
+  }
 
-    if (threadIdx.x < n_filters)
-      bias_shared[threadIdx.x] = bias[threadIdx.x];
-    __syncthreads();
+  if (threadIdx.x < n_filters)
+    bias_shared[threadIdx.x] = bias[threadIdx.x];
+  __syncthreads();
   
-    unsigned int filter_idx, target_idx;
-    if (!(j%stride) && i < height && j < width) {
-        for (int f=0; f < n_filters; f++) {
-            {{ data_type }} Pvalue = bias_shared[f];
-            for (int k=0; k < filter_width; k++) {
-                shared_idx = threadIdx.x+k;
-                filter_idx = f*filter_width+k;
-                Pvalue += input_shared[shared_idx]*filter[filter_idx];
-            }
-			target_idx = i*n_filters*target_width+f*target_width+j/stride;
-            target[target_idx] = Pvalue;
-        }        
+  unsigned int filter_idx, target_idx;
+  if (!(j%stride) && i < height && j < width) {
+    {{ data_type }} Pvalue = bias_shared[f];
+    for (int k=0; k < filter_width; k++) {
+      shared_idx = threadIdx.x+k;
+      filter_idx = f*filter_width+k;
+      Pvalue += input_shared[shared_idx]*filter[filter_idx];
     }
+    target_idx = i*n_filters*target_width+f*target_width+j/stride;
+    target[target_idx] = Pvalue;
+  }
 }
 
 __global__ void gradient_reduce(const {{ data_type }} *df_weights,
@@ -92,13 +91,14 @@ __global__ void gradient_reduce(const {{ data_type }} *df_weights,
 }
 
 __global__ void convolve_sequence_gradient(
-  const {{ data_type }} *input, const {{ data_type }} *df_output,
-  {{ data_type }} *df_weights, const unsigned int width,
-  const unsigned int height, const unsigned int filter_width,
-  const unsigned int n_filters) {
+					   const {{ data_type }} *input, const {{ data_type }} *df_output,
+					   {{ data_type }} *df_weights, const unsigned int width,
+					   const unsigned int height, const unsigned int filter_width,
+					   const unsigned int n_filters) {
   
   const unsigned int stride = 4;
   const unsigned int tx = threadIdx.x;
+  const unsigned int f = blockIdx.y*blockDim.y+threadIdx.y;
   const unsigned int input_idx = blockIdx.x*blockDim.x+tx;
   const unsigned int column = input_idx % width;
   const unsigned int column_start_block = (blockIdx.x*blockDim.x)%width; // Column of first thread in block
@@ -115,10 +115,10 @@ __global__ void convolve_sequence_gradient(
   {{ data_type }} *df_output_shared = sdata;
   {{ data_type }} *df_weights_reduce = df_output_shared + shared_width;
 
-  const {{ data_type }} input_element = 
-    (input_idx < len_input) ? input[input_idx] : 0.;
+  if (f < n_filters) {
+    const {{ data_type }} input_element = 
+			    (input_idx < len_input) ? input[input_idx] : 0.;
 
-  for (unsigned int f=0; f < n_filters; f++) {
     // Load halo elements on the left
     if (tx < halo_width) {
       output_idx = row_start_block*n_filters*output_width+
@@ -126,8 +126,7 @@ __global__ void convolve_sequence_gradient(
       shared_idx = tx;
       halo_idx = column_start_block / stride - halo_width + tx;
       df_output_shared[shared_idx] = 
-	    (halo_idx < 0) ? 0. : df_output[output_idx];
-      }
+	(halo_idx < 0) ? 0. : df_output[output_idx];
     }
 
     if (tx < blockDim.x/stride) {
@@ -135,32 +134,32 @@ __global__ void convolve_sequence_gradient(
       row_shared = (blockIdx.x*blockDim.x+stride*tx) / width;
       output_idx = row_shared*n_filters*output_width+f*output_width+column_shared;
       df_output_shared[tx+halo_width] = 
-	    (column_shared < output_width && row_shared < height) ?
-	    df_output[output_idx] : 0.;
+	(column_shared < output_width && row_shared < height) ?
+	df_output[output_idx] : 0.;
     }
-    
+  
     __syncthreads();
 
     for (unsigned int k=0; k<(halo_width+1); k++) {
       df_output_offset = (halo_width-k)*stride;
       df_weights_reduce[tx] =
-      	(column >= df_output_offset)
-      	? input_element * df_output_shared[tx/stride+k] : 0.;
+    	(column >= df_output_offset)
+    	? input_element * df_output_shared[tx/stride+k] : 0.;
       __syncthreads();
 
       for (unsigned int s=blockDim.x/2; s>=stride; s>>=1) {
-	    if (tx<s) {
-	      df_weights_reduce[tx] += df_weights_reduce[tx+s];
-	    }
-	  __syncthreads();
+	if (tx<s) {
+	  df_weights_reduce[tx] += df_weights_reduce[tx+s];
+	}
+	__syncthreads();
       }
 
       if (tx<stride) {
-	    df_weights_idx = 
-	      f*filter_width*gridDim.x+
-	      (tx+df_output_offset)*gridDim.x+
-	      blockIdx.x;
-	    df_weights[df_weights_idx] = df_weights_reduce[tx];
+	df_weights_idx = 
+	  f*filter_width*gridDim.x+
+	  (tx+df_output_offset)*gridDim.x+
+	  blockIdx.x;
+	df_weights[df_weights_idx] = df_weights_reduce[tx];
       }
     }
   }

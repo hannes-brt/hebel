@@ -40,7 +40,7 @@ def convolve_sequence(mat, conv_filter, bias, stride=4,
     block = (_TILE_SIZE_CONV, 1, 1)
     grid = (int(np.ceil(mat.shape[1] / float(block[0]))),
             int(np.ceil(mat.shape[0] / float(block[1]))),
-            1)
+            n_filters)
     shared = ((_TILE_SIZE_CONV + width_filter - 1 +     # input_shared
               n_filters) *                              # bias_shared
               np.dtype(dtype).itemsize)
@@ -75,7 +75,7 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
     n_elements = height * width
 
     block = (block_size, 1, 1)
-    grid = (int(np.ceil(n_elements / float(block[0]))), 1, 1)
+    grid = (int(np.ceil(n_elements / float(block_size))), n_filters, 1)
     shared = ((filter_width / stride) - 1 + block_size / stride +  # df_output_share
               block_size # df_weights_reduce
               ) * np.dtype(dtype).itemsize

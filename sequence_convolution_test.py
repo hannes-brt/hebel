@@ -16,6 +16,8 @@ from copy import copy
 
 import numpy as np
 
+STRIDE = 4
+
 def checkgrad_model(layer, input, epsilon=1e-4, **kwargs):
     cache = layer.feed_forward(input)
     f0 = np.sum(cache[0].get())
@@ -88,7 +90,7 @@ class TestConvolution(unittest.TestCase):
         return y
     
     def conv1d_test_setup(self, height, width, filter_width, n_filters, 
-                          stride=4):
+                          stride=STRIDE):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL), 
                                (np.float64, self.DOUBLE_ERR_TOL)):
             x = curand((height, width), dtype)
@@ -169,13 +171,15 @@ class TestConvolutionGradWeights(unittest.TestCase):
     
     @staticmethod
     def grad_weights_cpu(input, df_output, n_filters, filter_width):
-        stride = 4
         df_w = np.empty((n_filters, filter_width))
         for n in range(n_filters):
             for i in range(filter_width):
                 input_padded = np.concatenate((input[:,i::], 
                                                np.zeros((input.shape[0], i))), 1)
-                df_w[n, i] = (input_padded[:,::stride]*df_output[:,n]).sum()
+                try:
+                    df_w[n, i] = (input_padded[:,::STRIDE]*df_output[:,n]).sum()
+                except ValueError:
+                    import pudb; pudb.set_trace()
         return df_w
 
     def grad_weights_test(self, height, width, n_filters, filter_width):
@@ -183,10 +187,9 @@ class TestConvolutionGradWeights(unittest.TestCase):
                                (np.float32, self.FLOAT_ERR_TOL)):
 
             eps = np.finfo(dtype).eps
-            stride = 4
             x = curand((height, width), dtype)
-            df_output = curand((height, n_filters, width // stride), dtype)
-            # df_output = gpuarray.empty((n_filters, height, width // stride), dtype).fill(1.)
+            df_output = curand((height, n_filters, width // STRIDE), dtype)
+            # df_output = gpuarray.empty((n_filters, height, width // STRIDE), dtype).fill(1.)
 
             df_w = convolve_sequence_gradient(x, df_output, filter_width, n_filters, block_size=1024)
             df_w_cpu = df_w.get()
@@ -199,7 +202,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 12
-            m = 4*np.random.randint(1, 100)
+            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -207,7 +210,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 16
-            m = 4*np.random.randint(1, 100)
+            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -215,7 +218,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 24
-            m = 4*np.random.randint(1, 100)
+            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -223,7 +226,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 8
-            m = 4*np.random.randint(1, 100)
+            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -231,15 +234,15 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 4
-            m = 4*np.random.randint(1, 200)
+            m = STRIDE*np.random.randint(filter_width/STRIDE, 200)
             n_filters = np.random.randint(2, 100)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights(self):
         for n in range(20):
             n = np.random.randint(5, 300)
-            filter_width = 4*np.random.randint(2, 8)
-            m = 4*np.random.randint(2, 100)
+            filter_width = STRIDE*np.random.randint(2, 8)
+            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
