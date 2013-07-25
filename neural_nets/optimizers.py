@@ -29,6 +29,10 @@ class EarlyStoppingModule(object):
         
 
 class SGD(object):
+    @property
+    def best_validation_loss(self):
+        return self.early_stopping_module.best_validation_loss
+    
     def __init__(self,
                  model, parameter_updater, 
                  train_data, 

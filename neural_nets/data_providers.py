@@ -38,7 +38,7 @@ class MiniBatchDataProvider(DataProvider):
             raise StopIteration
 
         minibatch_data  = self.data[self.i:self.i+self.batch_size]
-        minibatch_targets = self.data[self.i:self.i+self.batch_size]
+        minibatch_targets = self.targets[self.i:self.i+self.batch_size]
         
         self.i += self.batch_size
         return minibatch_data, minibatch_targets
