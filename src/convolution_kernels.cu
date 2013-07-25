@@ -95,17 +95,15 @@ __global__ void convolve_sequence_gradient(
   const {{ data_type }} *input, const {{ data_type }} *df_output,
   {{ data_type }} *df_weights, const unsigned int width,
   const unsigned int height, const unsigned int filter_width,
-  const unsigned int n_filters, {{ data_type }} *debug, int *debug2) {
+  const unsigned int n_filters) {
   
   const unsigned int stride = 4;
   const unsigned int tx = threadIdx.x;
   const unsigned int input_idx = blockIdx.x*blockDim.x+tx;
-  const unsigned int row = input_idx / width;
   const unsigned int column = input_idx % width;
   const unsigned int column_start_block = (blockIdx.x*blockDim.x)%width; // Column of first thread in block
   const unsigned int row_start_block = (blockIdx.x*blockDim.x)/width; // Row of first thread in block
   const unsigned int len_input = height*width;
-  const unsigned int len_df_output = len_input / stride;
   const unsigned int output_width = width / stride;
 
   unsigned int df_weights_idx, output_idx, shared_idx, df_output_offset, row_shared, column_shared;
@@ -129,9 +127,6 @@ __global__ void convolve_sequence_gradient(
       halo_idx = column_start_block / stride - halo_width + tx;
       df_output_shared[shared_idx] = 
 	    (halo_idx < 0) ? 0. : df_output[output_idx];
-      if (f==0) {
-        debug[blockIdx.x*shared_width+shared_idx] = df_output_shared[shared_idx];
-        debug2[blockIdx.x*2*shared_width+shared_idx] = halo_idx;
       }
     }
 
@@ -142,11 +137,6 @@ __global__ void convolve_sequence_gradient(
       df_output_shared[tx+halo_width] = 
 	    (column_shared < output_width && row_shared < height) ?
 	    df_output[output_idx] : 0.;
-      if (f==0) {
-        debug[blockIdx.x*shared_width+tx+halo_width] = df_output_shared[tx+halo_width];
-        debug2[blockIdx.x*2*shared_width+2*tx+halo_width] = row_shared;
-        debug2[blockIdx.x*2*shared_width+2*tx+1+halo_width] = column_shared;
-      }
     }
     
     __syncthreads();

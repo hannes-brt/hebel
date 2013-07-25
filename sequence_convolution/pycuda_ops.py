@@ -63,7 +63,7 @@ def convolve_sequence(mat, conv_filter, bias, stride=4,
     return target
 
 def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
-                               target=None, stream=None, block_size=1024, debug_info=False):
+                               target=None, stream=None, block_size=1024):
     stride = 4
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
@@ -87,14 +87,11 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
         target = gpuarray.empty((n_filters, filter_width, 
                                  grid[0]), dtype=dtype)
 
-    debug = gpuarray.empty((grid[0], (filter_width / stride) - 1 + block_size / stride), dtype).fill(-.99)
-    debug2 = gpuarray.empty((grid[0], 2*debug.shape[1]), np.int32).fill(-999)
-								 
     dname = _dtype_name[dtype]
     _kernels[dname]['convolve_sequence_gradient_kernel'](
         mat, df_output, target,
         np.uint32(mat.shape[1]), np.uint32(mat.shape[0]),
-        np.uint32(filter_width), np.uint32(n_filters), debug, debug2,
+        np.uint32(filter_width), np.uint32(n_filters),
         block=block, grid=grid, shared=shared, stream=stream)
 
     target_sum = gpuarray.empty((n_filters, filter_width), dtype)
@@ -109,10 +106,7 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
         block=block_sum, grid=grid_sum,
         shared=shared, stream=stream)
 
-    if debug_info:
-        return target_sum, debug, debug2, target
-    else:
-        return target_sum
+    return target_sum
 
 def max_pool(mat, pool_size, target=None, argmax=None, stream=None):
     dtype = mat.dtype
