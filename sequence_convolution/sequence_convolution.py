@@ -65,8 +65,7 @@ class SequenceConvolutionLayer(HiddenLayer):
 
         df_activations = self.df(activations)
         delta = df_activations * df_output
-        df_b = matrix_sum_out_axis(
-            delta.reshape((self.n_filters, delta.shape[1]*delta.shape[2])), 1)
+        df_b = pycuda_ops.sum_delta(delta)
         df_W = pycuda_ops.convolve_sequence_gradient(
             input, delta,
             self.filter_width, self.n_filters)
@@ -133,14 +132,18 @@ class SequenceConvolutionNet(NeuralNet):
 
         n_in_nn = n_filters * n_in / STRIDE / pool_size
         conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters, 
-                                                   activation_function=activation_function)
+                                              activation_function=activation_function)
         max_pool_layer = MaxPoolingLayer(conv_layer.n_units, 
                                          pool_size, n_filters)
         hidden_layers = [conv_layer, max_pool_layer] + layers
         
         super(SequenceConvolutionNet, self)\
-          .__init__(n_in, n_out, hidden_layers, activation_function,
-                    dropout, l1_penalty_weight, l2_penalty_weight, **kwargs)
+          .__init__(layers=hidden_layers, 
+                    activation_function=activation_function,
+                    dropout=dropout, 
+                    l1_penalty_weight=l1_penalty_weight, 
+                    l2_penalty_weight=l2_penalty_weight, 
+                    n_in=n_in, n_out=n_out, **kwargs)
 
         self.n_layers = len(layers) + 2
         self.n_in = n_in

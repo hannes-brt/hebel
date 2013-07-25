@@ -11,6 +11,7 @@ from neural_nets.data_providers import MiniBatchDataProvider
 from neural_nets.optimizers import SGD
 from neural_nets.schedulers import constant_scheduler
 from neural_nets.parameter_updaters import SimpleSGDUpdate
+from neural_nets.monitors import SimpleProgressMonitor
 from create_features import encode_seq
 from copy import copy
 
@@ -58,7 +59,7 @@ def checkgrad_model(layer, input, epsilon=1e-4, **kwargs):
             # Compute gradient approximation
             grad_approx_i[idx] = (f1 - f2) / (2 * epsilon)
 
-        loss += np.sum(((grads[i].get() - grad_approx_i) / grads[i].get()) ** 2)
+        loss += np.sum(((grads[i].get() - grad_approx_i) / grads[i].get()) ** 2.)
     loss = np.sqrt(loss)
 
     return loss
@@ -176,10 +177,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             for i in range(filter_width):
                 input_padded = np.concatenate((input[:,i::], 
                                                np.zeros((input.shape[0], i))), 1)
-                try:
-                    df_w[n, i] = (input_padded[:,::STRIDE]*df_output[:,n]).sum()
-                except ValueError:
-                    import pudb; pudb.set_trace()
+                df_w[n, i] = (input_padded[:,::STRIDE]*df_output[:,n]).sum()
         return df_w
 
     def grad_weights_test(self, height, width, n_filters, filter_width):
@@ -343,12 +341,11 @@ class TestConvNet(unittest.TestCase):
             model = SequenceConvolutionNet(seq.shape[1], 2, 32, 5, 8, [], 
                                            activation_function='tanh')
             
-            train_data = MiniBatchDataProvider(seq, 10)
-            train_targets = MiniBatchDataProvider(targets, 10)
+            train_data = MiniBatchDataProvider(seq, targets, 10)
 
-            optimizer = SGD(model, SimpleSGDUpdate, train_data, train_targets, 
-                            train_data, train_targets, 
-                            learning_rate_schedule=constant_scheduler(1.))
+            optimizer = SGD(model, SimpleSGDUpdate, train_data, train_data,
+                            learning_rate_schedule=constant_scheduler(1.),
+                            progress_monitor=SimpleProgressMonitor())
 
             optimizer.run(20)
             test_error = np.min([optimizer.best_test_loss, test_error])
@@ -361,9 +358,9 @@ class TestConvolutionGradient(unittest.TestCase):
     
     def test_convolution_gradient(self):
         for i in range(20):
-            n_in = 400
-            filter_width = 32
-            n_filters = 20
+            n_in = 36
+            filter_width = 12
+            n_filters = 4
             conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters, 
                                                   dtype=np.float64)
             x = curand((100, n_in), dtype=np.float64)

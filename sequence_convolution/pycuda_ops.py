@@ -4,6 +4,7 @@ import numpy as np
 import os
 from jinja2 import Template
 from . import sequence_conv_root
+from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
 
 _TILE_SIZE_CONV = 1024
 
@@ -170,3 +171,10 @@ def max_pool_gradient(mat, argmax,
         block=block, grid=grid, stream=stream)
 
     return target
+
+def sum_delta(delta, cache_one_vector=True):
+    delta_r = delta.reshape((delta.shape[0], delta.shape[1]*delta.shape[2]))
+    delta_sum_a = matrix_sum_out_axis(delta_r, 0)
+    delta_r = delta_sum_a.reshape((delta.shape[1], delta.shape[2]))
+    delta_sum_b = matrix_sum_out_axis(delta_r, 1).ravel()
+    return delta_sum_b
