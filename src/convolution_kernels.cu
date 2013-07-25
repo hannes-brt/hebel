@@ -54,7 +54,7 @@ __global__ void convolve_sequence(const {{ data_type }} *input,
                 filter_idx = f*filter_width+k;
                 Pvalue += input_shared[shared_idx]*filter[filter_idx];
             }
-            target_idx = f*target_width*height+i*target_width+j/stride;
+			target_idx = i*n_filters*target_width+f*target_width+j/stride;
             target[target_idx] = Pvalue;
         }        
     }
@@ -95,16 +95,20 @@ __global__ void convolve_sequence_gradient(
   const {{ data_type }} *input, const {{ data_type }} *df_output,
   {{ data_type }} *df_weights, const unsigned int width,
   const unsigned int height, const unsigned int filter_width,
-  const unsigned int n_filters) {
+  const unsigned int n_filters, {{ data_type }} *debug, int *debug2) {
   
   const unsigned int stride = 4;
   const unsigned int tx = threadIdx.x;
   const unsigned int input_idx = blockIdx.x*blockDim.x+tx;
+  const unsigned int row = input_idx / width;
   const unsigned int column = input_idx % width;
+  const unsigned int column_start_block = (blockIdx.x*blockDim.x)%width; // Column of first thread in block
+  const unsigned int row_start_block = (blockIdx.x*blockDim.x)/width; // Row of first thread in block
   const unsigned int len_input = height*width;
   const unsigned int len_df_output = len_input / stride;
+  const unsigned int output_width = width / stride;
 
-  unsigned int df_weights_idx, output_idx, shared_idx, df_output_offset;
+  unsigned int df_weights_idx, output_idx, shared_idx, df_output_offset, row_shared, column_shared;
   int halo_idx;
   
   const unsigned int halo_width = (filter_width / stride) - 1;
@@ -118,21 +122,33 @@ __global__ void convolve_sequence_gradient(
 
   for (unsigned int f=0; f < n_filters; f++) {
     // Load halo elements on the left
-    halo_idx = (blockIdx.x-1)*blockDim.x+tx;
     if (tx < halo_width) {
-      output_idx = f*len_df_output+blockIdx.x*blockDim.x/stride+tx-halo_width;
+      output_idx = row_start_block*n_filters*output_width+
+	f*output_width+column_start_block/stride-halo_width+tx;
       shared_idx = tx;
+      halo_idx = column_start_block / stride - halo_width + tx;
       df_output_shared[shared_idx] = 
-	(halo_idx < 0) ? 0. : df_output[output_idx];
+	    (halo_idx < 0) ? 0. : df_output[output_idx];
+      if (f==0) {
+        debug[blockIdx.x*shared_width+shared_idx] = df_output_shared[shared_idx];
+        debug2[blockIdx.x*2*shared_width+shared_idx] = halo_idx;
+      }
     }
 
     if (tx < blockDim.x/stride) {
-      output_idx = f*len_df_output+blockIdx.x*blockDim.x/stride+tx;
+      column_shared = ((blockIdx.x*blockDim.x % width) / stride + tx) % output_width;
+      row_shared = (blockIdx.x*blockDim.x+stride*tx) / width;
+      output_idx = row_shared*n_filters*output_width+f*output_width+column_shared;
       df_output_shared[tx+halo_width] = 
-	((blockIdx.x*blockDim.x/stride+tx) < len_df_output) ? 
-	df_output[output_idx] : 0.;
+	    (column_shared < output_width && row_shared < height) ?
+	    df_output[output_idx] : 0.;
+      if (f==0) {
+        debug[blockIdx.x*shared_width+tx+halo_width] = df_output_shared[tx+halo_width];
+        debug2[blockIdx.x*2*shared_width+2*tx+halo_width] = row_shared;
+        debug2[blockIdx.x*2*shared_width+2*tx+1+halo_width] = column_shared;
+      }
     }
-
+    
     __syncthreads();
 
     for (unsigned int k=0; k<(halo_width+1); k++) {
@@ -143,18 +159,18 @@ __global__ void convolve_sequence_gradient(
       __syncthreads();
 
       for (unsigned int s=blockDim.x/2; s>=stride; s>>=1) {
-	if (tx<s) {
-	  df_weights_reduce[tx] += df_weights_reduce[tx+s];
-	}
-	__syncthreads();
+	    if (tx<s) {
+	      df_weights_reduce[tx] += df_weights_reduce[tx+s];
+	    }
+	  __syncthreads();
       }
 
       if (tx<stride) {
-	df_weights_idx = 
-	  f*filter_width*gridDim.x+
-	  (tx+df_output_offset)*gridDim.x+
-	  blockIdx.x;
-	df_weights[df_weights_idx] = df_weights_reduce[tx];
+	    df_weights_idx = 
+	      f*filter_width*gridDim.x+
+	      (tx+df_output_offset)*gridDim.x+
+	      blockIdx.x;
+	    df_weights[df_weights_idx] = df_weights_reduce[tx];
       }
     }
   }
