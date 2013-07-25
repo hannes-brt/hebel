@@ -114,7 +114,7 @@ def max_pool(mat, pool_size, target=None, argmax=None, stream=None):
     assert dtype in (np.float32, np.float64)
     assert pool_size <= mat.shape[2]
 
-    n_filters, height, width = mat.shape
+    height, n_filters, width = mat.shape
 
     block = (2**int(np.ceil(np.log2(width))), 1, 1)
     grid = (int(np.ceil(width / pool_size)), height, n_filters)
@@ -152,7 +152,7 @@ def max_pool_gradient(mat, argmax,
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
 
-    n_filters, height, width = mat.shape
+    height, n_filters, width = mat.shape
 
     block = (pool_size, 1, 1)
     grid = (int(np.ceil(width / float(pool_size))), n_filters, height)

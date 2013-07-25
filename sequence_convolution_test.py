@@ -264,7 +264,7 @@ class TestMaxPool(unittest.TestCase):
             for i in range(output.shape[2]):
                 output[n,:,i] = np.max(mat[n,:, pool_size*i:pool_size*(i+1)], 1)
 
-        return np.swapaxes(output, 0, 1)
+        return output
 
     def max_pool_test(self, height, width, n_filters, pool_size):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
@@ -292,14 +292,14 @@ class TestMaxPoolGradient(unittest.TestCase):
 
     @staticmethod
     def max_pool_grad_cpu(mat, mat_pooled, argmax, df_output, pool_size):
-        n_filters = mat.shape[0]
-        height = mat.shape[1]
+        n_filters = mat.shape[1]
+        height = mat.shape[0]
         n_pooled = mat_pooled.shape[2]        
         
         df_input = np.zeros_like(mat)
         for n in range(n_filters):
             for i in range(n_pooled):
-                df_input[height*[n], range(height), argmax[:, n, i]] = df_output[:, n, i]
+                df_input[range(height), height*[n], argmax[:, n, i]] = df_output[:, n, i]
         
         return df_input
 

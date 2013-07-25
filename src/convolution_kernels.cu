@@ -164,42 +164,44 @@ __global__ void convolve_sequence_gradient(
 }
 
 __global__ void max_pool(const {{ data_type }} *mat,
-    {{ data_type }} *target, 
-    unsigned int *argmax,
-    const unsigned int height,
-    const unsigned int width,
-    const unsigned int pool_size) {
+			 {{ data_type }} *target, 
+			 unsigned int *argmax,
+			 const unsigned int height,
+			 const unsigned int width,
+			 const unsigned int pool_size) {
 
-    /* Perform 1D max-pooling on all rows of a matrix
-    */
+  /* Perform 1D max-pooling on all rows of a matrix
+   */
     
-    const unsigned int tx = threadIdx.x;
-    const unsigned int i = blockIdx.y;
-    const unsigned int j = blockIdx.x*pool_size+tx;
-    const unsigned int mat_idx = blockIdx.z*height*width+i*width+j;
+  const unsigned int tx = threadIdx.x;
+  const unsigned int i = blockIdx.y;
+  const unsigned int j = blockIdx.x*pool_size+tx;
+  const unsigned int f = blockIdx.z;
+  const unsigned int n_filters = gridDim.z;
+  const unsigned int mat_idx = i*n_filters*width+f*width+j;
+  // const unsigned int mat_idx = blockIdx.z*height*width+i*width+j;
     
-    extern __shared__ {{ data_type }} sdata[];
-    {{ data_type }} *max_shared = sdata;
-    unsigned int *argmax_shared = (unsigned int*) (max_shared + blockDim.x);
+  extern __shared__ {{ data_type }} sdata[];
+  {{ data_type }} *max_shared = sdata;
+  unsigned int *argmax_shared = (unsigned int*) (max_shared + blockDim.x);
     
-    max_shared[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
-    argmax_shared[tx] = (i < height && j < width && tx < pool_size) ? j : UINT_MAX;
+  max_shared[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
+  argmax_shared[tx] = (i < height && j < width && tx < pool_size) ? j : UINT_MAX;
+  __syncthreads();
+    
+  for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+    if (tx<s && sdata[tx+s] > sdata[tx]) {
+      max_shared[tx] = max_shared[tx+s];
+      argmax_shared[tx] = argmax_shared[tx+s];
+    }
     __syncthreads();
+  }
     
-    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
-        if (tx<s && sdata[tx+s] > sdata[tx]) {
-            max_shared[tx] = max_shared[tx+s];
-	    argmax_shared[tx] = argmax_shared[tx+s];
-        }
-        __syncthreads();
-    }
-    
-    if (tx==0) {
-      const unsigned int target_idx = blockIdx.y*gridDim.z*gridDim.x+
-	blockIdx.z*gridDim.x+blockIdx.x;
-        target[target_idx] = max_shared[0];
-	argmax[target_idx] = argmax_shared[0];
-    }
+  if (tx==0) {
+    const unsigned int target_idx = i*n_filters*gridDim.x+f*gridDim.x+blockIdx.x;
+    target[target_idx] = max_shared[0];
+    argmax[target_idx] = argmax_shared[0];
+  }
 }
 
 __global__ void max_pool_gradient(
@@ -226,7 +228,7 @@ __global__ void max_pool_gradient(
 							by*width_pooled+bx];
 
     if (bx*blockDim.x+tx < width) {
-        df_input[by*height*width+bz*width+bx*blockDim.x+tx] =
+        df_input[bz*n_filters*width+by*width+bx*blockDim.x+tx] =
             (column == max_idx) ? df_output_element : 0.;
     }
 }
