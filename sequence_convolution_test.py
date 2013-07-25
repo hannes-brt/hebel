@@ -348,7 +348,7 @@ class TestConvNet(unittest.TestCase):
                             progress_monitor=SimpleProgressMonitor())
 
             optimizer.run(20)
-            test_error = np.min([optimizer.best_test_loss, test_error])
+            test_error = np.min([optimizer.best_validation_loss, test_error])
 
         self.assertEqual(test_error, 0.)
 
