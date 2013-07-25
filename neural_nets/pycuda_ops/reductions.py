@@ -92,7 +92,7 @@ def _matrix_sum_out_axis_wrapper():
             try:
                 ones = one_vector_cache[vec_shape]
             except KeyError:
-                ones = gpuarray.empty(vec_shape, dtype=np.float32).fill(1.)
+                ones = gpuarray.empty(vec_shape, dtype=mat.dtype).fill(1.)
                 if cache_one_vector: one_vector_cache[vec_shape] = ones
             target = linalg.dot(ones, mat).ravel()
         elif axis == 1:
@@ -100,7 +100,7 @@ def _matrix_sum_out_axis_wrapper():
             try:
                 ones = one_vector_cache[vec_shape]
             except KeyError:
-                ones = gpuarray.empty((M, 1), dtype=np.float32).fill(1.)
+                ones = gpuarray.empty((M, 1), dtype=mat.dtype).fill(1.)
                 if cache_one_vector: one_vector_cache[vec_shape] = ones
             target = linalg.dot(mat, ones).ravel()
         else:

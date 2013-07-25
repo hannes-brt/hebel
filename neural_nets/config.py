@@ -2,7 +2,7 @@
 Heavily copied from pylearn2
 """
 
-import re, yaml, os
+import re, yaml, os, uuid
 from .utils.call_check import checked_call
 from .utils import serial
 from .utils.string_utils import match
@@ -17,6 +17,7 @@ def run_from_config(yaml_src):
     optimizer = config['optimizer']
     run_conf = config['run_conf']
     run_conf['yaml_config'] = yaml_src
+    run_conf['task_id'] = str(uuid.uuid4())
     optimizer.run(**run_conf)
 
     if config.has_key('test_dataset'):

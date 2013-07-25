@@ -5,8 +5,9 @@ from pycuda import gpuarray
 """
 
 class DataProvider(object):
-    def __init__(self, data, batch_size):
-        self.data = data        
+    def __init__(self, data, targets, batch_size):
+        self.data = data
+        self.targets = targets
         self.batch_size = batch_size
 
         self.N = data.shape[0]
@@ -23,6 +24,10 @@ class DataProvider(object):
     def next(self):
         raise NotImplementedError
 
+    @property
+    def shape(self):
+        return self.data.shape
+
 class MiniBatchDataProvider(DataProvider):
     def __getitem__(self, batch_idx):
         return self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
@@ -32,9 +37,11 @@ class MiniBatchDataProvider(DataProvider):
             self.i = 0
             raise StopIteration
 
-        minibatch = self.data[self.i:self.i+self.batch_size]
+        minibatch_data  = self.data[self.i:self.i+self.batch_size]
+        minibatch_targets = self.data[self.i:self.i+self.batch_size]
+        
         self.i += self.batch_size
-        return minibatch
+        return minibatch_data, minibatch_targets
 
 # class MaxiBatchDataProvider(MiniBatchDataProvider):
 #     def __init__(self, data, minibatch_size, maxibatch_size):
@@ -65,12 +72,13 @@ class MiniBatchDataProvider(DataProvider):
 #         return minibatch
 
 class MultiTaskDataProvider(DataProvider):
-    def __init__(self, data, batch_size=None):
-        assert all([data[0].shape[0] == d.shape[0] for d in data])
-        assert all([type(data[0]) == type(d) for d in data])
+    def __init__(self, data, targets, batch_size=None):
+        assert all([targets[0].shape[0] == t.shape[0] for t in targets])
+        assert all([type(targets[0]) == type(t) for t in targets])
         self.data = data
+        self.targets = targets
 
-        self.N_outer = data[0].shape[0]
+        self.N_outer = data.shape[0]
         self.N = self.N_outer
         
         if batch_size is not None:
@@ -89,18 +97,22 @@ class MultiTaskDataProvider(DataProvider):
         self.i = 0
 
     def __getitem__(self, batch_idx):
-        return [d[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-                for d in self.data]
+        minibatch_data = \
+            self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+        minibatch_targets = [t[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+            for t in self.targets]
+        return minibatch_data, minibatch_targets
 
     def next(self):
         if self.i >= self.N:
             self.i = 0
             raise StopIteration
 
-        minibatch = [d[self.i:self.i+self.batch_size]
-                     for d in self.data]
+        minibatch_data = self.data[self.i:self.i+self.batch_size]
+        minibatch_targets = [t[self.i:self.i+self.batch_size]
+                             for t in self.targets]
         self.i += self.batch_size
-        return minibatch
+        return minibatch_data, minibatch_targets
 
 # class GPUDataProvider(MiniBatchDataProvider):
 #     def __getitem__(self, batch_idx):
@@ -114,14 +126,15 @@ class MultiTaskDataProvider(DataProvider):
 #         return minibatch
 
 class BatchDataProvider(MiniBatchDataProvider):
-    def __init__(self, data):
-        self.data = data        
+    def __init__(self, data, targets):
+        self.data = data
+        self.targets = targets
         self.N = data.shape[0]
         self.i = 0
 
     def __getitem__(self, batch_idx):
         if batch_idx == 0:
-            return self.data
+            return self.data, self.targets
         else:
             raise ValueError("batch_idx out of bounds")
 
@@ -138,10 +151,10 @@ class DummyDataProvider(DataProvider):
         pass
     
     def __getitem__(self, batch_idx):
-        return None
+        return None, None
 
     def next(self):
-        return None
+        return None, None
 
 class MNISTDataProvider(DataProvider):
     from skdata.mnist.views import OfficialVectorClassification
@@ -157,35 +170,29 @@ class MNISTDataProvider(DataProvider):
     D = mnist.all_vectors.shape[1]
 
     def __init__(self, array, batch_size=None):
-        if array == 'train_images':
+        if array == 'train':
             self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.train_idx]
                                    .astype(np.float32) / 255.)
-            self.N = self.N_train
-        elif array == 'val_images':
-            self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.val_idx]
-                                   .astype(np.float32) / 255.)
-            self.N = self.N_val
-        elif array == 'test_images':
-            self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.test_idx]
-                                   .astype(np.float32) / 255.)
-            self.N = self.N_test
-        elif array == 'train_labels':
             targets = self.mnist.all_labels[self.train_idx]
             labels_soft = np.zeros((self.N_train, 10), dtype=np.float32)
             labels_soft[range(self.N_train), targets] = 1.
-            self.data = gpuarray.to_gpu(labels_soft)
+            self.targets = gpuarray.to_gpu(labels_soft)
             self.N = self.N_train
-        elif array == 'val_labels':
+        elif array == 'val':
+            self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.val_idx]
+                                   .astype(np.float32) / 255.)
+            self.N = self.N_val
             targets = self.mnist.all_labels[self.val_idx]
             labels_soft = np.zeros((self.N_train, 10), dtype=np.float32)
             labels_soft[range(self.N_val), targets] = 1.
-            self.data = gpuarray.to_gpu(labels_soft)
-            self.N = self.N_val
-        elif array == 'test_labels':
+            self.targets = gpuarray.to_gpu(labels_soft)
+        elif array == 'test':
+            self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.test_idx]
+                                   .astype(np.float32) / 255.)
             targets = self.mnist.all_labels[self.test_idx]
             labels_soft = np.zeros((self.N_test, 10), dtype=np.float32)
             labels_soft[range(self.N_test), targets] = 1.
-            self.data = gpuarray.to_gpu(labels_soft)
+            self.targets = gpuarray.to_gpu(labels_soft)
             self.N = self.N_test
         else:
             raise ValueError
@@ -196,11 +203,13 @@ class MNISTDataProvider(DataProvider):
     def __getitem__(self, batch_idx):
         if self.batch_size is None:
             if batch_idx == 0:
-                return self.data
+                return self.data, self.targets
             else:
                 raise ValueError("batch_idx out of bounds")
         else:
-            return self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+            minibatch_data = self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+            minibatch_targets = self.targets[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+            return minibatch_data, minibatch_targets
 
     def next(self):
         if self.i >= self.N:
@@ -209,8 +218,9 @@ class MNISTDataProvider(DataProvider):
 
         if self.batch_size is None:
             self.i += self.N
-            return self.data
+            return self.data, self.targets
         else:
-            minibatch = self.data[self.i:self.i+self.batch_size]
+            minibatch_data = self.data[self.i:self.i+self.batch_size]
+            minibatch_targets = self.targets[self.i:self.i+self.batch_size]
             self.i += self.batch_size
-            return minibatch
+            return minibatch_data, minibatch_targets

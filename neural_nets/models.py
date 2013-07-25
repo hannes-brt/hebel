@@ -68,9 +68,10 @@ class HiddenLayer(object):
 
     @parameters.setter
     def parameters(self, value):
-        for param, val in izip((self.W, self.b), value):
-            param = val if isinstance(val, GPUArray) else \
-              gpuarray.to_gpu(val)
+        self.W = value[0] if isinstance(value[0], GPUArray) else \
+          gpuarray.to_gpu(value[0])
+        self.b = value[1] if isinstance(value[0], GPUArray) else \
+          gpuarray.to_gpu(value[1])
 
     def update_parameters(self, values, stream=None):
         assert len(values) == self.n_parameters
@@ -82,10 +83,11 @@ class HiddenLayer(object):
 
     @property
     def architecture(self):
-        return {'class': self.__class__,
-                'n_in': self.n_in, 
-                'n_units': self.n_units, 
-                'activation_function': self.activation_function}
+        arch= {'class': self.__class__,
+               'n_in': self.n_in, 
+               'n_units': self.n_units,
+                'activation_function': self.activation_function 
+                  if hasattr(self, 'activation_function') else None}
 
     def _set_activation_fct(self, activation_function):
         if activation_function == 'sigmoid':
@@ -213,6 +215,7 @@ class LogisticLayer(TopLayer):
                  parameters=None,
                  weights_scale=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
+                 lr_multiplier=None,
                  test_error_fct='class_error'):
         """ Inputs:
         n_in: number of input units
@@ -244,7 +247,9 @@ class LogisticLayer(TopLayer):
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
-        self.lr_multiplier = 2 * [1. / np.sqrt(n_in, dtype=np.float32)]
+        self.lr_multiplier = 2 * [1. / np.sqrt(n_in, dtype=np.float32)] \
+          if lr_multiplier is None else lr_multiplier
+        
 
     @property
     def architecture(self):
@@ -372,7 +377,7 @@ class LogisticLayer(TopLayer):
                                  cumath.log(activations + eps)))
         if average:
             kl_error /= targets.shape[0]
-        return kl_error
+        return float(kl_error.get())
 
 class NeuralNet(object):
     """ A Neural Network Object
@@ -606,7 +611,8 @@ class MultitaskTopLayer(TopLayer):
 
     def __init__(self, n_in=None, n_out=None, test_error_fct='class_error',
                  l1_penalty_weight=0., l2_penalty_weight=0.,
-                 tasks=None, task_weights=None):
+                 tasks=None, task_weights=None, n_tasks=None,
+                 lr_multiplier=None):
         """ Inputs:
         n_in: number of input units (size of last hidden layer)
         n_out: sequence of output sizes for the targets
@@ -622,8 +628,8 @@ class MultitaskTopLayer(TopLayer):
 
         if not tasks:
             self.n_in = n_in
-            self.n_out = n_out
-            self.n_tasks = len(n_out)       # Number of output tasks
+            self.n_out = n_out if n_tasks is None else n_tasks * [n_out]
+            self.n_tasks = n_tasks if n_tasks is not None else len(n_out)       # Number of output tasks
             self.tasks = []
 
             if not isinstance(test_error_fct, (list, tuple)):
@@ -634,10 +640,13 @@ class MultitaskTopLayer(TopLayer):
                 l2_penalty_weight = self.n_tasks * [l2_penalty_weight]
 
             for (n_out_task, test_error_task, l1_task, l2_task) in \
-              zip(n_out, test_error_fct, l1_penalty_weight, l2_penalty_weight):
-                self.tasks.append(LogisticLayer(n_in, n_out_task,
-                                                l1_task, l2_task,
-                                                test_error_task))
+              zip(self.n_out, test_error_fct, l1_penalty_weight, l2_penalty_weight):
+                self.tasks.append(LogisticLayer(n_in=n_in, 
+                                                n_out=n_out_task,
+                                                l1_penalty_weight=l1_task, 
+                                                l2_penalty_weight=l2_task,
+                                                test_error_fct=test_error_task,
+                                                lr_multiplier=lr_multiplier))
 
         else:
             assert all([self.tasks[0].n_in == t.n_in for t in tasks])
@@ -733,7 +742,7 @@ class MultitaskTopLayer(TopLayer):
           izip(targets, cache, self.tasks):
           test_error.append(task.test_error(input, targets_task,
                                             average, cache_task,
-                                            prediction).get())
+                                            prediction))
 
         if sum_errors:
             return sum(test_error)

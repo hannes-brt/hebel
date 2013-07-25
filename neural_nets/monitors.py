@@ -48,7 +48,6 @@ class ProgressMonitor(object):
         self._model = model
 
         if self._model is not None:
-            self.makedir()
             self.experiment.model_checksum = model.checksum            
 
     @property
@@ -72,6 +71,7 @@ class ProgressMonitor(object):
         if task_id is not None:
             self.experiment.task_id = task_id
             self.experiment.save()
+            self.makedir()
             open(os.path.join(self.save_path, 'task_id'), 'w')\
               .write(self.experiment.task_id)
 
@@ -89,7 +89,7 @@ class ProgressMonitor(object):
         experiment_dir_name = '_'.join((
             self.experiment_name,
             datetime.isoformat(datetime.now()),
-            self.model.checksum))
+            self.task_id))
 
         path = os.path.join(self.save_model_path, 
                             experiment_dir_name)
@@ -119,10 +119,9 @@ class ProgressMonitor(object):
 
         # Pickle model
         if not epoch % self.save_interval:
-            filename = 'model_%s_epoch%04d_%s.pkl' % (
+            filename = 'model_%s_epoch%04d.pkl' % (
               self.experiment_name,
-              epoch,
-              self.model.checksum)
+              epoch)
             path = os.path.join(self.save_path, filename)
             cPickle.dump(self.model, open(path, 'wb'))
 
@@ -186,7 +185,51 @@ class ProgressMonitor(object):
         if self.experiment.task_id is not None:
             self.experiment.save()
 
-    
+class SimpleProgressMonitor(object):
+    def __init__(self):
+        self.model = None
 
-        
+        self.train_error = []
+        self.validation_error = []
+        self.avg_epoch_t = None
+        self._time = datetime.isoformat(datetime.now())
 
+    def start_training(self):
+        self.start_time = datetime.now()
+
+    def report(self, epoch, train_error, validation_error=None, epoch_t=None):
+        # Print logs
+        self.print_error(epoch, train_error, validation_error)
+
+        if epoch_t is not None:
+            self.avg_epoch_t = ((epoch - 1) * \
+                                self.avg_epoch_t + epoch_t) / epoch \
+                                if self.avg_epoch_t is not None else epoch_t
+
+    def print_error(self, epoch, train_error, validation_error=None):
+        if validation_error is not None:
+            print 'Epoch %d, Validation error: %.5g, Train Loss: %.3f' % \
+              (epoch, validation_error, train_error)
+        else:
+            print 'Epoch %d, Train Loss: %.3f' % \
+              (epoch, train_error)
+
+    def avg_weight(self):
+        print "\nAvg weights:"
+
+        i = 0
+        for param in self.model.parameters:
+            if len(param.shape) != 2: continue
+            param_cpu = np.abs(param.get())
+            mean_weight = param_cpu.mean()
+            std_weight = param_cpu.std()
+            print 'Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight) 
+            i += 1
+
+    def finish_training(self):
+        # Print logs
+        end_time = datetime.now()
+        self.train_time = end_time - self.start_time
+        print "Runtime: %dm %ds" % (self.train_time.total_seconds() // 60, 
+                                    self.train_time.total_seconds() % 60)
+        print "Avg. time per epoch %.2fs" % self.avg_epoch_t

@@ -38,12 +38,11 @@ def run_experiment(yaml_config):
 
     if config.has_key('test_dataset'):
         test_data = config['test_dataset']['test_data']
-        test_targets = config['test_dataset']['test_targets']
         model = optimizer.model
         progress_monitor = optimizer.progress_monitor
 
         test_error = 0
-        for batch_data, batch_targets in izip(test_data, test_targets):
+        for batch_data, batch_targets in test_data:
             test_error += model.test_error(batch_data, batch_targets, average=False)
         test_error /= float(test_data.N)
         progress_monitor.test_error = test_error

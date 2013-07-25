@@ -31,8 +31,8 @@ class EarlyStoppingModule(object):
 class SGD(object):
     def __init__(self,
                  model, parameter_updater, 
-                 train_data, train_targets, 
-                 validation_data=None, validation_targets=None,
+                 train_data, 
+                 validation_data=None,
                  progress_monitor=None,
                  learning_rate_schedule=constant_scheduler(.1),
                  momentum_schedule=None,
@@ -47,14 +47,11 @@ class SGD(object):
 
         ### Training data
         self.train_data = train_data
-        self.train_targets = train_targets
         
         ### Validation data
         self.validation_data = validation_data
-        self.validation_targets = validation_targets
             
         ### Data size
-          
         self.N_train = self.train_data.N
 
         if validation_data is not None:
@@ -89,8 +86,8 @@ class SGD(object):
         
         self.progress_monitor.start_training()
 
-        self.progress_monitor.yaml_config = yaml_config
         self.progress_monitor.task_id = task_id
+        self.progress_monitor.yaml_config = yaml_config
 
         # Main loop
         for self.epoch in range(self.epoch, self.epoch + iter):
@@ -105,7 +102,7 @@ class SGD(object):
                 train_loss = 0.
                 
                 for batch_idx, (batch_data, batch_targets) in \
-                  enumerate(izip(self.train_data, self.train_targets)):
+                  enumerate(self.train_data):
                     batch_size = batch_data.shape[0]
                   
                     self.parameter_updater.pre_gradient_update()
@@ -119,7 +116,7 @@ class SGD(object):
                 if self.validation_data is not None and not self.epoch % validation_interval:
                     validation_loss = 0.
                     for batch_idx, (batch_data, batch_targets) in \
-                      enumerate(izip(self.validation_data, self.validation_targets)):
+                      enumerate(self.validation_data):
 
                         validation_loss += self.model.test_error(batch_data, 
                                                                  batch_targets, 

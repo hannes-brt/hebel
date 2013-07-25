@@ -3,50 +3,99 @@ from pycuda import gpuarray
 from pycuda.elementwise import ElementwiseKernel, get_elwise_kernel
 from pycuda.curandom import md5_code
 
-sign_kernel = ElementwiseKernel(
+sign_kernel_float = ElementwiseKernel(
     "float *mat, float *target",
     "target[i] = (mat[i] > 0.) - (mat[i] < 0);",
     "sign")
 
-def sign(x):
+sign_kernel_double = ElementwiseKernel(
+    "double *mat, double *target",
+    "target[i] = (mat[i] > 0.) - (mat[i] < 0);",
+    "sign")
+
+def sign(x):    
     target = gpuarray.GPUArray(x.shape, dtype=x.dtype)
-    sign_kernel(x, target)
+    if x.dtype is np.dtype(np.float32):
+        sign_kernel_float(x, target)
+    elif x.dtype is np.dtype(np.float64):
+        sign_kernel_double(x, target)
+    else:
+        raise ValueError("Incompatible dtype")
     return target
 
-sigmoid_kernel = ElementwiseKernel(
+sigmoid_kernel_float = ElementwiseKernel(
         "float *mat",
         "mat[i] = 1. / (1. + __expf(-mat[i]))",
         "sigmoid")
 
+sigmoid_kernel_double = ElementwiseKernel(
+        "double *mat",
+        "mat[i] = 1. / (1. + __expf(-mat[i]))",
+        "sigmoid")
+
 def sigmoid(x):
-    sigmoid_kernel(x)
+    if x.dtype is np.dtype(np.float32):
+        sigmoid_kernel_float(x)
+    elif x.dtype is np.dtype(np.float64):
+        sigmoid_kernel_double(x)
+    else:
+        raise ValueError("Incompatible dtype")
 
 def df_sigmoid(f):
     df = f * (1 - f)
     return df
 
-tanh_kernel = ElementwiseKernel(
+tanh_kernel_float = ElementwiseKernel(
     "float *mat",
     "mat[i] = tanhf(mat[i]);",
     "tanh_inplace")
 
+tanh_kernel_double = ElementwiseKernel(
+    "double *mat",
+    "mat[i] = tanhf(mat[i]);",
+    "tanh_inplace")
+
 def tanh(x):
-    tanh_kernel(x)
+    if x.dtype is np.dtype(np.float32):
+        tanh_kernel_float(x)
+    elif x.dtype is np.dtype(np.float64):
+        tanh_kernel_double(x)
+    else:
+        raise ValueError("Incompatible dtype")
 
 def df_tanh(f):
     df = 1 - f**2.
     return df
 
-relu_kernel = ElementwiseKernel(
+relu_kernel_float = ElementwiseKernel(
     "float *mat",
     "if (mat[i] < 0.) mat[i] = 0.",
     "relu")
 
-def relu(x):
-    relu_kernel(x)
+relu_kernel_double = ElementwiseKernel(
+    "double *mat",
+    "if (mat[i] < 0.) mat[i] = 0.",
+    "relu")
 
-df_relu_kernel = ElementwiseKernel(
+def relu(x):
+    if x.dtype is np.dtype(np.float32):
+        relu_kernel_float(x)
+    elif x.dtype is np.dtype(np.float64):
+        relu_kernel_double(x)
+    else:
+        raise ValueError("Incompatible dtype")
+
+df_relu_kernel_float = ElementwiseKernel(
     "float *mat, float *target",
+    """if (mat[i] <= 0.) 
+         target[i] = 0.;
+       else
+         target[i] = 1.;
+    """,
+    "df_relu")
+
+df_relu_kernel_double = ElementwiseKernel(
+    "double *mat, double *target",
     """if (mat[i] <= 0.) 
          target[i] = 0.;
        else
@@ -56,7 +105,12 @@ df_relu_kernel = ElementwiseKernel(
 
 def df_relu(x):
     df = gpuarray.empty_like(x)
-    df_relu_kernel(x, df)
+    if x.dtype is np.dtype(np.float32):
+        df_relu_kernel_float(x, df)
+    elif x.dtype is np.dtype(np.float64):
+        df_relu_kernel_double(x, df)
+    else:
+        raise ValueError("Incompatible dtype")
     return df
 
 sample_dropout_mask_kernel = get_elwise_kernel(
