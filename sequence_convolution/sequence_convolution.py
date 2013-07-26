@@ -7,6 +7,7 @@ from scikits.cuda import linalg
 from . import pycuda_ops
 from neural_nets.models import HiddenLayer, NeuralNet
 from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
+from neural_nets.pycuda_ops.elementwise import sign
 
 STRIDE = 4
 
@@ -14,7 +15,9 @@ class SequenceConvolutionLayer(HiddenLayer):
     n_parameters = 2
     
     def __init__(self, n_in, filter_width, n_filters, activation_function='sigmoid',
-                 weights_scale=.01, W=None, b=None, dtype=np.float32):
+                 weights_scale=.01, W=None, b=None, 
+                 l1_penalty_weight=0., l2_penalty_weight=0.,
+                 dtype=np.float32):
         if W is None:
             self.W = weights_scale * \
               curand((n_filters, filter_width), dtype=dtype) \
@@ -37,18 +40,10 @@ class SequenceConvolutionLayer(HiddenLayer):
         self.n_units = n_filters * n_in / STRIDE
 
         self._set_activation_fct(activation_function)
-        self.l1_penalty_weight = 0.
-        self.l2_penalty_weight = 0.
+        self.l1_penalty_weight = l1_penalty_weight
+        self.l2_penalty_weight = l2_penalty_weight
 
         self.lr_multiplier = [1., 1.]
-
-    @property
-    def l1_penalty(self):
-        return 0.
-
-    @property
-    def l2_penalty(self):
-        return 0.
 
     def feed_forward(self, input, prediction=False):
         activations = \
@@ -69,6 +64,14 @@ class SequenceConvolutionLayer(HiddenLayer):
         df_W = pycuda_ops.convolve_sequence_gradient(
             input, delta,
             self.filter_width, self.n_filters)
+
+        # L1 weight decay
+        if self.l1_penalty_weight:
+            df_W -= self.l1_penalty_weight * sign(self.W)
+
+        # L2 weight decay
+        if self.l2_penalty_weight:
+            df_W -= self.l2_penalty_weight * self.W
 
         return (df_W, df_b), None
 
@@ -130,9 +133,25 @@ class SequenceConvolutionNet(NeuralNet):
                  dropout=False, l1_penalty_weight=0., l2_penalty_weight=0.,
                  **kwargs):
 
+        if np.isscalar(l1_penalty_weight):
+            l1_conv = l1_penalty_weight
+            l1_nn = l1_penalty_weight
+        else:
+            l1_conv = l1_penalty_weight[0]
+            l1_nn = l1_penalty_weight[1:]
+
+        if np.isscalar(l2_penalty_weight):
+            l2_conv = l2_penalty_weight
+            l2_nn = l2_penalty_weight
+        else:
+            l2_conv = l2_penalty_weight[0]
+            l2_nn = l2_penalty_weight[1:]
+
         n_in_nn = n_filters * n_in / STRIDE / pool_size
         conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters, 
-                                              activation_function=activation_function)
+                                              activation_function=activation_function,
+                                              l1_penalty_weight=l1_conv, 
+                                              l2_penalty_weight=l2_conv)
         max_pool_layer = MaxPoolingLayer(conv_layer.n_units, 
                                          pool_size, n_filters)
         hidden_layers = [conv_layer, max_pool_layer] + layers
@@ -141,8 +160,8 @@ class SequenceConvolutionNet(NeuralNet):
           .__init__(layers=hidden_layers, 
                     activation_function=activation_function,
                     dropout=dropout, 
-                    l1_penalty_weight=l1_penalty_weight, 
-                    l2_penalty_weight=l2_penalty_weight, 
+                    l1_penalty_weight=l1_nn, 
+                    l2_penalty_weight=l2_nn, 
                     n_in=n_in, n_out=n_out, **kwargs)
 
         self.n_layers = len(layers) + 2
