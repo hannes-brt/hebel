@@ -7,7 +7,8 @@ from scikits.cuda import linalg
 from . import pycuda_ops
 from neural_nets.models import HiddenLayer, NeuralNet
 from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
-from neural_nets.pycuda_ops.elementwise import sign
+from neural_nets.pycuda_ops.elementwise import sign, sample_dropout_mask, \
+     apply_dropout_mask
 
 STRIDE = 4
 
@@ -79,13 +80,16 @@ class MaxPoolingLayer(HiddenLayer):
     n_parameters = 0
     lr_multiplier = []
     
-    def __init__(self, n_in, pool_size, n_filters):
+    def __init__(self, n_in, pool_size, n_filters, dropout=False,
+                 l1_penalty_weight=0., l2_penalty_weight=0.):
         self.n_in = n_in
         self.pool_size = pool_size
         self.n_filters = n_filters
 
         self.l1_penalty_weight = 0.
         self.l2_penalty_weight = 0.
+
+        self.dropout = dropout
 
         self.n_units = n_in / pool_size
 
@@ -111,13 +115,30 @@ class MaxPoolingLayer(HiddenLayer):
     def feed_forward(self, input, prediction=False):
         activations, argmax = pycuda_ops.max_pool(input, self.pool_size)
         n, f, m = activations.shape
-        return (activations.reshape((n, f*m)), argmax)
+        activations = activations.reshape((n, f*m))
+
+        if self.dropout and prediction:
+            activations *= .5
+
+        if self.dropout and not prediction:
+            dropout_mask = sample_dropout_mask(activations)
+            return activations, argmax, dropout_mask
+
+        return activations, argmax
 
     def backprop(self, input, df_output, cache=None):
         if cache is None:
-            activations, argmax = self.feed_forward(input)
-        else:
+            cache = self.feed_forward(input)
+
+        if len(cache) == 2:
             activations, argmax = cache
+        elif len(cache) == 3:
+            activations, argmax, dropout_mask = cache
+        else:
+            raise ValueError
+
+        if self.dropout and dropout_mask is not None:
+            apply_dropout_mask(df_output, dropout_mask)
 
         n, fm = activations.shape
         activations = activations.reshape((n, self.n_filters, 
@@ -152,8 +173,11 @@ class SequenceConvolutionNet(NeuralNet):
                                               activation_function=activation_function,
                                               l1_penalty_weight=l1_conv, 
                                               l2_penalty_weight=l2_conv)
+        
         max_pool_layer = MaxPoolingLayer(conv_layer.n_units, 
-                                         pool_size, n_filters)
+                                         pool_size, n_filters, 
+                                         dropout=dropout)
+        
         hidden_layers = [conv_layer, max_pool_layer] + layers
         
         super(SequenceConvolutionNet, self)\
