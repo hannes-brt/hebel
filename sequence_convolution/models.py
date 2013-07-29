@@ -10,8 +10,6 @@ from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
 from neural_nets.pycuda_ops.elementwise import sign, sample_dropout_mask, \
      apply_dropout_mask
 
-STRIDE = 4
-
 class SequenceConvolutionLayer(HiddenLayer):
     n_parameters = 2
     
@@ -21,7 +19,7 @@ class SequenceConvolutionLayer(HiddenLayer):
                  dtype=np.float32):
         if W is None:
             self.W = weights_scale * \
-              curand((n_filters, filter_width), dtype=dtype) \
+              curand((n_filters, 4*filter_width), dtype=dtype) \
               -.5 * weights_scale
         else:
             self.W = W
@@ -31,14 +29,13 @@ class SequenceConvolutionLayer(HiddenLayer):
         else:
             self.b = b
             
-        assert self.W.shape == (n_filters, filter_width)
+        assert self.W.shape == (n_filters, 4*filter_width)
         assert self.b.shape == (n_filters,)
-        assert not n_in % STRIDE
         
         self.n_in = n_in
         self.filter_width = filter_width
         self.n_filters = n_filters
-        self.n_units = n_filters * n_in / STRIDE
+        self.n_units = n_filters * n_in
 
         self._set_activation_fct(activation_function)
         self.l1_penalty_weight = l1_penalty_weight
@@ -48,7 +45,7 @@ class SequenceConvolutionLayer(HiddenLayer):
 
     def feed_forward(self, input, prediction=False):
         activations = \
-            pycuda_ops.convolve_sequence(input, self.W, self.b, stride=STRIDE)
+            pycuda_ops.convolve_sequence(input, self.W, self.b)
 
         self.f(activations)
         return (activations,)
@@ -168,7 +165,7 @@ class SequenceConvolutionNet(NeuralNet):
             l2_conv = l2_penalty_weight[0]
             l2_nn = l2_penalty_weight[1:]
 
-        n_in_nn = n_filters * n_in / STRIDE / pool_size
+        n_in_nn = n_filters * n_in / pool_size
         conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters, 
                                               activation_function=activation_function,
                                               l1_penalty_weight=l1_conv, 

@@ -105,7 +105,7 @@ __global__ void gradient_reduce(const {{ data_type }} *df_weights,
     }
 }
 
-__global__ void convolve_sequence_gradient(const {{ data_type }} *input, 
+__global__ void convolve_sequence_gradient(const nucleotide_t *input, 
 					   const {{ data_type }} *df_output,
 					   {{ data_type }} *df_weights, 
 					   const unsigned int width,
@@ -115,66 +115,86 @@ __global__ void convolve_sequence_gradient(const {{ data_type }} *input,
   
   const unsigned int stride = 4;
   const unsigned int tx = threadIdx.x;
-  const unsigned int f = blockIdx.y*blockDim.y+threadIdx.y;
+  const unsigned int f = blockIdx.y;
   const unsigned int input_idx = blockIdx.x*blockDim.x+tx;
+  const unsigned int row = input_idx / width;
   const unsigned int column = input_idx % width;
   const unsigned int column_start_block = (blockIdx.x*blockDim.x)%width; // Column of first thread in block
   const unsigned int row_start_block = (blockIdx.x*blockDim.x)/width; // Row of first thread in block
   const unsigned int len_input = height*width;
-  const unsigned int output_width = width / stride;
+  // const unsigned int output_width = width / stride;
 
-  unsigned int df_weights_idx, output_idx, shared_idx, df_output_offset, row_shared, column_shared;
+  unsigned int df_weights_idx, output_idx, shared_idx, df_output_offset;
   int halo_idx;
   
-  const unsigned int halo_width = (filter_width / stride) - 1;
-  const unsigned int shared_width = halo_width + blockDim.x / stride;
+  const unsigned int halo_width = filter_width - 1;
+  const unsigned int shared_width = halo_width + blockDim.x;
   extern __shared__ {{ data_type }} sdata[];
   {{ data_type }} *df_output_shared = sdata;
   {{ data_type }} *df_weights_reduce = df_output_shared + shared_width;
 
-  const {{ data_type }} input_element = 
-			  (input_idx < len_input) ? input[input_idx] : 0.;
+  const nucleotide_t input_element = 
+    (input_idx < len_input) ? input[input_idx] : DNA_N;
 
   // Load halo elements on the left
   if (tx < halo_width) {
-    output_idx = row_start_block*n_filters*output_width+
-      f*output_width+column_start_block/stride-halo_width+tx;
+    output_idx = row_start_block*n_filters*width +
+      f*width + column_start_block - halo_width + tx;
     shared_idx = tx;
-    halo_idx = column_start_block / stride - halo_width + tx;
+    halo_idx = column_start_block - halo_width + tx;
     df_output_shared[shared_idx] = 
       (halo_idx < 0) ? 0. : df_output[output_idx];
   }
 
-  if (tx < blockDim.x/stride) {
-    column_shared = ((blockIdx.x*blockDim.x % width) / stride + tx) % output_width;
-    row_shared = (blockIdx.x*blockDim.x+stride*tx) / width;
-    output_idx = row_shared*n_filters*output_width+f*output_width+column_shared;
+  if (tx < blockDim.x) {
+    output_idx = row*n_filters*width + f*width + column;
     df_output_shared[tx+halo_width] = 
-      (column_shared < output_width && row_shared < height) ?
+      (column < width && row < height) ?
       df_output[output_idx] : 0.;
   }
   
   __syncthreads();
 
-  for (unsigned int k=0; k<(halo_width+1); k++) {
-    df_output_offset = (halo_width-k)*stride;
-    df_weights_reduce[tx] =
-      (column >= df_output_offset)
-      ? input_element * df_output_shared[tx/stride+k] : 0.;
+  for (unsigned int k=0; k<filter_width; k++) {
+    df_output_offset = halo_width-k;
+
+    if (column >= df_output_offset) {
+      df_weights_reduce[stride*tx] = (CHECK_NT(input_element, DNA_A)) ?
+    	df_output_shared[tx+k] : 0.;
+
+      df_weights_reduce[stride*tx+1] = (CHECK_NT(input_element, DNA_C)) ?
+    	df_output_shared[tx+k] : 0.;
+
+      df_weights_reduce[stride*tx+2] = (CHECK_NT(input_element, DNA_G)) ?
+    	df_output_shared[tx+k] : 0.;
+
+      df_weights_reduce[stride*tx+3] = (CHECK_NT(input_element, DNA_T)) ?
+    	df_output_shared[tx+k] : 0.;
+
+    } else {
+      df_weights_reduce[stride*tx] = 0.;
+      df_weights_reduce[stride*tx+1] = 0.;
+      df_weights_reduce[stride*tx+2] = 0.;
+      df_weights_reduce[stride*tx+3] = 0.;
+    }
+
     __syncthreads();
 
-    for (unsigned int s=blockDim.x/2; s>=stride; s>>=1) {
+    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
       if (tx<s) {
-	df_weights_reduce[tx] += df_weights_reduce[tx+s];
+    	df_weights_reduce[stride*tx] += df_weights_reduce[stride*(tx+s)];
+    	df_weights_reduce[stride*tx+1] += df_weights_reduce[stride*(tx+s)+1];
+    	df_weights_reduce[stride*tx+2] += df_weights_reduce[stride*(tx+s)+2];
+    	df_weights_reduce[stride*tx+3] += df_weights_reduce[stride*(tx+s)+3];
       }
       __syncthreads();
     }
-
+    
     if (tx<stride) {
-      df_weights_idx = 
-	f*filter_width*gridDim.x+
-	(tx+df_output_offset)*gridDim.x+
-	blockIdx.x;
+      df_weights_idx =
+      	f * stride * filter_width * gridDim.x +
+      	(tx + stride * df_output_offset) * gridDim.x +
+      	blockIdx.x;
       df_weights[df_weights_idx] = df_weights_reduce[tx];
     }
   }

@@ -1,6 +1,7 @@
 import unittest, random
 import numpy as np
 import pycuda.autoinit
+from sequence_convolution import DNA_A, DNA_C, DNA_G, DNA_T
 from sequence_convolution.pycuda_ops import convolve_sequence, \
      convolve_sequence_gradient, max_pool, max_pool_gradient
 from pycuda import gpuarray
@@ -25,6 +26,8 @@ def checkgrad_model(layer, input, epsilon=1e-4, **kwargs):
     f0 = np.sum(cache[0].get())
     df_output = gpuarray.empty_like(cache[0]).fill(1.)
     grads = layer.backprop(input, df_output, cache)[0]
+    dtype = grads[0].dtype
+    eps = np.finfo(dtype).eps
 
     grad_approx = [np.empty_like(p.get()) for p in layer.parameters]
     loss = 0
@@ -60,7 +63,7 @@ def checkgrad_model(layer, input, epsilon=1e-4, **kwargs):
             # Compute gradient approximation
             grad_approx_i[idx] = (f1 - f2) / (2 * epsilon)
 
-        loss += np.sum(((grads[i].get() - grad_approx_i) / grads[i].get()) ** 2.)
+        loss += np.sum(((grads[i].get() - grad_approx_i) / (grads[i].get() + eps)) ** 2.)
     loss = np.sqrt(loss)
 
     return loss
@@ -86,10 +89,10 @@ class TestConvolution(unittest.TestCase):
                 y[:,f,j] = b[f]
                 for k in range(filter_width):
                     nt = x_padded[:, j+k]
-                    y[np.asarray(nt & 0b1000, np.bool),f,j] += w[f,4*k]
-                    y[np.asarray(nt & 0b0100, np.bool),f,j] += w[f,4*k+1]
-                    y[np.asarray(nt & 0b0010, np.bool),f,j] += w[f,4*k+2]
-                    y[np.asarray(nt & 0b0001, np.bool),f,j] += w[f,4*k+3]
+                    y[np.bool_(nt & DNA_A),f,j] += w[f,4*k]
+                    y[np.bool_(nt & DNA_C),f,j] += w[f,4*k+1]
+                    y[np.bool_(nt & DNA_G),f,j] += w[f,4*k+2]
+                    y[np.bool_(nt & DNA_T),f,j] += w[f,4*k+3]
         return y
 
     @staticmethod    
@@ -155,35 +158,50 @@ class TestConvolutionGradWeights(unittest.TestCase):
     
     @staticmethod
     def grad_weights_cpu(input, df_output, n_filters, filter_width):
-        df_w = np.empty((n_filters, filter_width))
+        height, width = input.shape
+        df_w = np.zeros((n_filters, 4*filter_width))
+        input_padded = np.concatenate((input, 
+                                       np.zeros((input.shape[0], 
+                                                 filter_width-1),
+                                                 dtype=np.int8)), 1)
         for n in range(n_filters):
             for i in range(filter_width):
-                input_padded = np.concatenate((input[:,i::], 
-                                               np.zeros((input.shape[0], i))), 1)
-                df_w[n, i] = (input_padded[:,::STRIDE]*df_output[:,n]).sum()
+                df_w[n, 4*i] += df_output[:,n,:][
+                    np.bool_(input_padded[:,i:i+width] & DNA_A)].sum()
+                  
+                df_w[n, 4*i+1] += df_output[:,n,:][
+                    np.bool_(input_padded[:,i:i+width] & DNA_C)].sum()
+                  
+                df_w[n, 4*i+2] += df_output[:,n,:][
+                    np.bool_(input_padded[:,i:i+width] & DNA_G)].sum()
+                  
+                df_w[n, 4*i+3] += df_output[:,n,:][
+                    np.bool_(input_padded[:,i:i+width] & DNA_T)].sum()
+                  
         return df_w
 
     def grad_weights_test(self, height, width, n_filters, filter_width):
         for dtype, err_tol in ((np.float64, self.DOUBLE_ERR_TOL),
                                (np.float32, self.FLOAT_ERR_TOL)):
 
+            seq = [''.join((random.choice('ACGT') for i in range(width)))
+                   for j in range(height)]
+            sa = SeqArray(seq)
             eps = np.finfo(dtype).eps
-            x = curand((height, width), dtype)
-            df_output = curand((height, n_filters, width // STRIDE), dtype)
-            # df_output = gpuarray.empty((n_filters, height, width // STRIDE), dtype).fill(1.)
+            x = sa.enc_seq
+            df_output = curand((height, n_filters, width), dtype)
 
             df_w = convolve_sequence_gradient(x, df_output, filter_width, n_filters, block_size=1024)
             df_w_cpu = df_w.get()
             df_w_np = self.grad_weights_cpu(x.get(), df_output.get(), n_filters, filter_width)
 
-            del df_w, x, df_output
             self.assertLess(np.abs((df_w_cpu-df_w_np)/(df_w_cpu+eps)).max(), err_tol)
 
     def test_grad_weights_filter_12(self):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 12
-            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
+            m = np.random.randint(filter_width, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -191,7 +209,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 16
-            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
+            m = np.random.randint(filter_width, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -199,7 +217,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 24
-            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
+            m = np.random.randint(filter_width, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -207,7 +225,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 8
-            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
+            m = np.random.randint(filter_width, 100)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -215,15 +233,15 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = np.random.randint(5, 300)
             filter_width = 4
-            m = STRIDE*np.random.randint(filter_width/STRIDE, 200)
+            m = np.random.randint(filter_width, 200)
             n_filters = np.random.randint(2, 100)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights(self):
         for n in range(20):
             n = np.random.randint(5, 300)
-            filter_width = STRIDE*np.random.randint(2, 8)
-            m = STRIDE*np.random.randint(filter_width/STRIDE, 100)
+            filter_width = np.random.randint(2, 36)
+            m = np.random.randint(filter_width, 500)
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -231,7 +249,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
         for n in range(20):
             n = 10
             m = 16
-            filter_width = 8
+            filter_width = 1
             n_filters = 5
             self.grad_weights_test(n, m, n_filters, filter_width)
 
@@ -310,21 +328,21 @@ class TestMaxPoolGradient(unittest.TestCase):
 
 class TestConvNet(unittest.TestCase):
     def test_conv_net(self):
-        s = ['A' + ''.join([random.choice('ACGT') for x in range(7)]) for x in range(100)] + \
-        ['T' + ''.join([random.choice('ACGT') for x in range(7)]) for x in range(100)]
-        seq = np.array(map(encode_seq, s), np.float32)
+        seq = ['A' + ''.join([random.choice('ACGT') for x in range(7)]) for x in range(100)] + \
+          ['T' + ''.join([random.choice('ACGT') for x in range(7)]) for x in range(100)]
         targets = np.array(100*[[1., 0.]] + 100*[[0., 1.]], dtype=np.float32)
 
-        shuffle_idx = np.random.permutation(len(s))
-        seq = gpuarray.to_gpu(seq[shuffle_idx])
+        shuffle_idx = np.random.permutation(len(seq))
+        seq = [seq[i] for i in shuffle_idx]
         targets = gpuarray.to_gpu(targets[shuffle_idx])
 
+        sa = SeqArray(seq)
         test_error = 1
         for i in range(10):
-            model = SequenceConvolutionNet(seq.shape[1], 2, 32, 5, 8, [], 
+            model = SequenceConvolutionNet(sa.enc_seq.shape[1], 2, 32, 5, 8, [], 
                                            activation_function='tanh')
             
-            train_data = MiniBatchDataProvider(seq, targets, 10)
+            train_data = MiniBatchDataProvider(sa.enc_seq, targets, 10)
 
             optimizer = SGD(model, SimpleSGDUpdate, train_data, train_data,
                             learning_rate_schedule=constant_scheduler(1.),
@@ -336,7 +354,7 @@ class TestConvNet(unittest.TestCase):
         self.assertEqual(test_error, 0.)
 
 class TestConvolutionGradient(unittest.TestCase):
-    EPSILON = 1e-3
+    EPSILON = 1e-2
     TOL = 1e-4
     
     def test_convolution_gradient(self):
@@ -346,8 +364,11 @@ class TestConvolutionGradient(unittest.TestCase):
             n_filters = 4
             conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters, 
                                                   dtype=np.float64)
-            x = curand((100, n_in), dtype=np.float64)
-            loss = checkgrad_model(conv_layer, x, epsilon=self.EPSILON)
+
+            seq = [''.join((random.choice('ACGT'))) for i in range(n_in)
+                   for j in range(100)]
+            sa = SeqArray(seq)
+            loss = checkgrad_model(conv_layer, sa.enc_seq, epsilon=self.EPSILON)
             self.assertLess(loss, self.TOL)
             
 if __name__ == '__main__':

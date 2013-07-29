@@ -1,15 +1,15 @@
-from sequence_convolution import enum
+from sequence_convolution import enum, DNA_A, DNA_C, DNA_G, DNA_T, DNA_R, DNA_Y, DNA_N
 import numpy as np
 from pycuda import gpuarray
 
 Nucleotides = enum(
-    A = 0b1000,
-    C = 0b0100,
-    G = 0b0010,
-    T = 0b0001,
-    R = 0b1010,
-    Y = 0b0101,
-    N = 0b0000
+    A = DNA_A,
+    C = DNA_C,
+    G = DNA_G,
+    T = DNA_T,
+    R = DNA_R,
+    Y = DNA_Y,
+    N = DNA_N
 )
 
 def encode_nt(nt):

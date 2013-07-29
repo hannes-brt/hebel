@@ -64,26 +64,25 @@ def convolve_sequence(mat, conv_filter, bias,
 def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
                                target=None, stream=None, block_size=1024):
     stride = 4
-    dtype = mat.dtype
+    dtype = df_output.dtype
     assert dtype in (np.float32, np.float64)
-    assert df_output.dtype == dtype
 
-    assert mat.shape[1] // stride == df_output.shape[2]
+    assert mat.shape[1] == df_output.shape[2]
 
     height, width = mat.shape
-    n_elements = height * width
+    n_elements = mat.size
 
     block = (block_size, 1, 1)
     grid = (int(np.ceil(n_elements / float(block_size))), n_filters, 1)
-    shared = ((filter_width / stride) - 1 + block_size / stride +  # df_output_share
-              block_size # df_weights_reduce
+    shared = (filter_width - 1 + block_size +  # df_output_share
+              stride * block_size              # df_weights_reduce
               ) * np.dtype(dtype).itemsize
 
     if target is not None:
         assert target.dtype == dtype
-        assert target.shape == (n_filters, filter_width)
+        assert target.shape == (n_filters, stride*filter_width, grid[0])
     else:
-        target = gpuarray.empty((n_filters, filter_width, 
+        target = gpuarray.empty((n_filters, stride*filter_width, 
                                  grid[0]), dtype=dtype)
 
     dname = _dtype_name[dtype]
@@ -93,17 +92,20 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
         np.uint32(filter_width), np.uint32(n_filters),
         block=block, grid=grid, shared=shared, stream=stream)
 
-    target_sum = gpuarray.empty((n_filters, filter_width), dtype)
-    block_sum = (max((1, 2**int(np.ceil(np.log2(grid[0])-1)))), 1, 1)
-    grid_sum = (n_filters, filter_width, 1)
-    shared = block_sum[0] * np.dtype(dtype).itemsize
+    if grid[0] > 0:
+        target_sum = gpuarray.empty((n_filters, stride*filter_width), dtype)
+        block_sum = (max((1, 2**int(np.ceil(np.log2(grid[0])-1)))), 1, 1)
+        grid_sum = (n_filters, stride*filter_width, 1)
+        shared = block_sum[0] * np.dtype(dtype).itemsize
 
-    _kernels[dname]['gradient_reduce_kernel'](
-        target, target_sum,
-        np.uint32(n_filters), np.uint32(filter_width),
-        np.uint32(grid[0]),
-        block=block_sum, grid=grid_sum,
-        shared=shared, stream=stream)
+        _kernels[dname]['gradient_reduce_kernel'](
+            target, target_sum,
+            np.uint32(n_filters), np.uint32(filter_width),
+            np.uint32(grid[0]),
+            block=block_sum, grid=grid_sum,
+            shared=shared, stream=stream)
+    else:
+        target_sum = target.reshape((n_filters, stride*filter_width))
 
     return target_sum
 
