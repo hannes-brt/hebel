@@ -5,8 +5,9 @@ from sequence_convolution.pycuda_ops import convolve_sequence, \
      convolve_sequence_gradient, max_pool, max_pool_gradient
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
-from sequence_convolution.sequence_convolution import SequenceConvolutionNet, \
+from sequence_convolution.models import SequenceConvolutionNet, \
      SequenceConvolutionLayer
+from sequence_convolution.seq_array import SeqArray
 from neural_nets.data_providers import MiniBatchDataProvider
 from neural_nets.optimizers import SGD
 from neural_nets.schedulers import constant_scheduler
@@ -69,42 +70,46 @@ class TestConvolution(unittest.TestCase):
     DOUBLE_ERR_TOL = 1e-13
     
     @staticmethod
-    def cpu_conv1d(x, w, b, stride=1):
-        n, m = x.shape        
-        n_filters, filter_width = w.shape
+    def cpu_conv1d(x, w, b):
+        height, width = x.shape        
+        n_filters= w.shape[0]
+        filter_width = w.shape[1] // 4
 
         pad_width = filter_width - 1
         x_padded = np.concatenate((x,
-                                   np.zeros((n, pad_width), dtype=x.dtype)), 1)
+                                   np.zeros((height, pad_width), dtype=np.int8)), 1)
 
-        m_output = int(np.ceil(x.shape[1] / float(stride)))
-        y = np.empty((x.shape[0], n_filters, m_output), dtype=x.dtype)
+        y = np.empty((height, n_filters, width), dtype=w.dtype)
+
         for f in range(n_filters):
-            for i in range(0, m_output):
-                ii = i*stride
-                y[:,f,i] = b[f] + (x_padded[:,ii:(ii+filter_width)]*w[f,:]).sum(1)
+            for j in range(width):
+                y[:,f,j] = b[f]
+                for k in range(filter_width):
+                    nt = x_padded[:, j+k]
+                    y[np.asarray(nt & 0b1000, np.bool),f,j] += w[f,4*k]
+                    y[np.asarray(nt & 0b0100, np.bool),f,j] += w[f,4*k+1]
+                    y[np.asarray(nt & 0b0010, np.bool),f,j] += w[f,4*k+2]
+                    y[np.asarray(nt & 0b0001, np.bool),f,j] += w[f,4*k+3]
         return y
 
     @staticmethod    
-    def gpu_conv1d(x, w, b, dtype, stride=1):
-        y = convolve_sequence(x, w, b, stride=stride)
+    def gpu_conv1d(x, w, b, dtype):
+        y = convolve_sequence(x, w, b)
         return y
     
-    def conv1d_test_setup(self, height, width, filter_width, n_filters, 
-                          stride=STRIDE):
+    def conv1d_test_setup(self, height, width, filter_width, n_filters):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL), 
                                (np.float64, self.DOUBLE_ERR_TOL)):
-            x = curand((height, width), dtype)
-            w = curand((n_filters, filter_width), dtype=dtype)
+            seq = [''.join((random.choice('ACGT') for i in range(width)))
+                   for j in range(height)]
+            sa = SeqArray(seq)
+            x = sa.enc_seq
+            w = curand((n_filters, 4*filter_width), dtype=dtype)
             b = curand((n_filters,), dtype=dtype)
-            y = self.gpu_conv1d(x, w, b, dtype, stride)
-            y_np = self.cpu_conv1d(x.get(), w.get(), b.get(),
-                                   stride=stride)
+            y = self.gpu_conv1d(x, w, b, dtype)
+            y_np = self.cpu_conv1d(x.get(), w.get(), b.get())
             y_cpu = y.get()
             
-            # for f in range(n_filters):
-            #     err = (y_cpu[f,:,:]-y_np[f,:,:])/y_cpu[f,:,:]
-            #     self.assertLess(np.linalg.norm(err, np.inf), err_tol)
             self.assertLess(np.max((y_cpu - y_np) / y_cpu), err_tol)
     
     def test_conv1d_matrix_small(self):
@@ -113,7 +118,7 @@ class TestConvolution(unittest.TestCase):
             m = np.random.randint(4, 9)
             n_filters = np.random.randint(2, 5)
 
-            self.conv1d_test_setup(n, m, 4, n_filters)
+            self.conv1d_test_setup(n, m, 1, n_filters)
 
     def test_conv1d_matrix_big_height(self):
         for i in range(20):
@@ -143,28 +148,6 @@ class TestConvolution(unittest.TestCase):
             w = 2*np.random.randint(2, 5)
             n_filters = np.random.randint(2, 5)            
             self.conv1d_test_setup(n, m, w, n_filters)
-
-    def test_conv1d_matrix_stride(self):
-        for i in range(20):
-            n = np.random.randint(200, 1000)
-            m = np.random.randint(200, 1000)
-            filter_width = 4
-            n_filters = np.random.randint(2, 5)
-            stride = np.random.randint(2, 5)
-
-            for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL), 
-                                   (np.float64, self.DOUBLE_ERR_TOL)):
-                x = curand((n, m), dtype)
-                w = curand((n_filters, filter_width), dtype=dtype)
-                b = curand((n_filters,), dtype=dtype)
-
-                y_no_stride = self.gpu_conv1d(x, w, b, dtype, 1)
-                y_stride = self.gpu_conv1d(x, w, b, dtype, stride)
-
-                for f in range(n_filters):     
-                    err = (y_no_stride.get()[f,:,::stride]-
-                           y_stride.get()[f,:,:])/y_no_stride.get()[f,:,::stride]
-                    self.assertLess(np.linalg.norm(err, np.inf), err_tol)
 
 class TestConvolutionGradWeights(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-3

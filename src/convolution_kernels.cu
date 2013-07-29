@@ -1,35 +1,37 @@
-#include "float.h"
-#include "limits.h"
-#define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
+#include <float.h>
+#include <limits.h>
+#include "convolution_kernels.h"
 
-__global__ void convolve_sequence(const {{ data_type }} *input,
+__global__ void convolve_sequence(const nucleotide_t *input,
 				  {{ data_type }} *target, const {{ data_type }} *filter,
 				  const {{ data_type }} *bias, const unsigned int width, 
 				  const unsigned int height, const unsigned int filter_width, 
-				  const unsigned int n_filters, const unsigned int stride) {
+				  const unsigned int n_filters) {
 
   /* Performs a 1D convolution on each row of a matrix with 
      multiple filters. Filter size must be even and input is
      padded on the right with zeros.
   */
     
-  const unsigned int i = blockIdx.y;
-  const unsigned int j = blockIdx.x*blockDim.x+threadIdx.x;
-  const unsigned int f = blockIdx.z;
-  const unsigned int lin_idx = i*width+j;
+  const unsigned int f = blockIdx.y;
+  const unsigned int lin_idx = blockIdx.x*blockDim.x+threadIdx.x;
+  const unsigned int i = lin_idx / width;
+  const unsigned int j = lin_idx % width;
   const unsigned int row_start = i*width;
-  const unsigned int target_width = CEILING((double) width / stride);
-  unsigned int shared_idx, input_idx;    
+  const unsigned int filter_elements = 4*filter_width; // Actual number of elements in filter
+  const {{ data_type }} bias_filter = bias[f];
+  unsigned int shared_idx, input_idx, target_idx;
+  nucleotide_t nt;
     
-  const unsigned int shared_width = blockDim.x+filter_width-1;
+  const unsigned int shared_width = (blockDim.x+filter_width-1);
   extern __shared__ {{ data_type }} sdata[];
-  {{ data_type }} *input_shared = sdata;
-  {{ data_type }} *bias_shared = input_shared + shared_width;
+  nucleotide_t *input_shared = (nucleotide_t*) sdata;
+  {{ data_type }} *filter_shared = sdata + shared_width;
     
   const unsigned int halo_width = filter_width - 1;
     
   shared_idx = threadIdx.x;
-  input_shared[shared_idx] = (j < width && i < height) ? input[lin_idx] : 0;
+  input_shared[shared_idx] = (i < height) ? input[lin_idx] : DNA_N;
   __syncthreads();
 
   if (i < height) {
@@ -38,23 +40,35 @@ __global__ void convolve_sequence(const {{ data_type }} *input,
       shared_idx = blockDim.x+threadIdx.x;
       input_idx = row_start+halo_index_right;
       input_shared[shared_idx] =
-	(halo_index_right >= width) ? 0 : input[input_idx];
+	(halo_index_right >= width) ? DNA_N : input[input_idx];
     }
   }
 
-  if (threadIdx.x < n_filters)
-    bias_shared[threadIdx.x] = bias[threadIdx.x];
+  if (threadIdx.x < filter_elements)
+    filter_shared[threadIdx.x] = filter[f*filter_elements+threadIdx.x];
   __syncthreads();
   
-  unsigned int filter_idx, target_idx;
-  if (!(j%stride) && i < height && j < width) {
-    {{ data_type }} Pvalue = bias_shared[f];
+  if (i < height) {
+    {{ data_type }} Pvalue = bias_filter;
     for (int k=0; k < filter_width; k++) {
-      shared_idx = threadIdx.x+k;
-      filter_idx = f*filter_width+k;
-      Pvalue += input_shared[shared_idx]*filter[filter_idx];
+      if (j+k < width) {
+	shared_idx = threadIdx.x+k;
+	nt = input_shared[shared_idx];
+      
+	if (CHECK_NT(nt, DNA_A))
+	  Pvalue += filter_shared[4*k];
+
+	if (CHECK_NT(nt, DNA_C))
+	  Pvalue += filter_shared[4*k+1];
+
+	if (CHECK_NT(nt, DNA_G))
+	  Pvalue += filter_shared[4*k+2];
+
+	if (CHECK_NT(nt, DNA_T))
+	  Pvalue += filter_shared[4*k+3];
+      }
     }
-    target_idx = i*n_filters*target_width+f*target_width+j/stride;
+    target_idx = i*n_filters*width+f*width+j;
     target[target_idx] = Pvalue;
   }
 }
@@ -67,7 +81,8 @@ __global__ void gradient_reduce(const {{ data_type }} *df_weights,
     */
     
     const unsigned int tid = threadIdx.x;
-    const unsigned int df_weights_idx = blockIdx.x*filter_width*n_elements+
+    const unsigned int filter_elements = 4*filter_width;
+    const unsigned int df_weights_idx = blockIdx.x*filter_elements*n_elements+
         blockIdx.y*n_elements+threadIdx.x;
     
     extern __shared__ {{ data_type }} sdata[];
@@ -85,15 +100,17 @@ __global__ void gradient_reduce(const {{ data_type }} *df_weights,
     }
     
     if (tid==0) {        
-        const unsigned int df_weights_sum_idx = blockIdx.x*filter_width+blockIdx.y;
+        const unsigned int df_weights_sum_idx = blockIdx.x*filter_elements+blockIdx.y;
         df_weights_sum[df_weights_sum_idx] = sdata[0];
     }
 }
 
-__global__ void convolve_sequence_gradient(
-					   const {{ data_type }} *input, const {{ data_type }} *df_output,
-					   {{ data_type }} *df_weights, const unsigned int width,
-					   const unsigned int height, const unsigned int filter_width,
+__global__ void convolve_sequence_gradient(const {{ data_type }} *input, 
+					   const {{ data_type }} *df_output,
+					   {{ data_type }} *df_weights, 
+					   const unsigned int width,
+					   const unsigned int height, 
+					   const unsigned int filter_width,
 					   const unsigned int n_filters) {
   
   const unsigned int stride = 4;

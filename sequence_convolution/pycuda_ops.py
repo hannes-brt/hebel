@@ -8,10 +8,12 @@ from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
 
 _TILE_SIZE_CONV = 1024
 
-_code = Template(open(os.path.join(sequence_conv_root, 
-    'src', 'convolution_kernels.cu')).read())
+_src_dir = os.path.join(sequence_conv_root, 'src')
+_code = Template(open(os.path.join(_src_dir, 'convolution_kernels.cu')).read())
 
-_source_modules = {dtype: SourceModule(_code.render(data_type=dtype))
+
+_source_modules = {dtype: SourceModule(_code.render(data_type=dtype), 
+                                       include_dirs=[_src_dir])
                   for dtype in ('float', 'double')}
 
 _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
@@ -24,31 +26,28 @@ _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
 
 _dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
 
-def convolve_sequence(mat, conv_filter, bias, stride=4,
+def convolve_sequence(mat, conv_filter, bias,
                       target=None, stream=None):
-    dtype = mat.dtype
+    dtype = conv_filter.dtype
     assert dtype in (np.float32, np.float64)
-    assert conv_filter.dtype == dtype
     assert bias.shape[0] == conv_filter.shape[0]
 
     if target is not None:
         assert target.dtype == dtype
-        assert mat.shape // stride == target.shape[:2]
+        assert mat.shape == target.shape[:2]
 
     height, width = mat.shape
-    n_filters, width_filter = conv_filter.shape
+    n_filters = conv_filter.shape[0]
+    width_filter = conv_filter.shape[1] // 4
 
     block = (_TILE_SIZE_CONV, 1, 1)
-    grid = (int(np.ceil(mat.shape[1] / float(block[0]))),
-            int(np.ceil(mat.shape[0] / float(block[1]))),
-            n_filters)
-    shared = ((_TILE_SIZE_CONV + width_filter - 1 +     # input_shared
-              n_filters) *                              # bias_shared
-              np.dtype(dtype).itemsize)
+    grid = (int(np.ceil(mat.size / float(block[0]))),
+            n_filters, 1)
+    shared = ((_TILE_SIZE_CONV + width_filter - 1) * np.dtype(dtype).itemsize +
+              4 * width_filter * np.dtype(dtype).itemsize)  # filter_shared
     
     if target is None:
-        target_width = int(np.ceil(width / float(stride)))
-        target = gpuarray.empty((height, n_filters, target_width),
+        target = gpuarray.empty((height, n_filters, width),
                                 dtype=dtype)
 
     dname = _dtype_name[dtype]
@@ -57,7 +56,6 @@ def convolve_sequence(mat, conv_filter, bias, stride=4,
         np.uint32(width), np.uint32(height),
         np.uint32(width_filter),
         np.uint32(n_filters),
-        np.uint32(stride),
         block=block, grid=grid, stream=stream, 
         shared=shared)
 
