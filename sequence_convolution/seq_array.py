@@ -27,7 +27,7 @@ class SeqArray(object):
     def sequence(self, seq):
         self._sequence = seq
         self.enc_seq = gpuarray.to_gpu(
-            np.array([[encode_nt(nt)
+            np.array([[encode_nt(nt.upper())
                        for nt in line] for line in seq],
                        dtype=np.int8))
 
