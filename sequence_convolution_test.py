@@ -152,6 +152,36 @@ class TestConvolution(unittest.TestCase):
             n_filters = np.random.randint(2, 5)            
             self.conv1d_test_setup(n, m, w, n_filters)
 
+    def test_input_offset(self):
+        for i in range(20):
+            height = np.random.randint(10, 100)
+            width = np.random.randint(10, 300)
+            total_width = np.random.randint(width + 1, width+100)
+            input_offset = np.random.randint(0, total_width-width)
+            filter_width = np.random.randint(2, 24)
+            n_filters = np.random.randint(2, 10)
+
+            for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL), 
+                                   (np.float64, self.DOUBLE_ERR_TOL)):
+                seq = [''.join((random.choice('ACGT') for i in range(width)))
+                       for j in range(height)]
+                sa = SeqArray(seq)
+                x = sa.enc_seq.get()
+                X = np.empty((height, total_width), dtype=np.int8)
+                X[:,input_offset:input_offset+width] = x
+                X = gpuarray.to_gpu(X)
+                
+                w = curand((n_filters, 4*filter_width), dtype=dtype)
+                b = curand((n_filters,), dtype=dtype)
+                y = gpuarray.empty((X.shape[0], n_filters, X.shape[1]), dtype)
+                
+                y = convolve_sequence(X, w, b, input_offset, width, y)
+
+                y_np = self.cpu_conv1d(x, w.get(), b.get())
+                y_cpu = y.get()[:,:,input_offset:input_offset+width]
+
+                self.assertLess(np.max((y_cpu - y_np) / y_cpu), err_tol)
+
 class TestConvolutionGradWeights(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-3
     DOUBLE_ERR_TOL = 1e-12
@@ -198,7 +228,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.assertLess(np.abs((df_w_cpu-df_w_np)/(df_w_cpu+eps)).max(), err_tol)
 
     def test_grad_weights_filter_12(self):
-        for n in range(20):
+        for i in range(20):
             n = np.random.randint(5, 300)
             filter_width = 12
             m = np.random.randint(filter_width, 100)
@@ -206,7 +236,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights_filter_16(self):
-        for n in range(20):
+        for i in range(20):
             n = np.random.randint(5, 300)
             filter_width = 16
             m = np.random.randint(filter_width, 100)
@@ -214,7 +244,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights_filter_24(self):
-        for n in range(20):
+        for i in range(20):
             n = np.random.randint(5, 300)
             filter_width = 24
             m = np.random.randint(filter_width, 100)
@@ -222,7 +252,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights_filter_8(self):
-        for n in range(20):
+        for i in range(20):
             n = np.random.randint(5, 300)
             filter_width = 8
             m = np.random.randint(filter_width, 100)
@@ -230,7 +260,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights_filter_4(self):
-        for n in range(20):
+        for i in range(20):
             n = np.random.randint(5, 300)
             filter_width = 4
             m = np.random.randint(filter_width, 200)
@@ -238,7 +268,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights(self):
-        for n in range(20):
+        for i in range(20):
             n = np.random.randint(5, 300)
             filter_width = np.random.randint(2, 36)
             m = np.random.randint(filter_width, 500)
@@ -246,13 +276,45 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.grad_weights_test(n, m, n_filters, filter_width)
 
     def test_grad_weights_1_block(self):
-        for n in range(20):
+        for i in range(20):
             n = 10
             m = 16
             filter_width = 1
             n_filters = 5
             self.grad_weights_test(n, m, n_filters, filter_width)
 
+    def test_grad_input_offset(self):
+        for i in range(20):
+            height = np.random.randint(10, 100)
+            width = np.random.randint(10, 300)
+            total_width = np.random.randint(width + 1, width + 100)
+            input_offset = np.random.randint(0, total_width - width)
+            filter_width = np.random.randint(2, 24)
+            n_filters = np.random.randint(2, 10)
+        
+            for dtype, err_tol in ((np.float64, self.DOUBLE_ERR_TOL),
+                                   (np.float32, self.FLOAT_ERR_TOL)):
+
+                seq = [''.join((random.choice('ACGT') for i in range(width)))
+                       for j in range(height)]
+                sa = SeqArray(seq)
+                eps = np.finfo(dtype).eps
+                x = sa.enc_seq.get()
+                X = np.empty((height, total_width), dtype=np.int8)
+                X[:,input_offset:input_offset+width] = x
+                X = gpuarray.to_gpu(X)
+                
+                df_output = curand((height, n_filters, total_width), dtype)
+
+                df_w = convolve_sequence_gradient(X, df_output, filter_width, n_filters, 
+                                                  input_offset, width,
+                                                  block_size=1024)
+                df_w_cpu = df_w.get()
+                df_w_np = self.grad_weights_cpu(x, 
+                                                df_output.get()[:,:,input_offset:input_offset+width], 
+                                                n_filters, filter_width)
+
+                self.assertLess(np.abs((df_w_cpu-df_w_np)/(df_w_cpu+eps)).max(), err_tol)
 
 class TestMaxPool(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-20
@@ -260,17 +322,25 @@ class TestMaxPool(unittest.TestCase):
 
     @staticmethod
     def max_pool_cpu(mat, pool_size):
-        output = np.empty((mat.shape[0], mat.shape[1], mat.shape[2] / pool_size))
+        width_pooled = int(np.ceil(mat.shape[2] / float(pool_size)))
+        width_pad = (width_pooled * pool_size) % mat.shape[2]
+        mat_padded = np.concatenate((mat, 
+                                     -np.inf * np.ones((mat.shape[0], mat.shape[1],
+                                                        width_pad),
+                                                        mat.dtype)), 2)
+                                    
+        output = np.empty((mat.shape[0], mat.shape[1], width_pooled))
         for n in range(output.shape[0]):
             for i in range(output.shape[2]):
-                output[n,:,i] = np.max(mat[n,:, pool_size*i:pool_size*(i+1)], 1)
+                output[n,:,i] = np.max(mat_padded[n,:, pool_size*i:pool_size*(i+1)], 1)
 
         return output
 
     def max_pool_test(self, height, width, n_filters, pool_size):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
                                (np.float64, self.DOUBLE_ERR_TOL)):
-            mat = curand((n_filters, height, width), dtype)
+
+            mat = curand((height, n_filters, width), dtype)
             target, argmax = max_pool(mat, pool_size)
             target_cpu = target.get()
             target_np = self.max_pool_cpu(mat.get(), pool_size)
@@ -284,8 +354,37 @@ class TestMaxPool(unittest.TestCase):
             height = np.random.randint(100, 1000)
             width = np.random.randint(20, 500)
             n_filters = np.random.randint(2, 10)
-            pool_size = np.random.randint(2, 15)
+            pool_size = np.random.randint(2, width)
             self.max_pool_test(height, width, n_filters, pool_size)
+
+    def test_max_pool_offset(self):
+        for i in range(20):
+            height = np.random.randint(100, 1000)
+            width = np.random.randint(20, 500)
+            total_width = np.random.randint(width+1, width+300)
+            n_filters = np.random.randint(2, 10)
+            pool_size = np.random.randint(2, width)
+            pooled_width = int(np.ceil(width / float(pool_size)))
+            input_offset = np.random.randint(0, total_width-width)
+            total_width_pooled = np.random.randint(pooled_width+1, pooled_width+100)            
+            pooled_offset = np.random.randint(0, total_width_pooled-pooled_width)
+
+            for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
+                                   (np.float64, self.DOUBLE_ERR_TOL)):
+
+                mat = curand((height, n_filters, total_width), dtype)
+                target = gpuarray.empty((height, n_filters, total_width_pooled), dtype)
+                argmax = gpuarray.empty(target.shape, np.uint32)
+                target, argmax = max_pool(mat, pool_size, width,
+                                          input_offset, pooled_offset,
+                                          target, argmax)
+                target_cpu = target.get()[:,:,pooled_offset:pooled_offset+pooled_width]
+                target_np = self.max_pool_cpu(mat.get()[:,:,input_offset:input_offset+width], 
+                                              pool_size)
+                for n in range(n_filters):
+                    self.assertLess(np.linalg.norm(
+                        (target_cpu[n] - target_np[n]) / target_cpu[n], np.inf), 
+                        err_tol)
 
 class TestMaxPoolGradient(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-20
@@ -293,8 +392,8 @@ class TestMaxPoolGradient(unittest.TestCase):
 
     @staticmethod
     def max_pool_grad_cpu(mat, mat_pooled, argmax, df_output, pool_size):
-        n_filters = mat.shape[1]
         height = mat.shape[0]
+        n_filters = mat.shape[1]
         n_pooled = mat_pooled.shape[2]        
         
         df_input = np.zeros_like(mat)
@@ -307,7 +406,7 @@ class TestMaxPoolGradient(unittest.TestCase):
     def max_pool_grad_test(self, height, width, n_filters, pool_size):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
                                (np.float64, self.DOUBLE_ERR_TOL)):
-            mat = curand((n_filters, height, width), dtype)
+            mat = curand((height, n_filters, width), dtype)
             mat_pooled, argmax = max_pool(mat, pool_size)
             df_output = curand(mat_pooled.shape, dtype)
             df_input = max_pool_gradient(mat, argmax, df_output, pool_size)
@@ -325,6 +424,43 @@ class TestMaxPoolGradient(unittest.TestCase):
             n_filters = np.random.randint(2, 10)
             pool_size = np.random.randint(2, 15)
             self.max_pool_grad_test(n, m, n_filters, pool_size)
+
+    def test_max_pool_grad_offset(self):
+        for i in range(20):
+            height = np.random.randint(100, 1000)
+            width = np.random.randint(15, 500)
+            total_width = np.random.randint(width+1, width+300)
+            input_offset = np.random.randint(0, total_width-width)
+            n_filters = np.random.randint(2, 10)
+            pool_size = np.random.randint(2, width)
+            pooled_width = int(np.ceil(width / float(pool_size)))
+            total_width_pooled = np.random.randint(pooled_width+1, pooled_width+100)
+            pooled_offset = np.random.randint(0, total_width_pooled-pooled_width)
+
+            for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
+                                   (np.float64, self.DOUBLE_ERR_TOL)):
+                mat = curand((height, n_filters, total_width), dtype)
+                mat_pooled = gpuarray.empty((height, n_filters, total_width_pooled), dtype)
+                argmax = gpuarray.empty(mat_pooled.shape, np.uint32)
+                mat_pooled, argmax = max_pool(mat, pool_size, width,
+                                              input_offset, pooled_offset,
+                                              mat_pooled, argmax)
+                df_output = curand(mat_pooled.shape, dtype)
+                df_input = max_pool_gradient(mat, argmax, df_output, pool_size,
+                                             width, total_width_pooled,
+                                             input_offset, pooled_offset)
+                df_input_cpu = df_input.get()[:,:,input_offset:input_offset+width]
+                mat_cpu = mat.get()[:,:,input_offset:input_offset+width]
+                mat_pooled_cpu = mat_pooled.get()[:,:,pooled_offset:pooled_offset+pooled_width]
+                argmax_cpu = argmax.get()[:,:,pooled_offset:pooled_offset+pooled_width]
+                df_output_cpu = df_output.get()[:,:,pooled_offset:pooled_offset+pooled_width]
+                df_input_np = self.max_pool_grad_cpu(mat_cpu, mat_pooled_cpu, 
+                                                     argmax_cpu,
+                                                     df_output_cpu, pool_size)
+
+                self.assertTrue(np.all(df_input_cpu == df_input_np))
+            
+
 
 class TestConvNet(unittest.TestCase):
     def test_conv_net(self):
