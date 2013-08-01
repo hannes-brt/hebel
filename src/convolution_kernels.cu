@@ -232,7 +232,6 @@ __global__ void max_pool(const {{ data_type }} *mat,
   const unsigned int i = blockIdx.y;
   const unsigned int j = blockIdx.x*pool_size+tx;
   const unsigned int f = blockIdx.z;
-  const unsigned int n_filters = gridDim.z;
   const unsigned int mat_idx = i*total_width + input_offset + f*width + j;
   const unsigned int width_pooled = CEILING(({{ data_type }}) width / pool_size);
     
@@ -279,7 +278,6 @@ __global__ void max_pool_gradient(
     const unsigned int bx = blockIdx.x;
     const unsigned int f = blockIdx.y;
     const unsigned int row = blockIdx.z;
-    const unsigned int n_filters = gridDim.y;
     const unsigned int column = bx*blockDim.x+tx;
     
     const unsigned int pooled_idx = row*total_width_pooled +
