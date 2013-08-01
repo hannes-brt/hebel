@@ -27,7 +27,8 @@ _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
 _dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
 
 def convolve_sequence(mat, conv_filter, bias,
-                      input_offset=0, width=None,
+                      input_offset=0, target_offset=0, 
+                      width=None,
                       target=None, stream=None):
     dtype = conv_filter.dtype
     assert dtype in (np.float32, np.float64)
@@ -53,11 +54,14 @@ def convolve_sequence(mat, conv_filter, bias,
               4 * width_filter * np.dtype(dtype).itemsize)  # filter_shared
     
     if target is None:
-        target = gpuarray.empty((height, n_filters, total_width),
+        assert target_offset == 0
+        total_target_width = n_filters*total_width
+        target = gpuarray.empty((height, total_target_width),
                                 dtype=dtype)
     else:
         assert target.dtype == dtype
-        assert mat.shape[1] == target.shape[2]
+        total_target_width = target.shape[1]
+        assert target_offset + n_filters * width <= total_target_width
 
     dname = _dtype_name[dtype]
     _kernels[dname]['convolve_sequence_kernel'](
@@ -70,6 +74,8 @@ def convolve_sequence(mat, conv_filter, bias,
         np.uint32(total_width),
         np.uint32(height),
         np.uint32(width_filter),
+        np.uint32(total_target_width),
+        np.uint32(target_offset),
         np.uint32(n_filters),
         block=block, 
         grid=grid, 
@@ -79,19 +85,23 @@ def convolve_sequence(mat, conv_filter, bias,
     return target
 
 def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
-                               input_offset=0, width=None,
+                               input_offset=0, df_output_offset=0, width=None,
                                target=None, stream=None, block_size=1024):
     stride = 4
     dtype = df_output.dtype
     assert dtype in (np.float32, np.float64)
 
-    assert mat.shape[1] == df_output.shape[2]
-
     height, total_width = mat.shape
 
     if input_offset > 0:
         assert width is not None
-        assert input_offset + width < total_width
+        assert input_offset + width <= total_width
+
+    total_df_output_width = df_output.shape[1]
+
+    if df_output_offset > 0:
+        assert width is not None
+        assert df_output_offset + n_filters * width <= total_df_output_width
     
     if width is None:
         width = total_width
@@ -107,7 +117,7 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
         assert target.dtype == dtype
         assert target.shape == (n_filters, stride*filter_width, grid[0])
     else:
-        target = gpuarray.empty((n_filters, stride*filter_width, 
+        target = gpuarray.empty((n_filters, stride*filter_width,
                                  grid[0]), dtype=dtype)
 
     dname = _dtype_name[dtype]
@@ -116,7 +126,9 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
         df_output, 
         target,
         np.uint32(input_offset),
+        np.uint32(df_output_offset),
         np.uint32(total_width),
+        np.uint32(total_df_output_width),
         np.uint32(width),
         np.uint32(height),
         np.uint32(filter_width), 
@@ -142,19 +154,20 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
 
     return target_sum
 
-def max_pool(mat, pool_size, width=None, 
+def max_pool(mat, pool_size, n_filters, width=None, 
              input_offset=0, pooled_offset=0,
              target=None, argmax=None, stream=None):
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
-    assert pool_size <= mat.shape[2]
+    assert pool_size <= mat.shape[1] / n_filters
 
-    height, n_filters, total_width = mat.shape
+    height, total_width = mat.shape
 
     if width is None:
         assert input_offset == 0
         assert pooled_offset == 0
-        width = total_width    
+        assert not total_width % n_filters
+        width = total_width / n_filters
 
     pooled_width = int(np.ceil(width / float(pool_size)))
 
@@ -165,20 +178,18 @@ def max_pool(mat, pool_size, width=None,
 
     if target is not None:
         assert target.dtype == dtype
-        total_width_pooled = target.shape[2]
+        total_width_pooled = target.shape[1]
     else:
+        total_width_pooled = n_filters*pooled_width
         target = gpuarray.empty(
-            (height, n_filters, pooled_width),
+            (height, total_width_pooled),
             dtype)
-        total_width_pooled = pooled_width
 
     if argmax is not None:
         assert argmax.dtype == np.uint32
         assert argmax.shape == target.shape
     else:
-        argmax = gpuarray.empty(
-            (height, n_filters, total_width_pooled),
-            np.uint32)
+        argmax = gpuarray.empty(target.shape, np.uint32)
     
     dname = _dtype_name[dtype]
 
@@ -198,30 +209,33 @@ def max_pool(mat, pool_size, width=None,
     return target, argmax
 
 def max_pool_gradient(mat, argmax,
-                      df_output, pool_size, width=None,
-                      total_width_pooled=None,
+                      df_output, pool_size, n_filters,
+                      width=None,
+                      width_pooled=None,
                       input_offset=0, pooled_offset=0,
                       target=None, stream=None):
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
 
-    height, n_filters, total_width = mat.shape
+    height, total_width = mat.shape
 
     if width is None:
         assert input_offset == 0
         assert pooled_offset == 0
-        width = total_width
+        assert not total_width % n_filters
+        width = total_width / n_filters
 
-    pooled_width = df_output.shape[2]
+    total_pooled_width = df_output.shape[1]
 
-    if total_width_pooled is None:
-        total_width_pooled = pooled_width
+    if width_pooled is None:
+        assert not total_pooled_width % n_filters
+        width_pooled = total_pooled_width / n_filters
         assert pooled_offset == 0
 
-    assert total_width_pooled >= pooled_width
+    assert total_pooled_width >= n_filters * width_pooled
 
     block = (pool_size, 1, 1)
-    grid = (pooled_width, n_filters, height)
+    grid = (width_pooled, n_filters, height)
 
     if target is not None:
         assert target.dtype == dtype
@@ -239,15 +253,16 @@ def max_pool_gradient(mat, argmax,
         np.uint32(total_width),
         np.uint32(width), 
         np.uint32(pooled_offset),
-        np.uint32(total_width_pooled),
-        np.uint32(pooled_width),
+        np.uint32(total_pooled_width),
+        np.uint32(width_pooled),
         block=block, grid=grid, stream=stream)
 
     return target
 
-def sum_delta(delta, cache_one_vector=True):
-    delta_r = delta.reshape((delta.shape[0], delta.shape[1]*delta.shape[2]))
-    delta_sum_a = matrix_sum_out_axis(delta_r, 0)
-    delta_r = delta_sum_a.reshape((delta.shape[1], delta.shape[2]))
+def sum_delta(delta, n_filters, cache_one_vector=True):
+    assert not delta.shape[1] % n_filters
+    width = delta.shape[1] / n_filters
+    delta_sum_a = matrix_sum_out_axis(delta, 0)
+    delta_r = delta_sum_a.reshape((n_filters, width))
     delta_sum_b = matrix_sum_out_axis(delta_r, 1).ravel()
     return delta_sum_b

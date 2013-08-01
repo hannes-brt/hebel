@@ -11,6 +11,8 @@ __global__ void convolve_sequence(const nucleotide_t *input,
 				  const unsigned int total_width,
 				  const unsigned int height, 
 				  const unsigned int filter_width, 
+				  const unsigned int total_target_width,
+				  const unsigned int target_offset,
 				  const unsigned int n_filters) {
 
   /* Performs a 1D convolution on each row of a matrix with 
@@ -22,7 +24,7 @@ __global__ void convolve_sequence(const nucleotide_t *input,
   const unsigned int lin_idx = blockIdx.x*blockDim.x+threadIdx.x;
   const unsigned int i = lin_idx / width;
   const unsigned int j = lin_idx % width;
-  const unsigned int row_start = i*width;
+  const unsigned int row_start = i*total_width + input_offset;
   const unsigned int filter_elements = 4*filter_width; // Actual number of elements in filter
   const {{ data_type }} bias_filter = bias[f];
   unsigned int shared_idx, input_idx, target_idx;
@@ -74,7 +76,7 @@ __global__ void convolve_sequence(const nucleotide_t *input,
 	  Pvalue += filter_shared[4*k+3];
       }
     }
-    target_idx = i*n_filters*total_width + f*total_width + input_offset + j;
+    target_idx = i*total_target_width + target_offset + f*width + j;
     target[target_idx] = Pvalue;
   }
 }
@@ -117,7 +119,9 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
 					   const {{ data_type }} *df_output,
 					   {{ data_type }} *df_weights, 
 					   const unsigned int input_offset,
-					   const unsigned int total_width,
+					   const unsigned int df_output_offset,
+					   const unsigned int total_input_width,
+					   const unsigned int total_df_output_width,
 					   const unsigned int width,
 					   const unsigned int height, 
 					   const unsigned int filter_width,
@@ -129,12 +133,12 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
   const unsigned int lin_idx = blockIdx.x*blockDim.x+tx;
   const unsigned int row = lin_idx / width;
   const unsigned int column = lin_idx % width;
-  const unsigned int input_idx = row*total_width + input_offset + column;
+  const unsigned int input_idx = row*total_input_width + input_offset + column;
   const unsigned int column_start_block = (blockIdx.x*blockDim.x)%width; // Column of first thread in block
   const unsigned int row_start_block = (blockIdx.x*blockDim.x)/width; // Row of first thread in block
   const unsigned int len_input = height*width;
 
-  unsigned int df_weights_idx, output_idx, shared_idx, df_output_offset;
+  unsigned int df_weights_idx, output_idx, shared_idx, df_output_shift;
   int halo_idx;
   
   const unsigned int halo_width = filter_width - 1;
@@ -148,8 +152,8 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
 
   // Load halo elements on the left
   if (tx < halo_width) {
-    output_idx = row_start_block*n_filters*total_width +
-      f*total_width + input_offset + column_start_block - halo_width + tx;
+    output_idx = row_start_block*total_df_output_width +
+      df_output_offset + f*width + column_start_block - halo_width + tx;
     shared_idx = tx;
     halo_idx = column_start_block - halo_width + tx;
     df_output_shared[shared_idx] = 
@@ -157,7 +161,7 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
   }
 
   if (tx < blockDim.x) {
-    output_idx = row*n_filters*total_width + f*total_width + input_offset + column;
+    output_idx = row*total_df_output_width + df_output_offset + f*width + column;
     df_output_shared[tx+halo_width] = 
       (column < width && row < height) ?
       df_output[output_idx] : 0.;
@@ -166,9 +170,9 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
   __syncthreads();
 
   for (unsigned int k=0; k<filter_width; k++) {
-    df_output_offset = halo_width-k;
+    df_output_shift = halo_width-k;
 
-    if (column >= df_output_offset) {
+    if (column >= df_output_shift) {
       df_weights_reduce[stride*tx] = (CHECK_NT(input_element, DNA_A)) ?
     	df_output_shared[tx+k] : 0.;
 
@@ -203,7 +207,7 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
     if (tx<stride) {
       df_weights_idx =
       	f * stride * filter_width * gridDim.x +
-      	(tx + stride * df_output_offset) * gridDim.x +
+      	(tx + stride * df_output_shift) * gridDim.x +
       	blockIdx.x;
       df_weights[df_weights_idx] = df_weights_reduce[tx];
     }
@@ -229,7 +233,8 @@ __global__ void max_pool(const {{ data_type }} *mat,
   const unsigned int j = blockIdx.x*pool_size+tx;
   const unsigned int f = blockIdx.z;
   const unsigned int n_filters = gridDim.z;
-  const unsigned int mat_idx = i*n_filters*total_width + f*total_width + input_offset + j;
+  const unsigned int mat_idx = i*total_width + input_offset + f*width + j;
+  const unsigned int width_pooled = CEILING(({{ data_type }}) width / pool_size);
     
   extern __shared__ {{ data_type }} sdata[];
   {{ data_type }} *max_shared = sdata;
@@ -248,8 +253,8 @@ __global__ void max_pool(const {{ data_type }} *mat,
   }
     
   if (tx==0) {
-    const unsigned int target_idx = i*n_filters*total_width_pooled +
-      f*total_width_pooled + pooled_offset + blockIdx.x;
+    const unsigned int target_idx = i*total_width_pooled +
+      pooled_offset + f*width_pooled + blockIdx.x;
     target[target_idx] = max_shared[0];
     argmax[target_idx] = argmax_shared[0];
   }
@@ -277,15 +282,14 @@ __global__ void max_pool_gradient(
     const unsigned int n_filters = gridDim.y;
     const unsigned int column = bx*blockDim.x+tx;
     
-    const unsigned int pooled_idx = row*n_filters*total_width_pooled +
-      f*total_width_pooled + pooled_offset + bx;
+    const unsigned int pooled_idx = row*total_width_pooled +
+      pooled_offset + f*width_pooled + bx;
     const unsigned int max_idx = argmax[pooled_idx];
     const {{ data_type }} df_output_element = df_output[pooled_idx];
 
     if (column < width) {
-        df_input[row*n_filters*total_width +
-		 f*total_width + input_offset + 
-		 column] =
+        df_input[row*total_width + input_offset +
+		 f*width + column] =
             (column == max_idx) ? df_output_element : 0.;
     }
 }

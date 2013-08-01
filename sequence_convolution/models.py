@@ -58,7 +58,7 @@ class SequenceConvolutionLayer(HiddenLayer):
 
         df_activations = self.df(activations)
         delta = df_activations * df_output
-        df_b = pycuda_ops.sum_delta(delta)
+        df_b = pycuda_ops.sum_delta(delta, self.n_filters)
         df_W = pycuda_ops.convolve_sequence_gradient(
             input, delta,
             self.filter_width, self.n_filters)
@@ -110,9 +110,7 @@ class MaxPoolingLayer(HiddenLayer):
         return 0.
 
     def feed_forward(self, input, prediction=False):
-        activations, argmax = pycuda_ops.max_pool(input, self.pool_size)
-        n, f, m = activations.shape
-        activations = activations.reshape((n, f*m))
+        activations, argmax = pycuda_ops.max_pool(input, self.pool_size, self.n_filters)
 
         if self.dropout and prediction:
             activations *= .5
@@ -142,7 +140,8 @@ class MaxPoolingLayer(HiddenLayer):
                                            fm / self.n_filters))
         df_input = pycuda_ops.max_pool_gradient(input, argmax,
                                                 df_output,
-                                                self.pool_size)
+                                                self.pool_size,
+                                                self.n_filters)
         return tuple(), df_input
 
 class SequenceConvolutionNet(NeuralNet):
