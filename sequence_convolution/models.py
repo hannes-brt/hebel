@@ -2,13 +2,15 @@ import numpy as np
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from pycuda import cumath
+from pycuda.driver import Stream
 from math import sqrt
+from itertools import izip
 from scikits.cuda import linalg
 from . import pycuda_ops
 from neural_nets.models import HiddenLayer, NeuralNet
 from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
 from neural_nets.pycuda_ops.elementwise import sign, sample_dropout_mask, \
-     apply_dropout_mask
+     apply_dropout_mask, sigmoid, df_sigmoid, tanh, df_tanh, relu, df_relu
 
 class SequenceConvolutionLayer(HiddenLayer):
     n_parameters = 2
@@ -88,7 +90,7 @@ class MaxPoolingLayer(HiddenLayer):
 
         self.dropout = dropout
 
-        self.n_units = n_in / pool_size
+        self.n_units = int(np.ceil(n_in / float(pool_size))) * n_filters
 
     @property
     def parameters(self):
@@ -143,6 +145,146 @@ class MaxPoolingLayer(HiddenLayer):
                                                 self.pool_size,
                                                 self.n_filters)
         return tuple(), df_input
+
+class MultiSequenceConvolutionLayer(HiddenLayer):
+    def __init__(self, subregion_layers, dtype=np.float32,
+                 weight_scale=.01):
+        self.subregion_layers = subregion_layers
+        self.dtype = dtype
+
+        self.W = []
+        self.b = []
+        
+        output_offset = 0
+        for layer in subregion_layers:
+            n_in = layer['n_in']
+
+            if not layer.has_key('weight_share'):
+                layer['layer_type'] = 'master'
+                _weight_scale = layer.get('weight_scale', weight_scale)
+                if layer.get('W') is None:
+                    W = _weight_scale * \
+                      curand((layer['n_filters'], 4*layer['filter_width']),
+                             dtype) - .5 * _weight_scale
+                else:
+                    W = layer['W']
+
+                assert W.shape == (layer['n_filters'], 4*layer['filter_width'])
+                self.W.append(W)
+
+                if layer.get('b') is None:
+                    b = gpuarray.zeros((layer['n_filters'],), dtype)
+                else:
+                    b = layer['b']
+
+                assert b.shape == (layer['n_filters'],)
+                self.b.append(b)
+
+                if layer['activation_function'] == 'sigmoid':
+                    layer['f'] = sigmoid
+                    layer['df'] = df_sigmoid
+                elif layer['activation_function'] == 'tanh':
+                    layer['f'] = tanh
+                    layer['df'] = df_tanh
+                elif layer['activation_function'] == 'relu':
+                    layer['f'] = relu
+                    layer['df'] = df_relu
+                else:
+                    raise ValueError
+            else:
+                layer['layer_type'] = 'slave' 
+                master_layer = subregion_layers[layer['weight_share']]                
+                layer['n_filters'] = master_layer['n_filters']
+                layer['filter_width'] = master_layer['filter_width']
+                self.W.append(None)
+                self.b.append(None)
+
+            layer['n_units'] = int(np.ceil(layer['n_in'] / 
+                float(layer['pool_size']))) * layer['n_filters']
+
+            layer['output_offset'] = output_offset
+            output_offset += layer['n_units']
+
+        self.n_units = sum((layer['n_units'] for layer in subregion_layers))
+
+    def feed_forward(self, input, prediction=False):
+        assert all((input[0].shape[0] == i.shape[0] for i in input[1:]))
+
+        N = input[0].shape[0]
+        activations_pooled = gpuarray.empty((N, self.n_units), 
+                                            self.dtype)
+        argmax = gpuarray.empty(activations_pooled.shape,
+                                np.uint32)
+
+        filtermaps = []
+
+        for layer_i, (input_region, layer) \
+            in enumerate(izip(input, self.subregion_layers)):
+            if layer['layer_type'] == 'master':
+                W = self.W[layer_i]
+                b = self.b[layer_i]
+                act_fct = layer['f']
+            else:
+                W = self.W[layer['weight_share']]
+                b = self.b[layer['weight_share']]
+                act_fct = self.subregion_layers[layer['weight_share']]['f']
+            
+            filtermap = pycuda_ops.convolve_sequence(input_region, W, b)
+            act_fct(filtermap)
+            filtermaps.append(filtermap)
+            pycuda_ops.max_pool(filtermap, layer['pool_size'], layer['n_filters'],
+                                pooled_offset=layer['output_offset'],
+                                target=activations_pooled, argmax=argmax)
+
+        return activations_pooled, argmax, filtermaps
+
+    def backprop(self, input, df_output, cache=None):
+        if cache is None:
+            activations_pooled, argmax, filtermaps = self.feed_forward(input)
+        else:
+            activations_pooled, argmax, filtermaps = cache
+
+        df_W = []
+        df_b = []
+        df_filtermaps = []
+            
+        for layer_i, (input_region, filtermap, layer) \
+          in enumerate(izip(input, filtermaps, self.subregion_layers)):
+            if layer['layer_type'] == 'master':
+                W = self.W[layer_i]
+                b = self.b[layer_i]
+                act_fct = layer['f']
+                act_df = layer['df']
+            else:
+                W = self.W[layer['weight_share']]
+                b = self.b[layer['weight_share']]
+                act_fct = self.subregion_layers[layer['weight_share']]['f']
+                act_df = self.subregion_layers[layer['weight_share']]['df']
+
+            df_filtermap = pycuda_ops.max_pool_gradient(
+                filtermap, argmax, df_output, layer['pool_size'],
+                layer['n_filters'],
+                width_pooled=layer['n_units']/layer['n_filters'],
+                pooled_offset=layer['output_offset'])
+
+            df_filtermaps.append(df_filtermap)
+            
+            df_conv = act_df(filtermap)
+            delta = df_conv * df_filtermap
+            df_b_layer = pycuda_ops.sum_delta(delta, layer['n_filters'])
+            df_W_layer = pycuda_ops.convolve_sequence_gradient(
+                input_region, delta, layer['filter_width'], layer['n_filters'])
+
+            if layer['layer_type'] == 'master':
+                df_W.append(df_W_layer)
+                df_b.append(df_b_layer)
+            else:
+                df_W[layer['weight_share']] += df_W_layer
+                df_b[layer['weight_share']] += df_b_layer
+                df_W.append(None)
+                df_b.append(None)
+
+        return df_W + df_b, df_filtermaps
 
 class SequenceConvolutionNet(NeuralNet):
     def __init__(self, n_in, n_out, filter_width, n_filters, 

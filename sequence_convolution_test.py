@@ -7,15 +7,16 @@ from sequence_convolution.pycuda_ops import convolve_sequence, \
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from sequence_convolution.models import SequenceConvolutionNet, \
-     SequenceConvolutionLayer
-from sequence_convolution.seq_array import SeqArray
+     SequenceConvolutionLayer, MultiSequenceConvolutionLayer, MaxPoolingLayer
+from sequence_convolution.seq_array import SeqArray, sample_sequence
 from neural_nets.data_providers import MiniBatchDataProvider
 from neural_nets.optimizers import SGD
 from neural_nets.schedulers import constant_scheduler
 from neural_nets.parameter_updaters import SimpleSGDUpdate
 from neural_nets.monitors import SimpleProgressMonitor
 from create_features import encode_seq
-from copy import copy
+from copy import copy, deepcopy
+from itertools import izip
 
 import numpy as np
 
@@ -533,6 +534,127 @@ class TestConvolutionGradient(unittest.TestCase):
             sa = SeqArray(seq)
             loss = checkgrad_model(conv_layer, sa.enc_seq, epsilon=self.EPSILON)
             self.assertLess(loss, self.TOL)
+
+class TestMultiSequenceConvolutionLayer(unittest.TestCase):
+    """ Test whether what MultiSequenceConvolutionLayer is doing is identical
+    to SequenceConvolutionLayer 
+    """
+    
+    N = 100
+    multi_conv_config = [{'n_in': 50, 'n_filters': 10, 'filter_width': 5, 
+              'activation_function': 'tanh', 'pool_size': 5},
+             {'n_in': 50, 'weight_share': 0, 'pool_size': 2},
+             {'n_in': 100, 'n_filters': 12, 'filter_width': 10, 
+              'activation_function': 'tanh', 'pool_size': 8}]
+    
+
+    def setUp(self):
+        sa = [sample_sequence(conf['n_in'], self.N) for conf in
+              self.multi_conv_config]
+        self.input = [s.enc_seq for s in sa]
+
+        # Create multi-convolution layer
+        self.conv_layer_multi = MultiSequenceConvolutionLayer(self.multi_conv_config)
+
+
+        # Convert configuration to single convolution
+        single_conv_config = deepcopy(self.multi_conv_config)
+        single_conv_config[1]['n_filters'] = single_conv_config[0]['n_filters']
+        single_conv_config[1]['filter_width'] = single_conv_config[0]['filter_width']
+        single_conv_config[1]['activation_function'] = \
+          single_conv_config[0]['activation_function']
+        self.single_conv_config = single_conv_config
+
+        # Create single convolution layers
+        self.conv_layers_single = [SequenceConvolutionLayer(
+            conf['n_in'], conf['filter_width'],
+            conf['n_filters'], 
+            conf['activation_function']) 
+            for conf in single_conv_config]
+
+        # Weight-sharing
+        self.conv_layers_single[0].parameters = \
+          (self.conv_layer_multi.W[0], self.conv_layer_multi.b[0])
+        self.conv_layers_single[1].parameters = \
+          (self.conv_layer_multi.W[0], self.conv_layer_multi.b[0])        
+        self.conv_layers_single[2].parameters = \
+          (self.conv_layer_multi.W[2], self.conv_layer_multi.b[2])        
+        
+        self.maxpool_layers_single = [MaxPoolingLayer(conf['n_in'], conf['pool_size'],
+                                                      conf['n_filters'])
+                                                      for conf in self.single_conv_config]
+
+
+    def test_feed_forward(self):
+        activations_multi, argmax, filtermaps = \
+          self.conv_layer_multi.feed_forward(self.input)
+
+        filtermaps_single = []
+        argmax_single = []
+        activations_single = []
+        for layer_conv, layer_pool, input_single \
+          in izip(self.conv_layers_single, self.maxpool_layers_single, self.input):
+            filtermap, = layer_conv.feed_forward(input_single)
+            filtermaps_single.append(filtermap)
+            activations, argmax = layer_pool.feed_forward(filtermap)
+            argmax_single.append(argmax)
+            activations_single.append(activations)
+
+        activations_joined = np.concatenate([a.get() for a in activations_single], 1)
+
+        self.assertEqual(np.abs(activations_multi.get() - activations_joined).max(), 0.)
+
+    def test_backprop(self):
+        activations_multi, argmax_multi, filtermaps_multi = \
+          self.conv_layer_multi.feed_forward(self.input)
+
+        df_output_cpu = [np.asarray(np.random.rand(self.N, l.n_units), 
+                                    dtype=activations_multi.dtype)
+                         for l in self.maxpool_layers_single]
+        df_output_single = map(gpuarray.to_gpu, df_output_cpu)
+        df_output_multi = gpuarray.to_gpu(
+            np.ascontiguousarray(np.concatenate(df_output_cpu, 1)))
+
+        grads_multi_conv, df_filtermaps_multi = \
+          self.conv_layer_multi.backprop(
+              self.input, df_output_multi,
+              cache=(activations_multi, argmax_multi, filtermaps_multi))
+
+        filtermaps_single = []
+        argmax_single = []
+        activations_single = []
+        df_W_single = []
+        df_b_single = []
+        for i, (layer_conv, layer_pool, input_single, df_o) \
+          in enumerate(izip(self.conv_layers_single, 
+                            self.maxpool_layers_single, 
+                            self.input, df_output_single)):
+            filtermap, = layer_conv.feed_forward(input_single)
+            filtermaps_single.append(filtermap)
             
+            activations, argmax = layer_pool.feed_forward(filtermap)
+            argmax_single.append(argmax)
+            activations_single.append(activations)
+
+            _, df_filtermap = layer_pool.backprop(filtermap, df_o,
+                                                  cache=(activations, argmax))
+            (df_W_layer, df_b_layer), _ = layer_conv.backprop(
+                input_single, df_filtermap, (filtermap,))
+
+            if i in (0, 2):
+                df_W_single.append(df_W_layer)
+                df_b_single.append(df_b_layer)
+            elif i == 1:
+                df_W_single[0] += df_W_layer
+                df_b_single[0] += df_b_layer
+                df_W_single.append(None)
+                df_b_single.append(None)
+
+        grads_single = df_W_single + df_b_single
+
+        for g_multi, g_single in izip(grads_multi_conv, grads_single):
+            if g_multi is None and g_single is None: continue
+            self.assertEqual(np.abs(g_multi.get() - g_single.get()).max(), 0.)
+
 if __name__ == '__main__':
     unittest.main()

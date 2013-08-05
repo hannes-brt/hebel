@@ -30,6 +30,11 @@ def convolve_sequence(mat, conv_filter, bias,
                       input_offset=0, target_offset=0, 
                       width=None,
                       target=None, stream=None):
+
+    assert mat.flags.c_contiguous
+    assert conv_filter.flags.c_contiguous
+    assert bias.flags.c_contiguous
+    
     dtype = conv_filter.dtype
     assert dtype in (np.float32, np.float64)
     assert bias.shape[0] == conv_filter.shape[0]
@@ -60,6 +65,7 @@ def convolve_sequence(mat, conv_filter, bias,
                                 dtype=dtype)
     else:
         assert target.dtype == dtype
+        assert target.flags.c_contiguous
         total_target_width = target.shape[1]
         assert target_offset + n_filters * width <= total_target_width
 
@@ -87,6 +93,10 @@ def convolve_sequence(mat, conv_filter, bias,
 def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
                                input_offset=0, df_output_offset=0, width=None,
                                target=None, stream=None, block_size=1024):
+
+    assert mat.flags.c_contiguous
+    assert df_output.flags.c_contiguous
+    
     stride = 4
     dtype = df_output.dtype
     assert dtype in (np.float32, np.float64)
@@ -116,9 +126,10 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
     if target is not None:
         assert target.dtype == dtype
         assert target.shape == (n_filters, stride*filter_width, grid[0])
+        assert targets.flags.c_contiguous
     else:
         target = gpuarray.empty((n_filters, stride*filter_width,
-                                 grid[0]), dtype=dtype)
+                                 grid[0]), dtype=dtype)        
 
     dname = _dtype_name[dtype]
     _kernels[dname]['convolve_sequence_gradient_kernel'](
@@ -157,6 +168,8 @@ def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
 def max_pool(mat, pool_size, n_filters, width=None, 
              input_offset=0, pooled_offset=0,
              target=None, argmax=None, stream=None):
+    assert mat.flags.c_contiguous
+    
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
     assert pool_size <= mat.shape[1] / n_filters
@@ -165,7 +178,7 @@ def max_pool(mat, pool_size, n_filters, width=None,
 
     if width is None:
         assert input_offset == 0
-        assert pooled_offset == 0
+        # assert pooled_offset == 0
         assert not total_width % n_filters
         width = total_width / n_filters
 
@@ -178,6 +191,7 @@ def max_pool(mat, pool_size, n_filters, width=None,
 
     if target is not None:
         assert target.dtype == dtype
+        assert target.flags.c_contiguous
         total_width_pooled = target.shape[1]
     else:
         total_width_pooled = n_filters*pooled_width
@@ -188,6 +202,7 @@ def max_pool(mat, pool_size, n_filters, width=None,
     if argmax is not None:
         assert argmax.dtype == np.uint32
         assert argmax.shape == target.shape
+        assert argmax.flags.c_contiguous
     else:
         argmax = gpuarray.empty(target.shape, np.uint32)
     
@@ -215,13 +230,16 @@ def max_pool_gradient(mat, argmax,
                       input_offset=0, pooled_offset=0,
                       target=None, stream=None):
     dtype = mat.dtype
+    assert mat.flags.c_contiguous
+    assert argmax.flags.c_contiguous
+    assert df_output.flags.c_contiguous
     assert dtype in (np.float32, np.float64)
 
     height, total_width = mat.shape
 
     if width is None:
         assert input_offset == 0
-        assert pooled_offset == 0
+        # assert pooled_offset == 0
         assert not total_width % n_filters
         width = total_width / n_filters
 
@@ -240,6 +258,7 @@ def max_pool_gradient(mat, argmax,
     if target is not None:
         assert target.dtype == dtype
         assert target.shape == mat.shape
+        assert target.flags.c_contiguous
     else:
         target = gpuarray.empty_like(mat)
 
@@ -260,6 +279,7 @@ def max_pool_gradient(mat, argmax,
     return target
 
 def sum_delta(delta, n_filters, cache_one_vector=True):
+    assert delta.flags.c_contiguous
     assert not delta.shape[1] % n_filters
     width = delta.shape[1] / n_filters
     delta_sum_a = matrix_sum_out_axis(delta, 0)

@@ -1,6 +1,7 @@
 from sequence_convolution import enum, DNA_A, DNA_C, DNA_G, DNA_T, DNA_R, DNA_Y, DNA_N
 import numpy as np
 from pycuda import gpuarray
+import random
 
 Nucleotides = enum(
     A = DNA_A,
@@ -30,4 +31,10 @@ class SeqArray(object):
             np.array([[encode_nt(nt.upper())
                        for nt in line] for line in seq],
                        dtype=np.int8))
+
+def sample_sequence(length, n):
+    seq = [''.join((random.choice('ACGT') for i in range(length)))
+           for j in range(n)]
+    sa = SeqArray(seq)
+    return sa
 
