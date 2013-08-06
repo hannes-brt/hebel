@@ -86,8 +86,9 @@ class HiddenLayer(object):
         arch= {'class': self.__class__,
                'n_in': self.n_in, 
                'n_units': self.n_units,
-                'activation_function': self.activation_function 
-                  if hasattr(self, 'activation_function') else None}
+               'activation_function': self.activation_function 
+                 if hasattr(self, 'activation_function') else None}
+        return arch
 
     def _set_activation_fct(self, activation_function):
         if activation_function == 'sigmoid':
@@ -102,6 +103,7 @@ class HiddenLayer(object):
         else:
             raise ValueError
         self.activation_function = activation_function
+        
 
     def _set_weights_scale(self, activation_function, n_in, n_units):
         if activation_function in ('tanh', 'relu'):
@@ -319,6 +321,8 @@ class LogisticLayer(TopLayer):
             test_error = self.class_error
         elif self.test_error_fct == 'kl_error':
             test_error = self.kl_error
+        elif self.test_error_fct == 'cross_entropy_error':
+            test_error = self.cross_entropy_error            
         else:
             raise ValueError('unknown test error function "%s"' 
                              % self.test_error_fct)
