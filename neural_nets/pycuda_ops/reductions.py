@@ -68,6 +68,7 @@ max_column = mod.get_function("kMaxColumnwise")
 max_row = mod.get_function("kMaxRowwise")
 
 def max_by_axis(mat, axis=0):
+    assert mat.flags.c_contiguous
     assert axis in (0,1)
     
     n,m = mat.shape
@@ -85,6 +86,7 @@ def max_by_axis(mat, axis=0):
 def _matrix_sum_out_axis_wrapper():
     one_vector_cache = {}
     def f(mat, axis=0, cache_one_vector=True):
+        assert mat.flags.c_contiguous
         N, M = mat.shape
 
         if axis == 0:

@@ -64,6 +64,8 @@ vector_normalize_kernel = mod.get_function("kVectorNormalize")
 def add_vec_to_mat(mat, vec, axis=None, inplace=False):
     """ Add a vector to a matrix
     """
+
+    assert mat.flags.c_contiguous
     
     if axis is None:
         if vec.shape[0] == mat.shape[0]: 
@@ -99,6 +101,7 @@ def vector_normalize(mat, max_vec_norm=1.):
     """ Normalize each column vector in mat to length max_vec_norm if it is longer than
     max_vec_norm
     """
+    assert mat.flags.c_contiguous
     n,m = mat.shape
     
     vector_normalize_kernel(mat, np.float32(max_vec_norm), 
