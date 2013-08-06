@@ -14,7 +14,7 @@ from neural_nets.pycuda_ops.elementwise import sign, sample_dropout_mask, \
 
 class SequenceConvolutionLayer(HiddenLayer):
     n_parameters = 2
-    
+
     def __init__(self, n_in, filter_width, n_filters, activation_function='sigmoid',
                  weights_scale=.01, W=None, b=None, 
                  l1_penalty_weight=0., l2_penalty_weight=0.,
@@ -154,8 +154,9 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
         self.W = []
         self.b = []
-        
+
         output_offset = 0
+        param_idx = 0
         for layer in subregion_layers:
             n_in = layer['n_in']
 
@@ -180,6 +181,9 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                 assert b.shape == (layer['n_filters'],)
                 self.b.append(b)
 
+                layer['param_idx'] = param_idx
+                param_idx += 1
+
                 if layer['activation_function'] == 'sigmoid':
                     layer['f'] = sigmoid
                     layer['df'] = df_sigmoid
@@ -196,8 +200,10 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                 master_layer = subregion_layers[layer['weight_share']]                
                 layer['n_filters'] = master_layer['n_filters']
                 layer['filter_width'] = master_layer['filter_width']
-                self.W.append(None)
-                self.b.append(None)
+                layer['param_idx'] = master_layer['param_idx']
+                layer['activation_function'] = master_layer['activation_function']
+                layer['f'] = master_layer['f']
+                layer['df'] = master_layer['df']
 
             layer['n_units'] = int(np.ceil(layer['n_in'] / 
                 float(layer['pool_size']))) * layer['n_filters']
@@ -206,6 +212,47 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
             output_offset += layer['n_units']
 
         self.n_units = sum((layer['n_units'] for layer in subregion_layers))
+
+        self.l1_penalty_weight = 0.
+        self.l2_penalty_weight = 0.
+
+    @property
+    def n_parameters(self):
+        return len(self.W) + len(self.b)
+
+    @property
+    def n_in(self):
+        return sum((l['n_in'] for l in self.subregion_layers))
+
+    @property
+    def lr_multiplier(self):
+        return self.n_parameters * [1.]
+
+    @property
+    def parameters(self):
+        return self.W + self.b
+
+    @parameters.setter
+    def parameters(self, value):
+        assert len(value) == self.n_parameters
+        
+        self.W = value[:len(self.W)]
+        self.b = value[len(self.W):]
+
+    def update_parameters(self, values, stream=None):
+        assert len(values) == self.n_parameters
+
+        for (param, (gparam, mult)) \
+          in izip(self.W + self.b, values):
+          param._axpbyz(1., gparam, mult, param, stream=stream)
+
+    @property
+    def l1_penalty(self):
+        return 0.
+
+    @property
+    def l2_penalty(self):
+        return 0.
 
     def feed_forward(self, input, prediction=False):
         assert all((input[0].shape[0] == i.shape[0] for i in input[1:]))
@@ -218,16 +265,11 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
         filtermaps = []
 
-        for layer_i, (input_region, layer) \
-            in enumerate(izip(input, self.subregion_layers)):
-            if layer['layer_type'] == 'master':
-                W = self.W[layer_i]
-                b = self.b[layer_i]
-                act_fct = layer['f']
-            else:
-                W = self.W[layer['weight_share']]
-                b = self.b[layer['weight_share']]
-                act_fct = self.subregion_layers[layer['weight_share']]['f']
+        for input_region, layer \
+            in izip(input, self.subregion_layers):
+            W = self.W[layer['param_idx']]
+            b = self.b[layer['param_idx']]
+            act_fct = layer['f']
             
             filtermap = pycuda_ops.convolve_sequence(input_region, W, b)
             act_fct(filtermap)
@@ -248,18 +290,12 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         df_b = []
         df_filtermaps = []
             
-        for layer_i, (input_region, filtermap, layer) \
-          in enumerate(izip(input, filtermaps, self.subregion_layers)):
-            if layer['layer_type'] == 'master':
-                W = self.W[layer_i]
-                b = self.b[layer_i]
-                act_fct = layer['f']
-                act_df = layer['df']
-            else:
-                W = self.W[layer['weight_share']]
-                b = self.b[layer['weight_share']]
-                act_fct = self.subregion_layers[layer['weight_share']]['f']
-                act_df = self.subregion_layers[layer['weight_share']]['df']
+        for input_region, filtermap, layer \
+          in izip(input, filtermaps, self.subregion_layers):
+            W = self.W[layer['param_idx']]
+            b = self.b[layer['param_idx']]
+            act_fct = layer['f']
+            act_df = layer['df']
 
             df_filtermap = pycuda_ops.max_pool_gradient(
                 filtermap, argmax, df_output, layer['pool_size'],
@@ -279,10 +315,8 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                 df_W.append(df_W_layer)
                 df_b.append(df_b_layer)
             else:
-                df_W[layer['weight_share']] += df_W_layer
-                df_b[layer['weight_share']] += df_b_layer
-                df_W.append(None)
-                df_b.append(None)
+                df_W[layer['param_idx']] += df_W_layer
+                df_b[layer['param_idx']] += df_b_layer
 
         return df_W + df_b, df_filtermaps
 

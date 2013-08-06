@@ -578,7 +578,7 @@ class TestMultiSequenceConvolutionLayer(unittest.TestCase):
         self.conv_layers_single[1].parameters = \
           (self.conv_layer_multi.W[0], self.conv_layer_multi.b[0])        
         self.conv_layers_single[2].parameters = \
-          (self.conv_layer_multi.W[2], self.conv_layer_multi.b[2])        
+          (self.conv_layer_multi.W[1], self.conv_layer_multi.b[1])        
         
         self.maxpool_layers_single = [MaxPoolingLayer(conf['n_in'], conf['pool_size'],
                                                       conf['n_filters'])
@@ -647,8 +647,6 @@ class TestMultiSequenceConvolutionLayer(unittest.TestCase):
             elif i == 1:
                 df_W_single[0] += df_W_layer
                 df_b_single[0] += df_b_layer
-                df_W_single.append(None)
-                df_b_single.append(None)
 
         grads_single = df_W_single + df_b_single
 
