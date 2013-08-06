@@ -107,7 +107,7 @@ class SGD(object):
                 
                 for batch_idx, (batch_data, batch_targets) in \
                   enumerate(self.train_data):
-                    batch_size = batch_data.shape[0]
+                    batch_size = self.train_data.batch_size
                   
                     self.parameter_updater.pre_gradient_update()
 
