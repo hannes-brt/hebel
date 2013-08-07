@@ -90,20 +90,25 @@ class HiddenLayer(object):
                  if hasattr(self, 'activation_function') else None}
         return arch
 
-    def _set_activation_fct(self, activation_function):
+    @staticmethod
+    def _resolve_activation_fct(activation_function):
         if activation_function == 'sigmoid':
-            self.f = sigmoid
-            self.df = df_sigmoid
+            f = sigmoid
+            df = df_sigmoid
         elif activation_function == 'tanh':
-            self.f = tanh
-            self.df = df_tanh
+            f = tanh
+            df = df_tanh
         elif activation_function == 'relu':
-            self.f = relu
-            self.df = df_relu
+            f = relu
+            df = df_relu
         else:
             raise ValueError
+
+        return f, df
+
+    def _set_activation_fct(self, activation_function):
         self.activation_function = activation_function
-        
+        self.f, self.df = self._resolve_activation_fct(activation_function)
 
     def _set_weights_scale(self, activation_function, n_in, n_units):
         if activation_function in ('tanh', 'relu'):
