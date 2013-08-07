@@ -1,11 +1,16 @@
 import unittest
+import random
 import numpy as np
 import pycuda.autoinit
+from pycuda import gpuarray
+from pycuda.curandom import rand as curand
+import pycuda.driver as drv
 from neural_nets.models import NeuralNet
 from neural_nets.optimizers import SGD
 from neural_nets.parameter_updaters import SimpleSGDUpdate, MomentumUpdate, NesterovMomentumUpdate
 from neural_nets.data_providers import MiniBatchDataProvider, BatchDataProvider, MNISTDataProvider
 from neural_nets.schedulers import constant_scheduler, exponential_scheduler, linear_scheduler_up
+from neural_nets.pycuda_ops.matrix import extract_columns
 
 class TestNeuralNetMNIST(unittest.TestCase):
     def setUp(self):
@@ -54,6 +59,22 @@ class TestNeuralNetMNIST(unittest.TestCase):
         self.assertLess(optimizer.progress_monitors[0].train_error[-1][1], 
                         optimizer.progress_monitors[0].train_error[0][1])
         del model, optimizer
+
+class TestExtractColumns(unittest.TestCase):
+    def test_extract_columns(self):
+        for i in range(20):
+            dtype = random.choice((np.float32, np.float64))
+            N = np.random.randint(100, 1000)
+            M = np.random.randint(100, 1000)
+            a = np.random.randint(0, M - 1)
+            b = np.random.randint(a, M)
+            m = b - a
+            assert m > 0
+
+            X = curand((N, M), dtype)
+            Y = extract_columns(X, a, b)
+
+            self.assertTrue(np.all(X.get()[:,a:b] == Y.get()))
 
 if __name__ == '__main__':
     unittest.main()
