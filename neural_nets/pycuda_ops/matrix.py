@@ -129,3 +129,24 @@ def extract_columns(mat, start=0, stop=None):
     copy(aligned=True)
 
     return new_mat
+
+def insert_columns(src, dst, offset):
+    dtype = src.dtype
+    itemsize = np.dtype(dtype).itemsize
+    h_src, w_src = src.shape
+    h_dst, w_dst = dst.shape
+
+    assert dst.dtype == dtype
+    assert h_src == h_dst
+    assert w_dst >= offset + w_src
+
+    copy = drv.Memcpy2D()
+    copy.set_src_device(src.gpudata)
+    copy.set_dst_device(dst.gpudata)
+    copy.dst_x_in_bytes = offset * itemsize
+    copy.src_pitch = copy.width_in_bytes = w_src * itemsize
+    copy.dst_pitch = w_dst * itemsize
+    copy.height = h_src
+    copy(aligned=True)
+
+    

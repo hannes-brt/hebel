@@ -10,7 +10,7 @@ from neural_nets.optimizers import SGD
 from neural_nets.parameter_updaters import SimpleSGDUpdate, MomentumUpdate, NesterovMomentumUpdate
 from neural_nets.data_providers import MiniBatchDataProvider, BatchDataProvider, MNISTDataProvider
 from neural_nets.schedulers import constant_scheduler, exponential_scheduler, linear_scheduler_up
-from neural_nets.pycuda_ops.matrix import extract_columns
+from neural_nets.pycuda_ops.matrix import extract_columns, insert_columns
 
 class TestNeuralNetMNIST(unittest.TestCase):
     def setUp(self):
@@ -60,14 +60,14 @@ class TestNeuralNetMNIST(unittest.TestCase):
                         optimizer.progress_monitors[0].train_error[0][1])
         del model, optimizer
 
-class TestExtractColumns(unittest.TestCase):
+class TestColumnSlicing(unittest.TestCase):
     def test_extract_columns(self):
         for i in range(20):
             dtype = random.choice((np.float32, np.float64))
             N = np.random.randint(100, 1000)
             M = np.random.randint(100, 1000)
-            a = np.random.randint(0, M - 1)
-            b = np.random.randint(a, M)
+            a = np.random.randint(0, M)
+            b = np.random.randint(a + 1, M)
             m = b - a
             assert m > 0
 
@@ -75,6 +75,21 @@ class TestExtractColumns(unittest.TestCase):
             Y = extract_columns(X, a, b)
 
             self.assertTrue(np.all(X.get()[:,a:b] == Y.get()))
+
+    def test_insert_columns(self):
+        for i in range(20):
+            dtype = random.choice((np.float32, np.float64))
+            N = np.random.randint(100, 1000)
+            M = np.random.randint(100, 1000)
+            m = np.random.randint(1, M)
+            offset = np.random.randint(0, M - m)
+
+            X = curand((N, M), dtype)
+            Y = curand((N, m), dtype)
+            Z = insert_columns(Y, X, offset)
+
+            self.assertTrue(np.all(X.get()[:,offset:offset+m] == Y.get()))
+
 
 if __name__ == '__main__':
     unittest.main()
