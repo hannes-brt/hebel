@@ -115,7 +115,7 @@ def extract_columns(mat, start=0, stop=None):
     m = stop - start
 
     assert mat.flags.c_contiguous
-    assert start >= 0 and stop < M and stop >= 0 and stop < M and stop > start
+    assert start >= 0 and start <= M and stop >= 0 and stop <= M and stop > start
     
     new_mat = gpuarray.empty((N, m), dtype)
 

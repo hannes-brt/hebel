@@ -16,9 +16,9 @@ sign_kernel_double = ElementwiseKernel(
 def sign(x):
     assert x.flags.c_contiguous
     target = gpuarray.GPUArray(x.shape, dtype=x.dtype)
-    if x.dtype is np.dtype(np.float32):
+    if x.dtype == np.dtype(np.float32):
         sign_kernel_float(x, target)
-    elif x.dtype is np.dtype(np.float64):
+    elif x.dtype == np.dtype(np.float64):
         sign_kernel_double(x, target)
     else:
         raise ValueError("Incompatible dtype")
@@ -36,9 +36,9 @@ sigmoid_kernel_double = ElementwiseKernel(
 
 def sigmoid(x):
     assert x.flags.c_contiguous
-    if x.dtype is np.dtype(np.float32):
+    if x.dtype == np.dtype(np.float32):
         sigmoid_kernel_float(x)
-    elif x.dtype is np.dtype(np.float64):
+    elif x.dtype == np.dtype(np.float64):
         sigmoid_kernel_double(x)
     else:
         raise ValueError("Incompatible dtype")
@@ -60,9 +60,9 @@ tanh_kernel_double = ElementwiseKernel(
 
 def tanh(x):
     assert x.flags.c_contiguous
-    if x.dtype is np.dtype(np.float32):
+    if x.dtype == np.dtype(np.float32):
         tanh_kernel_float(x)
-    elif x.dtype is np.dtype(np.float64):
+    elif x.dtype == np.dtype(np.float64):
         tanh_kernel_double(x)
     else:
         raise ValueError("Incompatible dtype")
@@ -84,9 +84,9 @@ relu_kernel_double = ElementwiseKernel(
 
 def relu(x):
     assert x.flags.c_contiguous
-    if x.dtype is np.dtype(np.float32):
+    if x.dtype == np.dtype(np.float32):
         relu_kernel_float(x)
-    elif x.dtype is np.dtype(np.float64):
+    elif x.dtype == np.dtype(np.float64):
         relu_kernel_double(x)
     else:
         raise ValueError("Incompatible dtype")
@@ -112,13 +112,19 @@ df_relu_kernel_double = ElementwiseKernel(
 def df_relu(x):
     assert x.flags.c_contiguous
     df = gpuarray.empty_like(x)
-    if x.dtype is np.dtype(np.float32):
+    if x.dtype == np.dtype(np.float32):
         df_relu_kernel_float(x, df)
-    elif x.dtype is np.dtype(np.float64):
+    elif x.dtype == np.dtype(np.float64):
         df_relu_kernel_double(x, df)
     else:
         raise ValueError("Incompatible dtype")
     return df
+
+def linear(x):
+    pass
+
+def df_linear(x):
+    return x
 
 sample_dropout_mask_kernel = get_elwise_kernel(
     "float *mat, float *dest, unsigned int seed",
