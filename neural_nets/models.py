@@ -9,7 +9,7 @@ from math import sqrt
 from scikits.cuda import linalg
 from .pycuda_ops import eps
 from .pycuda_ops.elementwise import sigmoid, df_sigmoid, \
-     tanh, df_tanh, relu, df_relu, \
+     tanh, df_tanh, relu, df_relu, linear, df_linear, \
      sample_dropout_mask, apply_dropout_mask, sign, \
      nan_to_zeros
 from .pycuda_ops.matrix import add_vec_to_mat
@@ -101,6 +101,9 @@ class HiddenLayer(object):
         elif activation_function == 'relu':
             f = relu
             df = df_relu
+        elif activation_function == 'linear':
+            f = linear
+            df = df_linear
         else:
             raise ValueError
 
@@ -204,6 +207,46 @@ class HiddenLayer(object):
             df_W -= self.l2_penalty_weight * self.W
         
         return (df_W, df_b), df_input
+
+class DummyLayer(HiddenLayer):
+    """ This class has no input and simply passes through its input
+    """
+
+    lr_multiplier = []
+    n_parameters = 0
+    l1_penalty_weight = 0.
+    l2_penalty_weight = 0.
+    dropout = False
+
+    def __init__(self, n_in):
+        self.n_in = n_in
+        self.n_units = n_in
+
+    @property
+    def parameters(self):
+        return []
+
+    @parameters.setter
+    def parameters(self, value):
+        pass
+
+    def update_parameters(self, values, stream=None):
+        pass
+
+    @property
+    def l1_penalty(self):
+        return 0.
+
+    @property
+    def l2_penalty(self):
+        return 0.
+
+    def feed_forward(self, input, prediction=False):
+        assert input.shape[1] == self.n_in
+        return (input,)
+
+    def backprop(self, input, df_output, cache=None):
+        return tuple(), df_output
 
 class TopLayer(HiddenLayer):
     n_tasks = 1
