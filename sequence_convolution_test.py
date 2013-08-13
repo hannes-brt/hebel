@@ -14,11 +14,8 @@ from neural_nets.optimizers import SGD
 from neural_nets.schedulers import constant_scheduler
 from neural_nets.parameter_updaters import SimpleSGDUpdate
 from neural_nets.monitors import SimpleProgressMonitor
-from create_features import encode_seq
 from copy import copy, deepcopy
 from itertools import izip
-
-import numpy as np
 
 STRIDE = 4
 
@@ -72,7 +69,7 @@ def checkgrad_model(layer, input, epsilon=1e-4, **kwargs):
 class TestConvolution(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-4
     DOUBLE_ERR_TOL = 1e-13
-    
+
     @staticmethod
     def cpu_conv1d(x, w, b):
         height, width = x.shape        
@@ -87,9 +84,9 @@ class TestConvolution(unittest.TestCase):
 
         for f in range(n_filters):
             for j in range(width):
-                y[:,f,j] = b[f]
+                y[:, f, j] = b[f]
                 for k in range(filter_width):
-                    nt = x_padded[:, j+k]
+                    nt = x_padded[:, j + k]
                     y[np.bool_(nt & DNA_A),f,j] += w[f,4*k]
                     y[np.bool_(nt & DNA_C),f,j] += w[f,4*k+1]
                     y[np.bool_(nt & DNA_G),f,j] += w[f,4*k+2]
