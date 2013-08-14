@@ -152,7 +152,7 @@ class MaxPoolingLayer(HiddenLayer):
 
 class MultiSequenceConvolutionLayer(HiddenLayer):
     def __init__(self, subregion_layers,
-                 fully_connected_layer=None,
+                 fully_connected_layers=None,
                  n_filters=None,
                  filter_width=None,
                  pool_size=None,
@@ -241,28 +241,35 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
             layer['output_offset'] = output_offset
             output_offset += layer['n_units']
 
-        if isinstance(fully_connected_layer, dict):
-            self.fully_connected_layer = HiddenLayer(*fully_connected_layer)
-        elif isinstance(fully_connected_layer, HiddenLayer):
-            self.fully_connected_layer = fully_connected_layer
-        elif fully_connected_layer is None:
-            self.fully_connected_layer = None
+        if fully_connected_layers is None:
+            self.fully_connected_layers = None
         else:
-            raise TypeError("fully_connected_layer must be a dictionary or "
-              "an instance of HiddenLayer")
+            self.fully_connected_layers = []
+            for fcl in fully_connected_layers:
+                if isinstance(fcl, dict):
+                    self.fully_connected_layers.append(HiddenLayer(*fcl))
+                elif isinstance(fcl, HiddenLayer):
+                    self.fully_connected_layers.append(fcl)
+                else:
+                    raise TypeError("fully connected layer must be a dictionary or "
+                      "an instance of HiddenLayer")
 
-        if self.fully_connected_layer is not None and \
-          self.fully_connected_layer.dropout:
+        if self.fully_connected_layers is not None and \
+          any((fcl.dropout for fcl in self.fully_connected_layers)):
             raise ValueError("Dropout on fully connected layer is not allowed,"
                              "set dropout on MultiSequenceConvolutionLayer "
                              "instead.")
 
         self.n_units = sum((layer['n_units'] for layer in subregion_layers))
-        if self.fully_connected_layer is not None:
-            self.fc_layer_offset = self.n_units
-            self.n_units += self.fully_connected_layer.n_units
+        if self.fully_connected_layers is not None:
+            self.fc_layer_offset = [self.n_units]
+
+            for fcl in self.fully_connected_layers[:-1]:
+                self.fc_layer_offset.append(self.fc_layer_offset[-1] + fcl.n_units)
+                
+            self.n_units += sum((fcl.n_units for fcl in self.fully_connected_layers))
         else:
-            self.fc_layer_offset = 0
+            self.fc_layer_offset = None
 
         self.master_layers = filter(lambda l: l['layer_type'] == 'master',
                                     self.subregion_layers)
@@ -275,8 +282,8 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
     @property
     def n_parameters(self):
         n_param = len(self.W) + len(self.b)
-        if self.fully_connected_layer is not None:
-            n_param += self.fully_connected_layer.n_parameters
+        if self.fully_connected_layers is not None:
+            n_param += sum((fcl.n_parameters for fcl in self.fully_connected_layers))
         return n_param
 
     @property
@@ -285,28 +292,39 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
     @property
     def lr_multiplier(self):
-        return 2 * [l.get('lr_multiplier', 1.) for l in self.subregion_layers
-                if l['layer_type'] == 'master']
+        lrm = 2 * [l.get('lr_multiplier', 1.) for l in self.subregion_layers
+                   if l['layer_type'] == 'master']
+
+        if self.fully_connected_layers is not None:
+            for fcl in self.fully_connected_layers:
+                lrm.extend(fcl.lr_multiplier)
+
+        return lrm
 
     @property
     def parameters(self):
         param = self.W + self.b
-        if self.fully_connected_layer is not None:
-            param += self.fully_connected_layer.parameters
+        if self.fully_connected_layers is not None:
+            for fcl in self.fully_connected_layers:
+                param.extend(fcl.parameters)
         return param
 
     @parameters.setter
     def parameters(self, value):
         assert len(value) == self.n_parameters
 
-        if self.fully_connected_layer is None:
+        if self.fully_connected_layers is None:
             conv_params = value
         else:
             n_param = self.n_parameters
-            n_param_fc = self.fully_connected_layer.n_parameters
+            n_param_fc = sum((fcl.n_parameters for fcl in self.fully_connected_layers))
             conv_params = value[:n_param-n_param_fc]
             fc_params = value[n_param-n_param_fc:]
-            self.fully_connected_layer.parameters = fc_params
+
+            idx = 0
+            for fcl in self.fully_connected_layers:
+                fcl.parameters = fc_params[idx:idx+fcl.n_parameters]
+                idx += fcl.n_parameters
 
         self.W = conv_params[:len(self.W)]
         self.b = conv_params[len(self.W):]
@@ -314,12 +332,18 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
     def update_parameters(self, values, stream=None):
         assert len(values) == self.n_parameters
 
-        if self.fully_connected_layer is None:
+        if self.fully_connected_layers is None:
             conv_params = values
         else:
-            conv_params = values[:-2]
-            fc_params = values[-2:]
-            self.fully_connected_layer.update_parameters(fc_params)            
+            n_param = self.n_parameters
+            n_param_fc = sum((fcl.n_parameters for fcl in self.fully_connected_layers))
+            conv_params = values[:n_param-n_param_fc]
+            fc_params = values[n_param-n_param_fc:]
+
+            idx = 0
+            for fcl in self.fully_connected_layers:
+                fcl.update_parameters(fc_params[idx:idx+fcl.n_parameters])            
+                idx += fcl.n_parameters
 
         for (param, (gparam, mult)) \
           in izip(self.W + self.b, conv_params):
@@ -331,8 +355,9 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
             [float(l['l1_penalty_weight']) * gpuarray.sum(abs(W)).get()
              for l, W in izip(self.master_layers, self.W)])
 
-        if self.fully_connected_layer is not None:
-            l1_pen += self.fully_connected_layer.l1_penalty
+        if self.fully_connected_layers is not None:
+            for fcl in self.fully_connected_layers:
+                l1_pen += fcl.l1_penalty
 
         return l1_pen
 
@@ -342,8 +367,9 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
             [float(l['l2_penalty_weight']) * .5 * gpuarray.sum(W ** 2.).get()
              for l, W in izip(self.master_layers, self.W)])
 
-        if self.fully_connected_layer is not None:
-            l2_pen += self.fully_connected_layer.l2_penalty
+        if self.fully_connected_layers is not None:
+            for fcl in self.fully_connected_layers:
+                l2_pen += fcl.l2_penalty
 
         return l2_pen
 
@@ -373,13 +399,21 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                                 pooled_offset=layer['output_offset'],
                                 target=activations_pooled, argmax=argmax)
 
-        if self.fully_connected_layer is not None:
-            assert len(input) == len(self.subregion_layers) + 1
-            activations_fc = \
-              self.fully_connected_layer.feed_forward(input[-1],
-                                                      prediction)[0]
-            insert_columns(activations_fc, activations_pooled,
-                           self.fc_layer_offset)
+        if self.fully_connected_layers is not None:
+            assert len(input) == \
+              len(self.subregion_layers) + len(self.fully_connected_layers)
+
+            activations_fc = []
+            for input_fcl, fcl, offset \
+              in izip(input[len(self.subregion_layers):], 
+                      self.fully_connected_layers, 
+                      self.fc_layer_offset):
+                afc = \
+                  fcl.feed_forward(input_fcl,
+                                   prediction)[0]
+                activations_fc.append([afc])
+                insert_columns(afc, activations_pooled,
+                               offset)
         else:
             activations_fc = None
 
@@ -434,15 +468,26 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
             if layer['l2_penalty_weight']:
                 df_W_i -= layer['l2_penalty_weight'] * self.W
 
-        if self.fully_connected_layer is not None:
-            assert len(input) == len(self.subregion_layers) + 1
-            input_fc = input[-1]
-            df_output_fc = extract_columns(df_output,
-                                           self.fc_layer_offset,
-                                           df_output.shape[1])
-            grad_fc, df_input_fc = \
-              self.fully_connected_layer.backprop(input_fc, df_output_fc,
-                                                  fc_cache)
+        if self.fully_connected_layers is not None:
+            assert len(input) == \
+              len(self.subregion_layers) + len(self.fully_connected_layers)
+
+            grad_fc = []
+            df_input_fc = []
+            input_fc = input[-len(self.fully_connected_layers):]
+
+            for ifc, offset, fcl, cache in \
+              izip(input_fc, self.fc_layer_offset, 
+                   self.fully_connected_layers, fc_cache):
+                df_output_fc = extract_columns(df_output,
+                                               offset,
+                                               offset + fcl.n_units)
+                grads_layer, df_input_layer = \
+                  fcl.backprop(ifc, df_output_fc,
+                               cache)
+                grad_fc.extend(grads_layer)
+                df_input_fc.extend(df_input_layer)
+            
             return df_W + df_b + list(grad_fc), \
               (df_filtermaps, df_input_fc)
 
@@ -494,7 +539,5 @@ class SequenceConvolutionNet(NeuralNet):
         self.filter_width = filter_width
         self.n_filters = n_filters
         self.pool_size = pool_size
-        
-        # self.fully_connected_layers = self.hidden_layers
-        # self.hidden_layers = [self.conv_layer, self.max_pool_layer] + self.fully_connected_layers
+
         
