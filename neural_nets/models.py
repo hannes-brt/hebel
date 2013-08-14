@@ -114,7 +114,7 @@ class HiddenLayer(object):
         self.f, self.df = self._resolve_activation_fct(activation_function)
 
     def _set_weights_scale(self, activation_function, n_in, n_units):
-        if activation_function in ('tanh', 'relu'):
+        if activation_function in ('tanh', 'relu', 'linear'):
             self.weights_scale = sqrt(6. / (n_in + n_units))
         elif activation_function == 'sigmoid':
             self.weights_scale = 4 * sqrt(6. / (n_in + n_units))
