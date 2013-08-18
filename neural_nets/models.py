@@ -3,10 +3,10 @@ from itertools import izip
 from hashlib import md5
 from pycuda import gpuarray
 from pycuda.gpuarray import GPUArray
-from pycuda.curandom import rand as curand
 from pycuda import cumath
 from math import sqrt
 from scikits.cuda import linalg
+from . import sampler
 from .pycuda_ops import eps
 from .pycuda_ops.elementwise import sigmoid, df_sigmoid, \
      tanh, df_tanh, relu, df_relu, linear, df_linear, \
@@ -43,7 +43,7 @@ class HiddenLayer(object):
             else:
                 self.W, self.b = parameters
         else:
-            self.W = self.weights_scale * curand((n_in, n_units), dtype=np.float32) \
+            self.W = self.weights_scale * sampler.gen_uniform((n_in, n_units), dtype=np.float32) \
               - .5 * self.weights_scale
 
             self.b = gpuarray.zeros((n_units,), dtype=np.float32)
@@ -284,7 +284,7 @@ class LogisticLayer(TopLayer):
             else:
                 self.W, self.b = parameters
         else:
-            self.W = self.weights_scale * curand((n_in, n_out), dtype=np.float32) \
+            self.W = self.weights_scale * sampler.gen_uniform((n_in, n_out), dtype=np.float32) \
               - .5 * self.weights_scale
 
             self.b = gpuarray.zeros((n_out,), dtype=np.float32)

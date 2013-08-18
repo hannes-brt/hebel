@@ -4,3 +4,8 @@ linalg.init()
 import os as _os
 neural_nets_root = _os.path.split(
     _os.path.abspath(_os.path.dirname(__file__)))[0]
+
+from pycuda import curandom
+
+sampler = curandom.XORWOWRandomNumberGenerator(curandom.seed_getter_uniform)
+

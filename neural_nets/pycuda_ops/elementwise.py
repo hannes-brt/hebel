@@ -1,7 +1,7 @@
 import numpy as np
+from .. import sampler
 from pycuda import gpuarray
 from pycuda.elementwise import ElementwiseKernel, get_elwise_kernel
-from pycuda.curandom import md5_code
 
 sign_kernel_float = ElementwiseKernel(
     "float *mat, float *target",
@@ -127,39 +127,29 @@ def df_linear(x):
     return x
 
 sample_dropout_mask_kernel = get_elwise_kernel(
-    "float *mat, float *dest, unsigned int seed",
-    md5_code + """
-    #define POW_2_M32 (1/4294967296.0f)
-
-    unsigned int j = i;
-    dest[j] = a*POW_2_M32;
-    if ((j += total_threads) < n)
-        dest[j] = b*POW_2_M32;
-    if ((j += total_threads) < n)
-        dest[j] = c*POW_2_M32;
-    if ((j += total_threads) < n)
-        dest[j] = d*POW_2_M32;
-
-    if (dest[i] <= .5) {
-         dest[i] = 0.;
+    "float *mat, float *dropout, float dropout_probability",
+    """
+    if (dropout[i] <= dropout_probability) {
+         dropout[i] = 0.;
          mat[i] = 0.;
     } else {
-         dest[i] = 1.;
+         dropout[i] = 1.;
     }
     """,
     "sample_dropout_mask")
 
-def sample_dropout_mask(x, stream=None):
+def sample_dropout_mask(x, dropout_probability=.5, stream=None):
     """ Samples a dropout mask and applies it in place"""
 
     assert x.flags.c_contiguous
     shape = x.shape
-    result = gpuarray.GPUArray(shape, np.float32)
+    dropout_mask = sampler.gen_uniform(shape, x.dtype, stream)
 
     sample_dropout_mask_kernel.prepared_async_call(
-        result._grid, result._block, stream,
-        x. gpudata, result.gpudata, np.random.randint(2**31-1), result.size)
-    return result
+        dropout_mask._grid, dropout_mask._block, stream,
+        x.gpudata, dropout_mask.gpudata, np.float32(dropout_probability),
+        dropout_mask.size)
+    return dropout_mask
 
 apply_dropout_mask_kernel = get_elwise_kernel(
     "float *mat, float *mask",

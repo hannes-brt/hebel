@@ -5,33 +5,34 @@ import pycuda.autoinit
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 import pycuda.driver as drv
+from neural_nets import sampler
 from neural_nets.models import NeuralNet
 from neural_nets.optimizers import SGD
 from neural_nets.parameter_updaters import SimpleSGDUpdate, MomentumUpdate, NesterovMomentumUpdate
 from neural_nets.data_providers import MiniBatchDataProvider, BatchDataProvider, MNISTDataProvider
+from neural_nets.monitors import SimpleProgressMonitor
 from neural_nets.schedulers import constant_scheduler, exponential_scheduler, linear_scheduler_up
 from neural_nets.pycuda_ops.matrix import extract_columns, insert_columns
+from neural_nets.pycuda_ops.elementwise import sample_dropout_mask
 
 class TestNeuralNetMNIST(unittest.TestCase):
     def setUp(self):
-        self.train_data = MNISTDataProvider('train_images', 100)
-        self.train_labels = MNISTDataProvider('train_labels', 100)
-        self.test_data = MNISTDataProvider('test_images')
-        self.test_labels = MNISTDataProvider('test_labels')
+        self.train_data = MNISTDataProvider('train', 100)
+        self.test_data = MNISTDataProvider('test')
         self.D = MNISTDataProvider.D
         self.n_out = 10
 
     def test_relu(self):
-        # import pudb; pudb.set_trace();
         model = NeuralNet(n_in=self.D, n_out=self.n_out,
                           layers=[1000], activation_function='relu',
                           dropout=True)
         optimizer = SGD(model, SimpleSGDUpdate, self.train_data,
-                        self.train_labels, self.test_data, self.test_labels,
-                        learning_rate_schedule=exponential_scheduler(1., .99))
+                        self.test_data,
+                        learning_rate_schedule=exponential_scheduler(1., .99),
+                        progress_monitor=SimpleProgressMonitor())
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitors[0].train_error[-1][1], 
-                        optimizer.progress_monitors[0].train_error[0][1])
+        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
+                        optimizer.progress_monitor.train_error[0][1])
         del model, optimizer
 
     def test_momentum(self):
@@ -39,12 +40,13 @@ class TestNeuralNetMNIST(unittest.TestCase):
                           layers=[1000], activation_function='relu',
                           dropout=True)
         optimizer = SGD(model, MomentumUpdate, self.train_data,
-                        self.train_labels, self.test_data, self.test_labels,
+                        self.test_data,
                         learning_rate_schedule=exponential_scheduler(1., .99),
-                        momentum_schedule=linear_scheduler_up(.5, .9, 5))
+                        momentum_schedule=linear_scheduler_up(.5, .9, 5),
+                        progress_monitor=SimpleProgressMonitor())                        
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitors[0].train_error[-1][1], 
-                        optimizer.progress_monitors[0].train_error[0][1])
+        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
+                        optimizer.progress_monitor.train_error[0][1])
         del model, optimizer
 
     def test_nesterov_momentum(self):
@@ -52,12 +54,13 @@ class TestNeuralNetMNIST(unittest.TestCase):
                           layers=[100], activation_function='relu',
                           dropout=True)
         optimizer = SGD(model, NesterovMomentumUpdate, self.train_data,
-                        self.train_labels, self.test_data, self.test_labels,
+                        self.test_data,
                         learning_rate_schedule=exponential_scheduler(1., .99),
-                        momentum_schedule=linear_scheduler_up(.5, .9, 5))
+                        momentum_schedule=linear_scheduler_up(.5, .9, 5),
+                        progress_monitor=SimpleProgressMonitor())                        
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitors[0].train_error[-1][1], 
-                        optimizer.progress_monitors[0].train_error[0][1])
+        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
+                        optimizer.progress_monitor.train_error[0][1])
         del model, optimizer
 
 class TestColumnSlicing(unittest.TestCase):
@@ -90,6 +93,20 @@ class TestColumnSlicing(unittest.TestCase):
 
             self.assertTrue(np.all(X.get()[:,offset:offset+m] == Y.get()))
 
+class TestSampleDropoutMask(unittest.TestCase):
+    TOL = 1e-3
+
+    def test_sample_dropout_mask(self):
+        for i in range(20):
+            height = np.random.randint(100, 1000)
+            width = np.random.randint(500, 10000)
+            dropout_prob = np.random.rand()
+            X = sampler.gen_uniform((height, width), np.float32)
+            dropout_mask = sample_dropout_mask(X, dropout_prob)
+            dropout_rate = 1. - dropout_mask.get().mean()
+            
+            self.assertLess(np.abs(dropout_prob - dropout_rate), self.TOL)
+            self.assertTrue(np.all((X.get() != 0.) == dropout_mask.get()))
 
 if __name__ == '__main__':
     unittest.main()

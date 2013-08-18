@@ -198,6 +198,10 @@ class SimpleProgressMonitor(object):
         self.start_time = datetime.now()
 
     def report(self, epoch, train_error, validation_error=None, epoch_t=None):
+        self.train_error.append((epoch, train_error))
+        if validation_error is not None:
+            self.validation_error.append((epoch, validation_error))
+        
         # Print logs
         self.print_error(epoch, train_error, validation_error)
 
