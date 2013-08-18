@@ -98,7 +98,7 @@ class TestSampleDropoutMask(unittest.TestCase):
 
     def test_sample_dropout_mask(self):
         for i in range(20):
-            height = np.random.randint(100, 1000)
+            height = 1000
             width = np.random.randint(500, 10000)
             dropout_prob = np.random.rand()
             X = sampler.gen_uniform((height, width), np.float32)
@@ -107,6 +107,25 @@ class TestSampleDropoutMask(unittest.TestCase):
             
             self.assertLess(np.abs(dropout_prob - dropout_rate), self.TOL)
             self.assertTrue(np.all((X.get() != 0.) == dropout_mask.get()))
+
+    def test_sample_dropout_mask_columns(self):
+        for i in range(20):
+            height = 10000
+            width = 10000
+            dropout_prob = np.random.rand()
+            X = sampler.gen_uniform((height, width), np.float32)
+
+            start = np.random.randint(0, width - 1000)
+            end = start + 1000
+            columns = (start, end)
+
+            dropout_mask = sample_dropout_mask(X, dropout_prob, columns)
+            dropout_rate = 1. - dropout_mask.get().mean()
+
+            self.assertEqual(dropout_mask.shape, (X.shape[0], end - start))
+            self.assertLess(np.abs(dropout_prob - dropout_rate), 
+                            self.TOL)
+            self.assertTrue(np.all((X.get()[:,start:end] != 0.) == dropout_mask.get()))
 
 if __name__ == '__main__':
     unittest.main()

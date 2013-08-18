@@ -1,5 +1,6 @@
 import numpy as np
 from .. import sampler
+from .matrix import extract_columns, insert_columns
 from pycuda import gpuarray
 from pycuda.elementwise import ElementwiseKernel, get_elwise_kernel
 
@@ -138,10 +139,16 @@ sample_dropout_mask_kernel = get_elwise_kernel(
     """,
     "sample_dropout_mask")
 
-def sample_dropout_mask(x, dropout_probability=.5, stream=None):
+def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None):
     """ Samples a dropout mask and applies it in place"""
 
     assert x.flags.c_contiguous
+
+    if columns is not None:
+        assert len(columns) == 2
+        x_tmp = x
+        x = extract_columns(x, columns[0], columns[1])
+
     shape = x.shape
     dropout_mask = sampler.gen_uniform(shape, x.dtype, stream)
 
@@ -149,6 +156,10 @@ def sample_dropout_mask(x, dropout_probability=.5, stream=None):
         dropout_mask._grid, dropout_mask._block, stream,
         x.gpudata, dropout_mask.gpudata, np.float32(dropout_probability),
         dropout_mask.size)
+
+    if columns is not None:
+        insert_columns(x, x_tmp, columns[0])
+    
     return dropout_mask
 
 apply_dropout_mask_kernel = get_elwise_kernel(
@@ -156,13 +167,22 @@ apply_dropout_mask_kernel = get_elwise_kernel(
     "if (mask[i] == 0.) mat[i] = 0;",
     "apply_dropout_mask")
 
-def apply_dropout_mask(x, mask, stream=None):
+def apply_dropout_mask(x, mask, columns=None, stream=None):
     assert x.flags.c_contiguous
+
+    if columns is not None:
+        assert len(columns) == 2
+        x_tmp = x
+        x = extract_columns(x, columns[0], columns[1])
+    
     assert x.shape == mask.shape
     shape = x.shape
 
     apply_dropout_mask_kernel.prepared_async_call(x._grid, x._block, stream,
         x.gpudata, mask.gpudata, x.size)
+
+    if columns is not None:
+        insert_columns(x, x_tmp, columns[0])
 
 nan_to_zeros_kernel = ElementwiseKernel("float *mat, float *target",
     "target[i] = isnan(mat[i]) ? 0. : mat[i];",

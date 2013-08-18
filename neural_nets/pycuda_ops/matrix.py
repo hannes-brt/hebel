@@ -148,5 +148,3 @@ def insert_columns(src, dst, offset):
     copy.dst_pitch = w_dst * itemsize
     copy.height = h_src
     copy(aligned=True)
-
-    
