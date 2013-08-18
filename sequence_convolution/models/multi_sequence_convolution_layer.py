@@ -2,7 +2,8 @@ import numpy as np
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from itertools import izip
-from . import pycuda_ops
+from .. import pycuda_ops
+from . import MaxPoolingLayer, SequenceConvolutionLayer
 from neural_nets.models import HiddenLayer, NeuralNet
 from neural_nets.pycuda_ops.elementwise import sign, sample_dropout_mask, \
      apply_dropout_mask
@@ -112,12 +113,6 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                 else:
                     raise TypeError("fully connected layer must be a dictionary or "
                       "an instance of HiddenLayer")
-
-        if self.fully_connected_layers is not None and \
-          any((fcl.dropout for fcl in self.fully_connected_layers)):
-            raise ValueError("Dropout on fully connected layer is not allowed,"
-                             "set dropout on MultiSequenceConvolutionLayer "
-                             "instead.")
 
         self.n_units = sum((layer['n_units'] for layer in subregion_layers))
         if self.fully_connected_layers is not None:
@@ -277,7 +272,9 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
             activations_fc = None
 
         if self.dropout and not prediction:
-            dropout_mask = sample_dropout_mask(activations_pooled)
+            # Dropout only applies to subregion layer
+            dropout_mask = sample_dropout_mask(activations_pooled, 
+                                               columns=(0, self.fc_layer_offset[0]))
         else:
             dropout_mask = None
 
@@ -290,7 +287,8 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         activations_pooled, argmax, filtermaps, dropout_mask, fc_cache = cache            
 
         if self.dropout and dropout_mask is not None:
-            apply_dropout_mask(df_output, dropout_mask)
+            apply_dropout_mask(df_output, dropout_mask,
+                               columns=(0, self.fc_layer_offset[0]))
 
         df_W = []
         df_b = []

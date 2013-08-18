@@ -1,6 +1,6 @@
 import numpy as np
 from pycuda.curandom import rand as curand
-from . import pycuda_ops
+from .. import pycuda_ops
 from neural_nets.models import HiddenLayer
 from neural_nets.pycuda_ops.elementwise import sample_dropout_mask, \
      apply_dropout_mask
