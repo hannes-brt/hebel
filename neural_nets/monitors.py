@@ -20,8 +20,9 @@ from datetime import datetime
 from mongoengine import DoesNotExist
 from .schema import Dataset, Experiment, ErrorLog
 
+
 class ProgressMonitor(object):
-    def __init__(self, experiment_name=None, save_model_path=None, 
+    def __init__(self, experiment_name=None, save_model_path=None,
                  save_interval=0, output_to_log=False, model=None,
                  dataset=None, task_id=None):
 
@@ -33,12 +34,12 @@ class ProgressMonitor(object):
         self.output_to_log = output_to_log
         self.model = model
 
-        try: 
+        try:
             self.dataset = Dataset.objects(name=dataset).get()
         except DoesNotExist:
             self.dataset = Dataset(name=dataset)
             self.dataset.save()
-            
+
         self.task_id = task_id
         self.train_error = []
         self.validation_error = []
@@ -64,7 +65,7 @@ class ProgressMonitor(object):
         self._model = model
 
         if self._model is not None:
-            self.experiment.model_checksum = model.checksum            
+            self.experiment.model_checksum = model.checksum
 
     @property
     def yaml_config(self):
@@ -76,7 +77,7 @@ class ProgressMonitor(object):
         yaml_path = os.path.join(self.save_path, 'yaml_config.yml')
         f = open(yaml_path, 'w')
         f.write(self._yaml_config)
-        self.experiment.yaml_config = yaml_config        
+        self.experiment.yaml_config = yaml_config
 
     @property
     def task_id(self):
@@ -107,7 +108,7 @@ class ProgressMonitor(object):
             datetime.isoformat(datetime.now()),
             self.task_id))
 
-        path = os.path.join(self.save_model_path, 
+        path = os.path.join(self.save_model_path,
                             experiment_dir_name)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -170,14 +171,14 @@ class ProgressMonitor(object):
             param_cpu = np.abs(param.get())
             mean_weight = param_cpu.mean()
             std_weight = param_cpu.std()
-            print 'Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight) 
+            print 'Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight)
             i += 1
 
     def finish_training(self):
         # Print logs
         end_time = datetime.now()
         self.train_time = end_time - self.start_time
-        print "Runtime: %dm %ds" % (self.train_time.total_seconds() // 60, 
+        print "Runtime: %dm %ds" % (self.train_time.total_seconds() // 60,
                                     self.train_time.total_seconds() % 60)
         print "Avg. time per epoch %.2fs" % self.avg_epoch_t
 
@@ -201,6 +202,7 @@ class ProgressMonitor(object):
         if self.experiment.task_id is not None:
             self.experiment.save()
 
+
 class SimpleProgressMonitor(object):
     def __init__(self):
         self.model = None
@@ -217,7 +219,7 @@ class SimpleProgressMonitor(object):
         self.train_error.append((epoch, train_error))
         if validation_error is not None:
             self.validation_error.append((epoch, validation_error))
-        
+
         # Print logs
         self.print_error(epoch, train_error, validation_error)
 
@@ -243,13 +245,13 @@ class SimpleProgressMonitor(object):
             param_cpu = np.abs(param.get())
             mean_weight = param_cpu.mean()
             std_weight = param_cpu.std()
-            print 'Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight) 
+            print 'Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight)
             i += 1
 
     def finish_training(self):
         # Print logs
         end_time = datetime.now()
         self.train_time = end_time - self.start_time
-        print "Runtime: %dm %ds" % (self.train_time.total_seconds() // 60, 
+        print "Runtime: %dm %ds" % (self.train_time.total_seconds() // 60,
                                     self.train_time.total_seconds() % 60)
         print "Avg. time per epoch %.2fs" % self.avg_epoch_t

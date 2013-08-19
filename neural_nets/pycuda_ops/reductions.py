@@ -22,11 +22,14 @@ from scikits.cuda import linalg
 code = """
 #include "float.h"
 
-__global__ void kMaxColumnwise(float* mat, float* target, unsigned int width, unsigned int height) {
+__global__ void kMaxColumnwise(float* mat,
+                               float* target,
+                               unsigned int width,
+                               unsigned int height) {
     __shared__ float max_vals[32];
     float cur_max = -FLT_MAX;
     float val = 0;
- 
+
     for (unsigned int i = threadIdx.x; i < height; i += 32) {
         val = mat[blockIdx.x + i * width];
 
@@ -50,11 +53,14 @@ __global__ void kMaxColumnwise(float* mat, float* target, unsigned int width, un
     // __syncthreads();
 }
 
-__global__ void kMaxRowwise(float* mat, float* target, unsigned int width, unsigned int height) {
+__global__ void kMaxRowwise(float* mat,
+                            float* target,
+                            unsigned int width,
+                            unsigned int height) {
     __shared__ float max_vals[32];
     float cur_max = -FLT_MAX;
     float val = 0;
- 
+
     for (unsigned int i = threadIdx.x; i < width; i += 32) {
         val = mat[blockIdx.x * width + i];
 
@@ -83,24 +89,29 @@ mod = SourceModule(code)
 max_column = mod.get_function("kMaxColumnwise")
 max_row = mod.get_function("kMaxRowwise")
 
+
 def max_by_axis(mat, axis=0):
     assert mat.flags.c_contiguous
-    assert axis in (0,1)
-    
-    n,m = mat.shape
-    
+    assert axis in (0, 1)
+
+    n, m = mat.shape
+
     if axis == 0:
         target = gpuarray.empty(m, dtype=np.float32)
-        max_column(mat, target, np.int32(m), np.int32(n), block=(32,1,1), grid=(m,1,1))
-        
+        max_column(mat, target, np.int32(m), np.int32(n),
+                   block=(32, 1, 1), grid=(m, 1, 1))
+
     elif axis == 1:
         target = gpuarray.empty(n, dtype=np.float32)
-        max_row(mat, target, np.int32(m), np.int32(n), block=(32,1,1), grid=(n,1,1))
-        
+        max_row(mat, target, np.int32(m), np.int32(n),
+                block=(32, 1, 1), grid=(n, 1, 1))
+
     return target
+
 
 def _matrix_sum_out_axis_wrapper():
     one_vector_cache = {}
+
     def f(mat, axis=0, cache_one_vector=True):
         assert mat.flags.c_contiguous
         N, M = mat.shape
@@ -123,8 +134,7 @@ def _matrix_sum_out_axis_wrapper():
             target = linalg.dot(mat, ones).ravel()
         else:
             raise ValueError('axis must be 0 or 1')
-        
+
         return target
     return f
 matrix_sum_out_axis = _matrix_sum_out_axis_wrapper()
-

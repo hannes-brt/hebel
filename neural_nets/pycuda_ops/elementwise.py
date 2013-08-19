@@ -30,6 +30,7 @@ sign_kernel_double = ElementwiseKernel(
     "target[i] = (mat[i] > 0.) - (mat[i] < 0);",
     "sign")
 
+
 def sign(x):
     assert x.flags.c_contiguous
     target = gpuarray.GPUArray(x.shape, dtype=x.dtype)
@@ -51,6 +52,7 @@ sigmoid_kernel_double = ElementwiseKernel(
         "mat[i] = 1. / (1. + __expf(-mat[i]))",
         "sigmoid")
 
+
 def sigmoid(x):
     assert x.flags.c_contiguous
     if x.dtype == np.dtype(np.float32):
@@ -59,6 +61,7 @@ def sigmoid(x):
         sigmoid_kernel_double(x)
     else:
         raise ValueError("Incompatible dtype")
+
 
 def df_sigmoid(f):
     assert f.flags.c_contiguous
@@ -75,6 +78,7 @@ tanh_kernel_double = ElementwiseKernel(
     "mat[i] = tanhf(mat[i]);",
     "tanh_inplace")
 
+
 def tanh(x):
     assert x.flags.c_contiguous
     if x.dtype == np.dtype(np.float32):
@@ -84,9 +88,10 @@ def tanh(x):
     else:
         raise ValueError("Incompatible dtype")
 
+
 def df_tanh(f):
     assert f.flags.c_contiguous
-    df = 1 - f**2.
+    df = 1 - f ** 2.
     return df
 
 relu_kernel_float = ElementwiseKernel(
@@ -99,6 +104,7 @@ relu_kernel_double = ElementwiseKernel(
     "if (mat[i] < 0.) mat[i] = 0.",
     "relu")
 
+
 def relu(x):
     assert x.flags.c_contiguous
     if x.dtype == np.dtype(np.float32):
@@ -110,7 +116,7 @@ def relu(x):
 
 df_relu_kernel_float = ElementwiseKernel(
     "float *mat, float *target",
-    """if (mat[i] <= 0.) 
+    """if (mat[i] <= 0.)
          target[i] = 0.;
        else
          target[i] = 1.;
@@ -119,12 +125,13 @@ df_relu_kernel_float = ElementwiseKernel(
 
 df_relu_kernel_double = ElementwiseKernel(
     "double *mat, double *target",
-    """if (mat[i] <= 0.) 
+    """if (mat[i] <= 0.)
          target[i] = 0.;
        else
          target[i] = 1.;
     """,
     "df_relu")
+
 
 def df_relu(x):
     assert x.flags.c_contiguous
@@ -155,6 +162,7 @@ sample_dropout_mask_kernel = get_elwise_kernel(
     """,
     "sample_dropout_mask")
 
+
 def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None):
     """ Samples a dropout mask and applies it in place"""
 
@@ -175,13 +183,14 @@ def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None):
 
     if columns is not None:
         insert_columns(x, x_tmp, columns[0])
-    
+
     return dropout_mask
 
 apply_dropout_mask_kernel = get_elwise_kernel(
     "float *mat, float *mask",
     "if (mask[i] == 0.) mat[i] = 0;",
     "apply_dropout_mask")
+
 
 def apply_dropout_mask(x, mask, columns=None, stream=None):
     assert x.flags.c_contiguous
@@ -190,7 +199,7 @@ def apply_dropout_mask(x, mask, columns=None, stream=None):
         assert len(columns) == 2
         x_tmp = x
         x = extract_columns(x, columns[0], columns[1])
-    
+
     assert x.shape == mask.shape
     shape = x.shape
 
@@ -203,6 +212,7 @@ def apply_dropout_mask(x, mask, columns=None, stream=None):
 nan_to_zeros_kernel = ElementwiseKernel("float *mat, float *target",
     "target[i] = isnan(mat[i]) ? 0. : mat[i];",
     "nan_to_zeros_kernel")
+
 
 def nan_to_zeros(x, target=None):
     assert x.flags.c_contiguous

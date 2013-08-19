@@ -14,11 +14,11 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import numpy as np
-from pycuda import gpuarray
-
 """ Some basic data providers
 """
+
+import numpy as np
+from pycuda import gpuarray
 
 class DataProvider(object):
     def __init__(self, data, targets, batch_size):
@@ -44,6 +44,7 @@ class DataProvider(object):
     def shape(self):
         return self.data.shape
 
+
 class MiniBatchDataProvider(DataProvider):
     def __getitem__(self, batch_idx):
         return self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
@@ -55,7 +56,7 @@ class MiniBatchDataProvider(DataProvider):
 
         minibatch_data  = self.data[self.i:self.i+self.batch_size]
         minibatch_targets = self.targets[self.i:self.i+self.batch_size]
-        
+
         self.i += self.batch_size
         return minibatch_data, minibatch_targets
 
@@ -71,7 +72,7 @@ class MultiTaskDataProvider(DataProvider):
             self.N = data.shape[0]
         except AttributeError:
             self.N = data[0].shape[0]
-        
+
         if batch_size is not None:
             self.batch_size = batch_size
         else:
@@ -141,7 +142,7 @@ class BatchDataProvider(MiniBatchDataProvider):
 class DummyDataProvider(DataProvider):
     def __init__(self, *args, **kwargs):
         pass
-    
+
     def __getitem__(self, batch_idx):
         return None, None
 

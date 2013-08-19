@@ -18,18 +18,18 @@ import unittest
 import random
 import numpy as np
 import pycuda.autoinit
-from pycuda import gpuarray
 from pycuda.curandom import rand as curand
-import pycuda.driver as drv
 from neural_nets import sampler
 from neural_nets.models import NeuralNet
 from neural_nets.optimizers import SGD
-from neural_nets.parameter_updaters import SimpleSGDUpdate, MomentumUpdate, NesterovMomentumUpdate
-from neural_nets.data_providers import MiniBatchDataProvider, BatchDataProvider, MNISTDataProvider
+from neural_nets.parameter_updaters import SimpleSGDUpdate, \
+    MomentumUpdate, NesterovMomentumUpdate
+from neural_nets.data_providers import MNISTDataProvider
 from neural_nets.monitors import SimpleProgressMonitor
-from neural_nets.schedulers import constant_scheduler, exponential_scheduler, linear_scheduler_up
+from neural_nets.schedulers import exponential_scheduler, linear_scheduler_up
 from neural_nets.pycuda_ops.matrix import extract_columns, insert_columns
 from neural_nets.pycuda_ops.elementwise import sample_dropout_mask
+
 
 class TestNeuralNetMNIST(unittest.TestCase):
     def setUp(self):
@@ -47,7 +47,7 @@ class TestNeuralNetMNIST(unittest.TestCase):
                         learning_rate_schedule=exponential_scheduler(1., .99),
                         progress_monitor=SimpleProgressMonitor())
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
+        self.assertLess(optimizer.progress_monitor.train_error[-1][1],
                         optimizer.progress_monitor.train_error[0][1])
         del model, optimizer
 
@@ -59,9 +59,9 @@ class TestNeuralNetMNIST(unittest.TestCase):
                         self.test_data,
                         learning_rate_schedule=exponential_scheduler(1., .99),
                         momentum_schedule=linear_scheduler_up(.5, .9, 5),
-                        progress_monitor=SimpleProgressMonitor())                        
+                        progress_monitor=SimpleProgressMonitor())
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
+        self.assertLess(optimizer.progress_monitor.train_error[-1][1],
                         optimizer.progress_monitor.train_error[0][1])
         del model, optimizer
 
@@ -73,15 +73,16 @@ class TestNeuralNetMNIST(unittest.TestCase):
                         self.test_data,
                         learning_rate_schedule=exponential_scheduler(1., .99),
                         momentum_schedule=linear_scheduler_up(.5, .9, 5),
-                        progress_monitor=SimpleProgressMonitor())                        
+                        progress_monitor=SimpleProgressMonitor())
         optimizer.run(20)
-        self.assertLess(optimizer.progress_monitor.train_error[-1][1], 
+        self.assertLess(optimizer.progress_monitor.train_error[-1][1],
                         optimizer.progress_monitor.train_error[0][1])
         del model, optimizer
 
+
 class TestColumnSlicing(unittest.TestCase):
     def test_extract_columns(self):
-        for i in range(20):
+        for _ in range(20):
             dtype = random.choice((np.float32, np.float64))
             N = np.random.randint(100, 1000)
             M = np.random.randint(100, 1000)
@@ -93,10 +94,10 @@ class TestColumnSlicing(unittest.TestCase):
             X = curand((N, M), dtype)
             Y = extract_columns(X, a, b)
 
-            self.assertTrue(np.all(X.get()[:,a:b] == Y.get()))
+            self.assertTrue(np.all(X.get()[:, a:b] == Y.get()))
 
     def test_insert_columns(self):
-        for i in range(20):
+        for _ in range(20):
             dtype = random.choice((np.float32, np.float64))
             N = np.random.randint(100, 1000)
             M = np.random.randint(100, 1000)
@@ -105,27 +106,28 @@ class TestColumnSlicing(unittest.TestCase):
 
             X = curand((N, M), dtype)
             Y = curand((N, m), dtype)
-            Z = insert_columns(Y, X, offset)
+            insert_columns(Y, X, offset)
 
-            self.assertTrue(np.all(X.get()[:,offset:offset+m] == Y.get()))
+            self.assertTrue(np.all(X.get()[:, offset:offset+m] == Y.get()))
+
 
 class TestSampleDropoutMask(unittest.TestCase):
     TOL = 1e-3
 
     def test_sample_dropout_mask(self):
-        for i in range(20):
+        for _ in range(20):
             height = 1000
             width = np.random.randint(500, 10000)
             dropout_prob = np.random.rand()
             X = sampler.gen_uniform((height, width), np.float32)
             dropout_mask = sample_dropout_mask(X, dropout_prob)
             dropout_rate = 1. - dropout_mask.get().mean()
-            
+
             self.assertLess(np.abs(dropout_prob - dropout_rate), self.TOL)
             self.assertTrue(np.all((X.get() != 0.) == dropout_mask.get()))
 
     def test_sample_dropout_mask_columns(self):
-        for i in range(20):
+        for _ in range(20):
             height = 10000
             width = 10000
             dropout_prob = np.random.rand()
@@ -139,9 +141,10 @@ class TestSampleDropoutMask(unittest.TestCase):
             dropout_rate = 1. - dropout_mask.get().mean()
 
             self.assertEqual(dropout_mask.shape, (X.shape[0], end - start))
-            self.assertLess(np.abs(dropout_prob - dropout_rate), 
+            self.assertLess(np.abs(dropout_prob - dropout_rate),
                             self.TOL)
-            self.assertTrue(np.all((X.get()[:,start:end] != 0.) == dropout_mask.get()))
+            self.assertTrue(np.all((X.get()[:, start:end] != 0.)
+                                   == dropout_mask.get()))
 
 if __name__ == '__main__':
     unittest.main()

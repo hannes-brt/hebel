@@ -14,6 +14,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+import configmodule
 from celery import Celery, Task
 from billiard import current_process
 from neural_nets.config import load
@@ -21,12 +22,13 @@ import os
 from itertools import izip
 import pycuda.driver as cuda
 
-celery = Celery('tasks', broker='amqp://guest:guest@128.100.241.98:5672//')
+celery = Celery('tasks', broker=configmodule['BROKER_URL'])
+
 
 class ExperimentRunner(Task):
     ignore_result = True
     abstract = True
-    
+
     def make_context(self):
         cuda.init()
         self.ndevices = cuda.Device.count()
@@ -40,11 +42,12 @@ class ExperimentRunner(Task):
         from scikits.cuda import linalg
         linalg.init()
 
+
 @celery.task(base=ExperimentRunner)
 def run_experiment(yaml_config):
     if cuda.Context.get_current() is None:
         run_experiment.make_context()
-    
+
     config = load(yaml_config)
     optimizer = config['optimizer']
     run_conf = config['run_conf']
@@ -59,7 +62,7 @@ def run_experiment(yaml_config):
 
         test_error = 0
         for batch_data, batch_targets in test_data:
-            test_error += model.test_error(batch_data, batch_targets, average=False)
+            test_error += model.test_error(batch_data,
+                                           batch_targets, average=False)
         test_error /= float(test_data.N)
         progress_monitor.test_error = test_error
-        
