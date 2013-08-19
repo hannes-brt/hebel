@@ -1,3 +1,19 @@
+// Copyright (C) 2013  Hannes Bretschneider
+
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License along
+// with this program; if not, write to the Free Software Foundation, Inc.,
+// 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
 #include <float.h>
 #include <limits.h>
 #include "convolution_kernels.h"
@@ -15,9 +31,26 @@ __global__ void convolve_sequence(const nucleotide_t *input,
 				  const unsigned int target_offset,
 				  const unsigned int n_filters) {
 
-  /* Performs a 1D convolution on each row of a matrix with 
-     multiple filters. Filter size must be even and input is
-     padded on the right with zeros.
+  /*
+    Convolves a set of filters with an input sequence. This function
+    can operate on a subset of columns of the input array and output
+    the result to a subset of columns of the output array.
+
+    *input : pointer to the input sequence
+    *target : pointer to the output array
+    *filter : pointer to the filter bank
+    *bias : pointer to the array of biases
+    input_offset : column offset when working 
+      on a subset of the input array
+    width : width of input sequence
+    total_width: total width/row stride of the input sequence 
+      (for operating on a subset of the input)
+    height : number of rows in the input array
+    filter_width : width of the filters in nucleotides
+    total_target_width : total width/row stride of the target array
+    target_offset : column offset into the target array
+    n_filters : number of filters
+
   */
     
   const unsigned int f = blockIdx.y;
@@ -37,11 +70,13 @@ __global__ void convolve_sequence(const nucleotide_t *input,
     
   const unsigned int halo_width = filter_width - 1;
     
+  // Load input into shared memory
   shared_idx = threadIdx.x;
   input_idx = i*total_width + input_offset + j;
   input_shared[shared_idx] = (i < height) ? input[input_idx] : DNA_N;
   __syncthreads();
 
+  // Load halo elements on right side
   if (i < height) {
     int halo_index_right = (blockIdx.x+1)*blockDim.x+threadIdx.x;
     if (threadIdx.x < halo_width) {
@@ -52,10 +87,12 @@ __global__ void convolve_sequence(const nucleotide_t *input,
     }
   }
 
+  // Load filter elements into shared memory
   if (threadIdx.x < filter_elements)
     filter_shared[threadIdx.x] = filter[f*filter_elements+threadIdx.x];
   __syncthreads();
   
+  // Perform convolution
   if (i < height) {
     {{ data_type }} Pvalue = bias_filter;
     for (int k=0; k < filter_width; k++) {
@@ -76,6 +113,8 @@ __global__ void convolve_sequence(const nucleotide_t *input,
 	  Pvalue += filter_shared[4*k+3];
       }
     }
+
+    // Write output
     target_idx = i*total_target_width + target_offset + f*width + j;
     target[target_idx] = Pvalue;
   }
@@ -87,32 +126,33 @@ __global__ void gradient_reduce(const {{ data_type }} *df_weights,
 				const unsigned int filter_width, 
 				const unsigned int n_elements) {
 
-    /* Completes the reduction operation of conv1d_grad_weight
-    */
+  /* 
+     Reduction operation necessary to complete the gradient computation
+  */
     
-    const unsigned int tid = threadIdx.x;
-    const unsigned int filter_elements = 4*filter_width;
-    const unsigned int df_weights_idx = blockIdx.x*filter_elements*n_elements+
-        blockIdx.y*n_elements+threadIdx.x;
+  const unsigned int tid = threadIdx.x;
+  const unsigned int filter_elements = 4*filter_width;
+  const unsigned int df_weights_idx = blockIdx.x*filter_elements*n_elements+
+    blockIdx.y*n_elements+threadIdx.x;
     
-    extern __shared__ {{ data_type }} sdata[];
+  extern __shared__ {{ data_type }} sdata[];
     
-    sdata[tid] = (tid<n_elements) ? df_weights[df_weights_idx] : 0;
-    if (tid+blockDim.x < n_elements)
-        sdata[tid] += df_weights[df_weights_idx+blockDim.x];
+  sdata[tid] = (tid<n_elements) ? df_weights[df_weights_idx] : 0;
+  if (tid+blockDim.x < n_elements)
+    sdata[tid] += df_weights[df_weights_idx+blockDim.x];
+  __syncthreads();
+    
+  for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+    if (tid < s) {
+      sdata[tid] += sdata[tid+s];
+    }
     __syncthreads();
+  }
     
-    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
-        if (tid < s) {
-            sdata[tid] += sdata[tid+s];
-        }
-        __syncthreads();
-    }
-    
-    if (tid==0) {        
-        const unsigned int df_weights_sum_idx = blockIdx.x*filter_elements+blockIdx.y;
-        df_weights_sum[df_weights_sum_idx] = sdata[0];
-    }
+  if (tid==0) {        
+    const unsigned int df_weights_sum_idx = blockIdx.x*filter_elements+blockIdx.y;
+    df_weights_sum[df_weights_sum_idx] = sdata[0];
+  }
 }
 
 __global__ void convolve_sequence_gradient(const nucleotide_t *input, 
@@ -126,6 +166,24 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
 					   const unsigned int height, 
 					   const unsigned int filter_width,
 					   const unsigned int n_filters) {
+
+  /*
+    Compute the gradient of the convolution operation with respect to the filter weights
+    
+    *input : pointer to the input sequence
+    *df_output : pointer to the incoming gradient from the next layer
+    *df_weights : pointer to output array for gradient wrt filter weights
+    input_offset : column offset into input array
+    df_output_offset : column offset into df_output
+    total_input_width : total_width/row stride of input array
+    total_df_output_width : total_width/row stride of df_output
+    width : input width
+    height : number of input rows
+    filter_width : width of filters
+    n_filters : number of filters in filter bank
+
+   */
+
   
   const unsigned int stride = 4;
   const unsigned int tx = threadIdx.x;
@@ -140,17 +198,19 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
 
   unsigned int df_weights_idx, output_idx, shared_idx, df_output_shift;
   int halo_idx;
-  
+
+  // Define dynamically sized shared memory
   const unsigned int halo_width = filter_width - 1;
   const unsigned int shared_width = halo_width + blockDim.x;
   extern __shared__ {{ data_type }} sdata[];
   {{ data_type }} *df_output_shared = sdata;
   {{ data_type }} *df_weights_reduce = df_output_shared + shared_width;
 
+  // Load input element
   const nucleotide_t input_element = 
     (lin_idx < len_input) ? input[input_idx] : DNA_N;
 
-  // Load halo elements on the left
+  // Load halo elements on the left into shared memory
   if (tx < halo_width) {
     output_idx = row_start_block*total_df_output_width +
       df_output_offset + f*width + column_start_block - halo_width + tx;
@@ -160,6 +220,7 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
       (halo_idx < 0) ? 0. : df_output[output_idx];
   }
 
+  // Load remaining shared memory elements
   if (tx < blockDim.x) {
     output_idx = row*total_df_output_width + df_output_offset + f*width + column;
     df_output_shared[tx+halo_width] = 
@@ -169,6 +230,7 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
   
   __syncthreads();
 
+  // Compute gradients
   for (unsigned int k=0; k<filter_width; k++) {
     df_output_shift = halo_width-k;
 
@@ -194,6 +256,7 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
 
     __syncthreads();
 
+    // Stage 1 reduction
     for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
       if (tx<s) {
     	df_weights_reduce[stride*tx] += df_weights_reduce[stride*(tx+s)];
@@ -204,6 +267,7 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
       __syncthreads();
     }
     
+    // Write output
     if (tx<stride) {
       df_weights_idx =
       	f * stride * filter_width * gridDim.x +

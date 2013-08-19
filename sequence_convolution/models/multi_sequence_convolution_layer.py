@@ -1,10 +1,26 @@
+# Copyright (C) 2013  Hannes Bretschneider
+
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
 import numpy as np
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from itertools import izip
 from .. import pycuda_ops
-from . import MaxPoolingLayer, SequenceConvolutionLayer
-from neural_nets.models import HiddenLayer, NeuralNet
+from . import MaxPoolingLayer
+from neural_nets.models import HiddenLayer
 from neural_nets.pycuda_ops.elementwise import sign, sample_dropout_mask, \
      apply_dropout_mask
 from neural_nets.pycuda_ops.matrix import extract_columns, insert_columns
@@ -23,6 +39,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                  l2_penalty_weight=None,
                  dtype=np.float32,
                  weight_scale=.01):
+
         self.subregion_layers = subregion_layers
         self.dtype = dtype
         self.dropout = dropout
@@ -86,8 +103,8 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                     layer['lr_multiplier'] = 1.
 
             else:
-                layer['layer_type'] = 'slave' 
-                master_layer = subregion_layers[layer['weight_share']]                
+                layer['layer_type'] = 'slave'
+                master_layer = subregion_layers[layer['weight_share']]
                 layer['n_filters'] = master_layer['n_filters']
                 layer['filter_width'] = master_layer['filter_width']
                 layer['param_idx'] = master_layer['param_idx']
@@ -120,7 +137,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
             for fcl in self.fully_connected_layers[:-1]:
                 self.fc_layer_offset.append(self.fc_layer_offset[-1] + fcl.n_units)
-                
+
             self.n_units += sum((fcl.n_units for fcl in self.fully_connected_layers))
         else:
             self.fc_layer_offset = None
@@ -196,7 +213,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
             idx = 0
             for fcl in self.fully_connected_layers:
-                fcl.update_parameters(fc_params[idx:idx+fcl.n_parameters])            
+                fcl.update_parameters(fc_params[idx:idx+fcl.n_parameters])
                 idx += fcl.n_parameters
 
         for (param, (gparam, mult)) \
@@ -227,10 +244,10 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
         return l2_pen
 
-    def feed_forward(self, input, prediction=False):
-        assert all((input[0].shape[0] == i.shape[0] for i in input[1:]))
+    def feed_forward(self, input_data, prediction=False):
+        assert all((input_data[0].shape[0] == i.shape[0] for i in input_data[1:]))
 
-        N = input[0].shape[0]
+        N = input_data[0].shape[0]
         activations_pooled = gpuarray.empty((N, self.n_units),
                                             self.dtype)
         argmax = gpuarray.empty(activations_pooled.shape,
@@ -239,7 +256,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         filtermaps = []
 
         for input_region, layer \
-            in izip(input, self.subregion_layers):
+            in izip(input_data, self.subregion_layers):
             W = self.W[layer['param_idx']]
             b = self.b[layer['param_idx']]
             act_fct = layer['f']
@@ -254,13 +271,13 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                                 target=activations_pooled, argmax=argmax)
 
         if self.fully_connected_layers is not None:
-            assert len(input) == \
+            assert len(input_data) == \
               len(self.subregion_layers) + len(self.fully_connected_layers)
 
             activations_fc = []
             for input_fcl, fcl, offset \
-              in izip(input[len(self.subregion_layers):], 
-                      self.fully_connected_layers, 
+              in izip(input_data[len(self.subregion_layers):],
+                      self.fully_connected_layers,
                       self.fc_layer_offset):
                 afc = \
                   fcl.feed_forward(input_fcl,
@@ -273,18 +290,19 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
         if self.dropout and not prediction:
             # Dropout only applies to subregion layer
-            dropout_mask = sample_dropout_mask(activations_pooled, 
+            dropout_mask = sample_dropout_mask(activations_pooled,
                                                columns=(0, self.fc_layer_offset[0]))
         else:
             dropout_mask = None
 
-        return activations_pooled, argmax, filtermaps, dropout_mask, activations_fc
+        return activations_pooled, argmax, filtermaps, \
+            dropout_mask, activations_fc
 
-    def backprop(self, input, df_output, cache=None):
+    def backprop(self, input_data, df_output, cache=None):
         if cache is None:
-            cache = self.feed_forward(input)
+            cache = self.feed_forward(input_data)
 
-        activations_pooled, argmax, filtermaps, dropout_mask, fc_cache = cache            
+        activations_pooled, argmax, filtermaps, dropout_mask, fc_cache = cache
 
         if self.dropout and dropout_mask is not None:
             apply_dropout_mask(df_output, dropout_mask,
@@ -295,7 +313,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         df_filtermaps = []
 
         for input_region, filtermap, layer \
-          in izip(input, filtermaps, self.subregion_layers):
+          in izip(input_data, filtermaps, self.subregion_layers):
             act_df = layer['df']
 
             df_filtermap = pycuda_ops.max_pool_gradient(
@@ -326,15 +344,15 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                 df_W_i -= layer['l2_penalty_weight'] * self.W
 
         if self.fully_connected_layers is not None:
-            assert len(input) == \
+            assert len(input_data) == \
               len(self.subregion_layers) + len(self.fully_connected_layers)
 
             grad_fc = []
             df_input_fc = []
-            input_fc = input[-len(self.fully_connected_layers):]
+            input_fc = input_data[-len(self.fully_connected_layers):]
 
             for ifc, offset, fcl, cache in \
-              izip(input_fc, self.fc_layer_offset, 
+              izip(input_fc, self.fc_layer_offset,
                    self.fully_connected_layers, fc_cache):
                 df_output_fc = extract_columns(df_output,
                                                offset,
@@ -344,7 +362,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                                cache)
                 grad_fc.extend(grads_layer)
                 df_input_fc.extend(df_input_layer)
-            
+
             return df_W + df_b + list(grad_fc), \
               (df_filtermaps, df_input_fc)
 
