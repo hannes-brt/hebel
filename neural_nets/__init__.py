@@ -21,7 +21,17 @@ import os as _os
 neural_nets_root = _os.path.split(
     _os.path.abspath(_os.path.dirname(__file__)))[0]
 
-from pycuda import curandom
+# This defers the import of curandom until the first time sampler is accessed
+class _Sampler(object):
+    _sampler = None
 
-sampler = curandom.XORWOWRandomNumberGenerator(curandom.seed_getter_uniform)
+    def __getattribute__(self, name):
+        sampler = object.__getattribute__(self, '_sampler')
+        if sampler is None:
+            from pycuda import curandom
+            sampler = curandom.XORWOWRandomNumberGenerator(
+                curandom.seed_getter_uniform)
+            self._sampler = sampler
+        return sampler.__getattribute__(name)
 
+sampler = _Sampler()
