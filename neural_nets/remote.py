@@ -22,7 +22,7 @@ import os
 from itertools import izip
 import pycuda.driver as cuda
 
-celery = Celery('tasks', broker=configmodule['BROKER_URL'])
+celery = Celery('tasks', broker=configmodule.BROKER_URL)
 
 
 class ExperimentRunner(Task):
@@ -55,14 +55,10 @@ def run_experiment(yaml_config):
     run_conf['task_id'] = run_experiment.request.id
     optimizer.run(**run_conf)
 
-    if config.has_key('test_dataset'):
-        test_data = config['test_dataset']['test_data']
+    if config.has_key('test'):
+        test_function = config['test']['test_function']
+        test_data = config['test']['test_data']
         model = optimizer.model
         progress_monitor = optimizer.progress_monitor
-
-        test_error = 0
-        for batch_data, batch_targets in test_data:
-            test_error += model.test_error(batch_data,
-                                           batch_targets, average=False)
-        test_error /= float(test_data.N)
+        test_error = test_function(model, test_data)
         progress_monitor.test_error = test_error

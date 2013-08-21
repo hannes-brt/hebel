@@ -101,8 +101,8 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False):
         elif vec.shape[0] == mat.shape[1]:
             axis = 1
         else:
-            raise ValueError('Vector length must be equal "
-                             "to one side of the matrix')
+            raise ValueError('Vector length must be equal '
+                             'to one side of the matrix')
 
     n, m = mat.shape
 
