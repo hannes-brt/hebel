@@ -14,43 +14,71 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from sequence_convolution import enum, DNA_A, DNA_C, DNA_G, DNA_T, DNA_R, DNA_Y, DNA_N
+
 import numpy as np
+import string
 from pycuda import gpuarray
 import random
+from neural_nets.data_providers import MultiTaskDataProvider
 
-Nucleotides = enum(
-    A = DNA_A,
-    C = DNA_C,
-    G = DNA_G,
-    T = DNA_T,
-    R = DNA_R,
-    Y = DNA_Y,
-    N = DNA_N
-)
 
-def encode_nt(nt):
-    return type.__getattribute__(Nucleotides, nt)
+def encode_sequence(seq):
+    seq_upper = map(string.upper, seq)
+    enc_seq = np.array(seq_upper, 'c')
+    return enc_seq
 
-class SeqArray(object):
-    def __init__(self, sequence):
-        self.sequence = sequence
+
+class SeqArrayDataProvider(MultiTaskDataProvider):
+    def __init__(self, sequences,
+                 targets, batch_size,
+                 data_inputs=None, event_info=None,
+                 gpu=True):
+
+        if event_info is not None:
+            self.event_id, self.tissue, self.psi_mean = zip(*event_info)
+
+        self._gpu = gpu
+        self.sequences = sequences
+
+        if data_inputs is not None:
+            data = self.enc_seq + data_inputs
+        else:
+            data = self.enc_seq
+        super(SeqArrayDataProvider, self).__init__(data, targets, batch_size)
 
     @property
-    def sequence(self):
-        return self._sequence
+    def gpu(self):
+        return self._gpu
 
-    @sequence.setter
-    def sequence(self, seq):
-        self._sequence = seq
-        self.enc_seq = gpuarray.to_gpu(
-            np.array([[encode_nt(nt.upper())
-                       for nt in line] for line in seq],
-                       dtype=np.int8))
+    @gpu.setter
+    def gpu(self, val):
+        if val and not self._gpu:
+            self.enc_seq = [gpuarray.to_gpu(x) for x in self.enc_seq]
+
+        if not val and self._gpu:
+            self.enc_seq = [x.get() for x in self.enc_seq]
+
+    @property
+    def sequences(self):
+        return self._sequences
+
+    @sequences.setter
+    def sequences(self, seq):
+        self._sequences = seq
+
+        if not isinstance(seq[0], (list, tuple)):
+            enc_seq = encode_sequence(seq)
+            if self.gpu:
+                enc_seq = gpuarray.to_gpu(enc_seq)
+        else:
+            enc_seq = [encode_sequence(s) for s in seq]
+            if self.gpu:
+                enc_seq = [gpuarray.to_gpu(x) for x in enc_seq]
+
+        self.enc_seq = enc_seq
+
 
 def sample_sequence(length, n):
-    seq = [''.join((random.choice('ACGT') for i in range(length)))
-           for j in range(n)]
-    sa = SeqArray(seq)
-    return sa
-
+    seq = [''.join((random.choice('ACGT') for _ in range(length)))
+           for _ in range(n)]
+    return seq

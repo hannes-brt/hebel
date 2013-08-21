@@ -111,6 +111,16 @@ __global__ void convolve_sequence(const nucleotide_t *input,
 
 	if (CHECK_NT(nt, DNA_T))
 	  Pvalue += filter_shared[4*k+3];
+
+	if (CHECK_NT(nt, DNA_R)) {
+	  Pvalue += .5 * filter_shared[4*k];
+	  Pvalue += .5 * filter_shared[4*k+2];
+	}
+
+	if (CHECK_NT(nt, DNA_Y)) {
+	  Pvalue += .5 * filter_shared[4*k+1];
+	  Pvalue += .5 * filter_shared[4*k+3];
+	}
       }
     }
 
@@ -182,7 +192,7 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
     filter_width : width of filters
     n_filters : number of filters in filter bank
 
-   */
+  */
 
   
   const unsigned int stride = 4;
@@ -247,6 +257,16 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
       df_weights_reduce[stride*tx+3] = (CHECK_NT(input_element, DNA_T)) ?
     	df_output_shared[tx+k] : 0.;
 
+      if (CHECK_NT(input_element, DNA_R)) {
+	df_weights_reduce[stride*tx] = .5 * df_output_shared[tx+k];
+	df_weights_reduce[stride*tx+2] = .5 * df_output_shared[tx+k];
+      }
+    
+      if (CHECK_NT(input_element, DNA_Y)) {
+	df_weights_reduce[stride*tx+1] = .5 * df_output_shared[tx+k];
+	df_weights_reduce[stride*tx+3] = .5 * df_output_shared[tx+k];
+      }
+
     } else {
       df_weights_reduce[stride*tx] = 0.;
       df_weights_reduce[stride*tx+1] = 0.;
@@ -259,10 +279,10 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
     // Stage 1 reduction
     for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
       if (tx<s) {
-    	df_weights_reduce[stride*tx] += df_weights_reduce[stride*(tx+s)];
-    	df_weights_reduce[stride*tx+1] += df_weights_reduce[stride*(tx+s)+1];
-    	df_weights_reduce[stride*tx+2] += df_weights_reduce[stride*(tx+s)+2];
-    	df_weights_reduce[stride*tx+3] += df_weights_reduce[stride*(tx+s)+3];
+	df_weights_reduce[stride*tx] += df_weights_reduce[stride*(tx+s)];
+	df_weights_reduce[stride*tx+1] += df_weights_reduce[stride*(tx+s)+1];
+	df_weights_reduce[stride*tx+2] += df_weights_reduce[stride*(tx+s)+2];
+	df_weights_reduce[stride*tx+3] += df_weights_reduce[stride*(tx+s)+3];
       }
       __syncthreads();
     }
@@ -270,73 +290,73 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
     // Write output
     if (tx<stride) {
       df_weights_idx =
-      	f * stride * filter_width * gridDim.x +
-      	(tx + stride * df_output_shift) * gridDim.x +
-      	blockIdx.x;
+	f * stride * filter_width * gridDim.x +
+	(tx + stride * df_output_shift) * gridDim.x +
+	blockIdx.x;
       df_weights[df_weights_idx] = df_weights_reduce[tx];
     }
   }
 }
 
-__global__ void max_pool(const {{ data_type }} *mat,
-			 {{ data_type }} *target, 
-			 unsigned int *argmax,
-			 const unsigned int input_offset,
-			 const unsigned int height,
-			 const unsigned int total_width,
-			 const unsigned int width,
-			 const unsigned int pooled_offset,
-			 const unsigned int total_width_pooled,
-			 const unsigned int pool_size) {
+  __global__ void max_pool(const {{ data_type }} *mat,
+			   {{ data_type }} *target, 
+			   unsigned int *argmax,
+			   const unsigned int input_offset,
+			   const unsigned int height,
+			   const unsigned int total_width,
+			   const unsigned int width,
+			   const unsigned int pooled_offset,
+			   const unsigned int total_width_pooled,
+			   const unsigned int pool_size) {
 
-  /* Perform 1D max-pooling on all rows of a matrix
-   */
+    /* Perform 1D max-pooling on all rows of a matrix
+     */
     
-  const unsigned int tx = threadIdx.x;
-  const unsigned int i = blockIdx.y;
-  const unsigned int j = blockIdx.x*pool_size+tx;
-  const unsigned int f = blockIdx.z;
-  const unsigned int mat_idx = i*total_width + input_offset + f*width + j;
-  const unsigned int width_pooled = CEILING(({{ data_type }}) width / pool_size);
+    const unsigned int tx = threadIdx.x;
+    const unsigned int i = blockIdx.y;
+    const unsigned int j = blockIdx.x*pool_size+tx;
+    const unsigned int f = blockIdx.z;
+    const unsigned int mat_idx = i*total_width + input_offset + f*width + j;
+    const unsigned int width_pooled = CEILING(({{ data_type }}) width / pool_size);
     
-  extern __shared__ {{ data_type }} sdata[];
-  {{ data_type }} *max_shared = sdata;
-  unsigned int *argmax_shared = (unsigned int*) (max_shared + blockDim.x);
+    extern __shared__ {{ data_type }} sdata[];
+    {{ data_type }} *max_shared = sdata;
+    unsigned int *argmax_shared = (unsigned int*) (max_shared + blockDim.x);
     
-  max_shared[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
-  argmax_shared[tx] = (i < height && j < width && tx < pool_size) ? j : UINT_MAX;
-  __syncthreads();
-    
-  for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
-    if (tx<s && sdata[tx+s] > sdata[tx]) {
-      max_shared[tx] = max_shared[tx+s];
-      argmax_shared[tx] = argmax_shared[tx+s];
-    }
+    max_shared[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
+    argmax_shared[tx] = (i < height && j < width && tx < pool_size) ? j : UINT_MAX;
     __syncthreads();
-  }
     
-  if (tx==0) {
-    const unsigned int target_idx = i*total_width_pooled +
-      pooled_offset + f*width_pooled + blockIdx.x;
-    target[target_idx] = max_shared[0];
-    argmax[target_idx] = argmax_shared[0];
+    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+      if (tx<s && sdata[tx+s] > sdata[tx]) {
+	max_shared[tx] = max_shared[tx+s];
+	argmax_shared[tx] = argmax_shared[tx+s];
+      }
+      __syncthreads();
+    }
+    
+    if (tx==0) {
+      const unsigned int target_idx = i*total_width_pooled +
+	pooled_offset + f*width_pooled + blockIdx.x;
+      target[target_idx] = max_shared[0];
+      argmax[target_idx] = argmax_shared[0];
+    }
   }
-}
 
-__global__ void max_pool_gradient(
-    const unsigned int *argmax,
-    const {{ data_type }} *df_output,
-    {{ data_type }} *df_input,
-    const unsigned int input_offset,
-    const unsigned int height,
-    const unsigned int total_width,
-    const unsigned int width,
-    const unsigned int pooled_offset,
-    const unsigned int total_width_pooled,
-    const unsigned int width_pooled) {
+  __global__ void max_pool_gradient(
+				    const unsigned int *argmax,
+				    const {{ data_type }} *df_output,
+				    {{ data_type }} *df_input,
+				    const unsigned int input_offset,
+				    const unsigned int height,
+				    const unsigned int total_width,
+				    const unsigned int width,
+				    const unsigned int pooled_offset,
+				    const unsigned int total_width_pooled,
+				    const unsigned int width_pooled) {
 
     /* Gradient of max-pooling operation
-    */
+     */
     
     const unsigned int tx = threadIdx.x;
     const unsigned int bx = blockIdx.x;
@@ -350,8 +370,8 @@ __global__ void max_pool_gradient(
     const {{ data_type }} df_output_element = df_output[pooled_idx];
 
     if (column < width) {
-        df_input[row*total_width + input_offset +
-		 f*width + column] =
-            (column == max_idx) ? df_output_element : 0.;
+      df_input[row*total_width + input_offset +
+	       f*width + column] =
+	(column == max_idx) ? df_output_element : 0.;
     }
-}
+  }

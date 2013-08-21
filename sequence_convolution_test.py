@@ -1,13 +1,3 @@
-# Copyright (C) 2013  Hannes Bretschneider
-
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 
 # You should have received a copy of the GNU General Public License along
@@ -18,14 +8,14 @@ import unittest
 import random
 import numpy as np
 import pycuda.autoinit
-from sequence_convolution import DNA_A, DNA_C, DNA_G, DNA_T
 from sequence_convolution.pycuda_ops import convolve_sequence, \
      convolve_sequence_gradient, max_pool, max_pool_gradient
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from sequence_convolution.models import SequenceConvolutionNet, \
      SequenceConvolutionLayer, MultiSequenceConvolutionLayer, MaxPoolingLayer
-from sequence_convolution.seq_array import SeqArray, sample_sequence
+from sequence_convolution.seq_array import SeqArrayDataProvider, sample_sequence, \
+    encode_sequence
 from neural_nets.data_providers import MiniBatchDataProvider
 from neural_nets.optimizers import SGD
 from neural_nets.schedulers import constant_scheduler
@@ -80,7 +70,7 @@ def checkgrad_model(layer, input_data, epsilon=1e-4, **kwargs):
 
         loss += np.sum(((grads[i].get() - grad_approx_i) /
                         (grads[i].get() + eps)) ** 2.)
-    loss = np.sqrt(loss)
+    loss = np.sqrt(loss) / np.sum([g.size for g in grads])
 
     return loss
 
@@ -97,7 +87,7 @@ class TestConvolution(unittest.TestCase):
 
         pad_width = filter_width - 1
         x_padded = np.concatenate(
-            (x, np.zeros((height, pad_width), dtype=np.int8)), 1)
+            (x, np.zeros((height, pad_width), dtype='|S1')), 1)
 
         y = np.empty((height, n_filters, width), dtype=w.dtype)
 
@@ -106,10 +96,14 @@ class TestConvolution(unittest.TestCase):
                 y[:, f, j] = b[f]
                 for k in range(filter_width):
                     nt = x_padded[:, j + k]
-                    y[np.bool_(nt & DNA_A), f, j] += w[f, 4 * k]
-                    y[np.bool_(nt & DNA_C), f, j] += w[f, 4 * k + 1]
-                    y[np.bool_(nt & DNA_G), f, j] += w[f, 4 * k + 2]
-                    y[np.bool_(nt & DNA_T), f, j] += w[f, 4 * k + 3]
+                    y[np.bool_(nt == 'A'), f, j] += w[f, 4 * k]
+                    y[np.bool_(nt == 'C'), f, j] += w[f, 4 * k + 1]
+                    y[np.bool_(nt == 'G'), f, j] += w[f, 4 * k + 2]
+                    y[np.bool_(nt == 'T'), f, j] += w[f, 4 * k + 3]
+                    y[np.bool_(nt == 'R'), f, j] += \
+                        .5 * w[f, 4 * k] + .5 * w[f, 4 * k + 2]
+                    y[np.bool_(nt == 'Y'), f, j] += \
+                        .5 * w[f, 4 * k + 1] + .5 * w[f, 4 * k + 3]
         return y.reshape(height, n_filters * width)
 
     @staticmethod
@@ -122,8 +116,7 @@ class TestConvolution(unittest.TestCase):
                                (np.float64, self.DOUBLE_ERR_TOL)):
             seq = [''.join((random.choice('ACGT') for i in range(width)))
                    for _ in range(height)]
-            sa = SeqArray(seq)
-            x = sa.enc_seq
+            x = gpuarray.to_gpu(encode_sequence(seq))
             w = curand((n_filters, 4 * filter_width), dtype=dtype)
             b = curand((n_filters,), dtype=dtype)
             y = self.gpu_conv1d(x, w, b)
@@ -186,9 +179,8 @@ class TestConvolution(unittest.TestCase):
                                    (np.float64, self.DOUBLE_ERR_TOL)):
                 seq = [''.join((random.choice('ACGT') for i in range(width)))
                        for _ in range(height)]
-                sa = SeqArray(seq)
-                x = sa.enc_seq.get()
-                X = np.empty((height, total_width), dtype=np.int8)
+                x = encode_sequence(seq)
+                X = np.empty((height, total_width), dtype='|S1')
                 X[:, input_offset:input_offset + width] = x
                 X = gpuarray.to_gpu(X)
 
@@ -218,20 +210,29 @@ class TestConvolutionGradWeights(unittest.TestCase):
         input_padded = np.concatenate((input_data,
                                        np.zeros((input_data.shape[0],
                                                  filter_width - 1),
-                                                 dtype=np.int8)), 1)
+                                                 dtype='|S1')), 1)
         for n in range(n_filters):
             for i in range(filter_width):
+
                 df_w[n, 4 * i] += df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] & DNA_A)].sum()
+                    np.bool_(input_padded[:, i:i + width] == 'A')].sum() + \
+                    .5 * df_output[:, n, :][
+                    np.bool_(input_padded[:, i:i + width] == 'R')].sum()
 
                 df_w[n, 4 * i + 1] += df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] & DNA_C)].sum()
+                    np.bool_(input_padded[:, i:i + width] == 'C')].sum() + \
+                    .5 * df_output[:, n, :][
+                    np.bool_(input_padded[:, i:i + width] == 'Y')].sum()
 
                 df_w[n, 4 * i + 2] += df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] & DNA_G)].sum()
+                    np.bool_(input_padded[:, i:i + width] == 'G')].sum() + \
+                    .5 * df_output[:, n, :][
+                    np.bool_(input_padded[:, i:i + width] == 'R')].sum()
 
                 df_w[n, 4 * i + 3] += df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] & DNA_T)].sum()
+                    np.bool_(input_padded[:, i:i + width] == 'T')].sum() + \
+                    .5 * df_output[:, n, :][
+                    np.bool_(input_padded[:, i:i + width] == 'Y')].sum()
 
         return df_w
 
@@ -241,9 +242,8 @@ class TestConvolutionGradWeights(unittest.TestCase):
 
             seq = [''.join((random.choice('ACGT') for i in range(width)))
                    for _ in range(height)]
-            sa = SeqArray(seq)
             eps = np.finfo(dtype).eps
-            x = sa.enc_seq
+            x = gpuarray.to_gpu(encode_sequence(seq))
             df_output = curand((height, n_filters * width), dtype)
 
             df_w = convolve_sequence_gradient(x, df_output, filter_width,
@@ -332,10 +332,9 @@ class TestConvolutionGradWeights(unittest.TestCase):
 
                 seq = [''.join((random.choice('ACGT') for i in range(width)))
                        for _ in range(height)]
-                sa = SeqArray(seq)
                 eps = np.finfo(dtype).eps
-                x = sa.enc_seq.get()
-                X = np.empty((height, total_width), dtype=np.int8)
+                x = encode_sequence(seq)
+                X = np.empty((height, total_width), dtype='|S1')
                 X[:, input_offset:input_offset + width] = x
                 X = gpuarray.to_gpu(X)
 
@@ -546,14 +545,13 @@ class TestConvNet(unittest.TestCase):
         seq = [seq[i] for i in shuffle_idx]
         targets = gpuarray.to_gpu(targets[shuffle_idx])
 
-        sa = SeqArray(seq)
         test_error = 1
+        train_data = SeqArrayDataProvider(seq, targets, 10)
+
         for _ in range(10):
             model = SequenceConvolutionNet(
-                sa.enc_seq.shape[1], 2, 32, 5, 8, [],
+                train_data.enc_seq.shape[1], 2, 32, 5, 8, [],
                 activation_function='tanh')
-
-            train_data = MiniBatchDataProvider(sa.enc_seq, targets, 10)
 
             optimizer = SGD(model, SimpleSGDUpdate, train_data, train_data,
                             learning_rate_schedule=constant_scheduler(1.),
@@ -567,7 +565,7 @@ class TestConvNet(unittest.TestCase):
 
 class TestConvolutionGradient(unittest.TestCase):
     EPSILON = 1e-2
-    TOL = 1e-4
+    TOL = 1e-3
 
     def test_convolution_gradient(self):
         for _ in range(20):
@@ -578,11 +576,11 @@ class TestConvolutionGradient(unittest.TestCase):
                 n_in, filter_width, n_filters,
                 dtype=np.float64)
 
-            seq = [''.join((random.choice('ACGT'))) for _ in range(n_in)
+            seq = [''.join((random.choice('ACGT') for i in range(n_in)))
                    for _ in range(100)]
-            sa = SeqArray(seq)
+            x = gpuarray.to_gpu(encode_sequence(seq))
             loss = checkgrad_model(conv_layer,
-                                   sa.enc_seq, epsilon=self.EPSILON)
+                                   x, epsilon=self.EPSILON)
             self.assertLess(loss, self.TOL)
 
 
@@ -599,9 +597,9 @@ class TestMultiSequenceConvolutionLayer(unittest.TestCase):
               'activation_function': 'tanh', 'pool_size': 8}]
 
     def setUp(self):
-        sa = [sample_sequence(conf['n_in'], self.N) for conf in
+        seq = [sample_sequence(conf['n_in'], self.N) for conf in
               self.multi_conv_config]
-        self.input = [s.enc_seq for s in sa]
+        self.input = [gpuarray.to_gpu(encode_sequence(s)) for s in seq]
 
         # Create multi-convolution layer
         self.conv_layer_multi = MultiSequenceConvolutionLayer(

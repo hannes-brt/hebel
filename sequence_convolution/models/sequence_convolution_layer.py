@@ -17,8 +17,8 @@
 
 import numpy as np
 from pycuda import gpuarray
-from pycuda.curandom import rand as curand
 from .. import pycuda_ops
+from neural_nets import sampler
 from neural_nets.models import HiddenLayer
 from neural_nets.pycuda_ops.elementwise import sign
 
@@ -31,7 +31,7 @@ class SequenceConvolutionLayer(HiddenLayer):
                  dtype=np.float32):
         if W is None:
             self.W = weights_scale * \
-              curand((n_filters, 4*filter_width), dtype=dtype) \
+              sampler.gen_uniform((n_filters, 4*filter_width), dtype=dtype) \
               -.5 * weights_scale
         else:
             self.W = W
