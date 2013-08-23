@@ -31,3 +31,5 @@ typedef enum {
 
 // Check if nucleotide nt is letter l
 #define CHECK_NT(nt, l) (nt == (nucleotide_t) l)
+
+#define STRIDE 4

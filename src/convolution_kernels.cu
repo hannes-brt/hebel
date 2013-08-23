@@ -58,7 +58,7 @@ __global__ void convolve_sequence(const nucleotide_t *input,
   const unsigned int i = lin_idx / width;
   const unsigned int j = lin_idx % width;
   const unsigned int row_start = i*total_width + input_offset;
-  const unsigned int filter_elements = 4*filter_width; // Actual number of elements in filter
+  const unsigned int filter_elements = STRIDE*filter_width; // Actual number of elements in filter
   const {{ data_type }} bias_filter = bias[f];
   unsigned int shared_idx, input_idx, target_idx;
   nucleotide_t nt;
@@ -101,25 +101,25 @@ __global__ void convolve_sequence(const nucleotide_t *input,
 	nt = input_shared[shared_idx];
       
 	if (CHECK_NT(nt, DNA_A))
-	  Pvalue += filter_shared[4*k];
+	  Pvalue += filter_shared[STRIDE*k];
 
 	if (CHECK_NT(nt, DNA_C))
-	  Pvalue += filter_shared[4*k+1];
+	  Pvalue += filter_shared[STRIDE*k+1];
 
 	if (CHECK_NT(nt, DNA_G))
-	  Pvalue += filter_shared[4*k+2];
+	  Pvalue += filter_shared[STRIDE*k+2];
 
 	if (CHECK_NT(nt, DNA_T))
-	  Pvalue += filter_shared[4*k+3];
+	  Pvalue += filter_shared[STRIDE*k+3];
 
 	if (CHECK_NT(nt, DNA_R)) {
-	  Pvalue += .5 * filter_shared[4*k];
-	  Pvalue += .5 * filter_shared[4*k+2];
+	  Pvalue += .5 * filter_shared[STRIDE*k];
+	  Pvalue += .5 * filter_shared[STRIDE*k+2];
 	}
 
 	if (CHECK_NT(nt, DNA_Y)) {
-	  Pvalue += .5 * filter_shared[4*k+1];
-	  Pvalue += .5 * filter_shared[4*k+3];
+	  Pvalue += .5 * filter_shared[STRIDE*k+1];
+	  Pvalue += .5 * filter_shared[STRIDE*k+3];
 	}
       }
     }
@@ -141,7 +141,7 @@ __global__ void gradient_reduce(const {{ data_type }} *df_weights,
   */
     
   const unsigned int tid = threadIdx.x;
-  const unsigned int filter_elements = 4*filter_width;
+  const unsigned int filter_elements = STRIDE*filter_width;
   const unsigned int df_weights_idx = blockIdx.x*filter_elements*n_elements+
     blockIdx.y*n_elements+threadIdx.x;
     
@@ -195,7 +195,6 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
   */
 
   
-  const unsigned int stride = 4;
   const unsigned int tx = threadIdx.x;
   const unsigned int f = blockIdx.y;
   const unsigned int lin_idx = blockIdx.x*blockDim.x+tx;
@@ -245,33 +244,33 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
     df_output_shift = halo_width-k;
 
     if (column >= df_output_shift) {
-      df_weights_reduce[stride*tx] = (CHECK_NT(input_element, DNA_A)) ?
+      df_weights_reduce[STRIDE*tx] = (CHECK_NT(input_element, DNA_A)) ?
     	df_output_shared[tx+k] : 0.;
 
-      df_weights_reduce[stride*tx+1] = (CHECK_NT(input_element, DNA_C)) ?
+      df_weights_reduce[STRIDE*tx+1] = (CHECK_NT(input_element, DNA_C)) ?
     	df_output_shared[tx+k] : 0.;
 
-      df_weights_reduce[stride*tx+2] = (CHECK_NT(input_element, DNA_G)) ?
+      df_weights_reduce[STRIDE*tx+2] = (CHECK_NT(input_element, DNA_G)) ?
     	df_output_shared[tx+k] : 0.;
 
-      df_weights_reduce[stride*tx+3] = (CHECK_NT(input_element, DNA_T)) ?
+      df_weights_reduce[STRIDE*tx+3] = (CHECK_NT(input_element, DNA_T)) ?
     	df_output_shared[tx+k] : 0.;
 
       if (CHECK_NT(input_element, DNA_R)) {
-	df_weights_reduce[stride*tx] = .5 * df_output_shared[tx+k];
-	df_weights_reduce[stride*tx+2] = .5 * df_output_shared[tx+k];
+	df_weights_reduce[STRIDE*tx] = .5 * df_output_shared[tx+k];
+	df_weights_reduce[STRIDE*tx+2] = .5 * df_output_shared[tx+k];
       }
     
       if (CHECK_NT(input_element, DNA_Y)) {
-	df_weights_reduce[stride*tx+1] = .5 * df_output_shared[tx+k];
-	df_weights_reduce[stride*tx+3] = .5 * df_output_shared[tx+k];
+	df_weights_reduce[STRIDE*tx+1] = .5 * df_output_shared[tx+k];
+	df_weights_reduce[STRIDE*tx+3] = .5 * df_output_shared[tx+k];
       }
 
     } else {
-      df_weights_reduce[stride*tx] = 0.;
-      df_weights_reduce[stride*tx+1] = 0.;
-      df_weights_reduce[stride*tx+2] = 0.;
-      df_weights_reduce[stride*tx+3] = 0.;
+      df_weights_reduce[STRIDE*tx] = 0.;
+      df_weights_reduce[STRIDE*tx+1] = 0.;
+      df_weights_reduce[STRIDE*tx+2] = 0.;
+      df_weights_reduce[STRIDE*tx+3] = 0.;
     }
 
     __syncthreads();
@@ -279,99 +278,342 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
     // Stage 1 reduction
     for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
       if (tx<s) {
-	df_weights_reduce[stride*tx] += df_weights_reduce[stride*(tx+s)];
-	df_weights_reduce[stride*tx+1] += df_weights_reduce[stride*(tx+s)+1];
-	df_weights_reduce[stride*tx+2] += df_weights_reduce[stride*(tx+s)+2];
-	df_weights_reduce[stride*tx+3] += df_weights_reduce[stride*(tx+s)+3];
+	df_weights_reduce[STRIDE*tx] += df_weights_reduce[STRIDE*(tx+s)];
+	df_weights_reduce[STRIDE*tx+1] += df_weights_reduce[STRIDE*(tx+s)+1];
+	df_weights_reduce[STRIDE*tx+2] += df_weights_reduce[STRIDE*(tx+s)+2];
+	df_weights_reduce[STRIDE*tx+3] += df_weights_reduce[STRIDE*(tx+s)+3];
       }
       __syncthreads();
     }
     
     // Write output
-    if (tx<stride) {
+    if (tx<STRIDE) {
       df_weights_idx =
-	f * stride * filter_width * gridDim.x +
-	(tx + stride * df_output_shift) * gridDim.x +
+	f * STRIDE * filter_width * gridDim.x +
+	(tx + STRIDE * df_output_shift) * gridDim.x +
 	blockIdx.x;
       df_weights[df_weights_idx] = df_weights_reduce[tx];
     }
   }
 }
 
-  __global__ void max_pool(const {{ data_type }} *mat,
-			   {{ data_type }} *target, 
-			   unsigned int *argmax,
-			   const unsigned int input_offset,
-			   const unsigned int height,
-			   const unsigned int total_width,
-			   const unsigned int width,
-			   const unsigned int pooled_offset,
-			   const unsigned int total_width_pooled,
-			   const unsigned int pool_size) {
+__global__ void max_pool(const {{ data_type }} *mat,
+			 {{ data_type }} *target, 
+			 unsigned int *argmax,
+			 const unsigned int input_offset,
+			 const unsigned int height,
+			 const unsigned int total_width,
+			 const unsigned int width,
+			 const unsigned int pooled_offset,
+			 const unsigned int total_width_pooled,
+			 const unsigned int pool_size) {
 
-    /* Perform 1D max-pooling on all rows of a matrix
-     */
+  /* Perform 1D max-pooling on all rows of a matrix
+   */
     
-    const unsigned int tx = threadIdx.x;
-    const unsigned int i = blockIdx.y;
-    const unsigned int j = blockIdx.x*pool_size+tx;
-    const unsigned int f = blockIdx.z;
-    const unsigned int mat_idx = i*total_width + input_offset + f*width + j;
-    const unsigned int width_pooled = CEILING(({{ data_type }}) width / pool_size);
+  const unsigned int tx = threadIdx.x;
+  const unsigned int i = blockIdx.y;
+  const unsigned int j = blockIdx.x*pool_size+tx;
+  const unsigned int f = blockIdx.z;
+  const unsigned int mat_idx = i*total_width + input_offset + f*width + j;
+  const unsigned int width_pooled = CEILING(({{ data_type }}) width / pool_size);
     
-    extern __shared__ {{ data_type }} sdata[];
-    {{ data_type }} *max_shared = sdata;
-    unsigned int *argmax_shared = (unsigned int*) (max_shared + blockDim.x);
+  extern __shared__ {{ data_type }} sdata[];
+  {{ data_type }} *max_shared = sdata;
+  unsigned int *argmax_shared = (unsigned int*) (max_shared + blockDim.x);
     
-    max_shared[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
-    argmax_shared[tx] = (i < height && j < width && tx < pool_size) ? j : UINT_MAX;
+  max_shared[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : -FLT_MAX;
+  argmax_shared[tx] = (i < height && j < width && tx < pool_size) ? j : UINT_MAX;
+  __syncthreads();
+    
+  for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+    if (tx<s && sdata[tx+s] > sdata[tx]) {
+      max_shared[tx] = max_shared[tx+s];
+      argmax_shared[tx] = argmax_shared[tx+s];
+    }
     __syncthreads();
+  }
     
-    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
-      if (tx<s && sdata[tx+s] > sdata[tx]) {
-	max_shared[tx] = max_shared[tx+s];
-	argmax_shared[tx] = argmax_shared[tx+s];
+  if (tx==0) {
+    const unsigned int target_idx = i*total_width_pooled +
+      pooled_offset + f*width_pooled + blockIdx.x;
+    target[target_idx] = max_shared[0];
+    argmax[target_idx] = argmax_shared[0];
+  }
+}
+
+__global__ void max_pool_gradient(
+				  const unsigned int *argmax,
+				  const {{ data_type }} *df_output,
+				  {{ data_type }} *df_input,
+				  const unsigned int input_offset,
+				  const unsigned int height,
+				  const unsigned int total_width,
+				  const unsigned int width,
+				  const unsigned int pooled_offset,
+				  const unsigned int total_width_pooled,
+				  const unsigned int width_pooled) {
+
+  /* Gradient of max-pooling operation
+   */
+    
+  const unsigned int tx = threadIdx.x;
+  const unsigned int bx = blockIdx.x;
+  const unsigned int f = blockIdx.y;
+  const unsigned int row = blockIdx.z;
+  const unsigned int column = bx*blockDim.x+tx;
+    
+  const unsigned int pooled_idx = row*total_width_pooled +
+    pooled_offset + f*width_pooled + bx;
+  const unsigned int max_idx = argmax[pooled_idx];
+  const {{ data_type }} df_output_element = df_output[pooled_idx];
+
+  if (column < width) {
+    df_input[row*total_width + input_offset +
+	     f*width + column] =
+      (column == max_idx) ? df_output_element : 0.;
+  }
+}
+
+__global__ void sum_pool(const {{ data_type }} *mat,
+			 {{ data_type }} *target, 
+			 const unsigned int input_offset,
+			 const unsigned int height,
+			 const unsigned int total_width,
+			 const unsigned int width,
+			 const unsigned int pooled_offset,
+			 const unsigned int total_width_pooled,
+			 const unsigned int pool_size) {
+
+  /* Perform 1D sum-pooling on all rows of a matrix
+   */
+    
+  const unsigned int tx = threadIdx.x;
+  const unsigned int i = blockIdx.y;
+  const unsigned int j = blockIdx.x*pool_size+tx;
+  const unsigned int f = blockIdx.z;
+  const unsigned int mat_idx = i*total_width + input_offset + f*width + j;
+  const unsigned int width_pooled = CEILING(({{ data_type }}) width / pool_size);
+    
+  extern __shared__ {{ data_type }} sdata[];
+  {{ data_type }} *sum_shared = sdata;
+    
+  sum_shared[tx] = (i < height && j < width && tx < pool_size) ? mat[mat_idx] : 0;
+  __syncthreads();
+    
+  for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+    if (tx<s) {
+      sum_shared[tx] += sum_shared[tx+s];
+    }
+    __syncthreads();
+  }
+    
+  if (tx==0) {
+    const unsigned int target_idx = i*total_width_pooled +
+      pooled_offset + f*width_pooled + blockIdx.x;
+    target[target_idx] = sum_shared[0];
+  }
+}
+
+__global__ void max_pool_gradient(
+				  const {{ data_type }} *df_output,
+				  {{ data_type }} *df_input,
+				  const unsigned int input_offset,
+				  const unsigned int height,
+				  const unsigned int total_width,
+				  const unsigned int width,
+				  const unsigned int pooled_offset,
+				  const unsigned int total_width_pooled,
+				  const unsigned int width_pooled) {
+
+  /* Gradient of max-pooling operation
+   */
+    
+  const unsigned int tx = threadIdx.x;
+  const unsigned int bx = blockIdx.x;
+  const unsigned int f = blockIdx.y;
+  const unsigned int row = blockIdx.z;
+  const unsigned int column = bx*blockDim.x+tx;
+    
+  const unsigned int pooled_idx = row*total_width_pooled +
+    pooled_offset + f*width_pooled + bx;
+  const {{ data_type }} df_output_element = df_output[pooled_idx];
+
+  if (column < width) {
+    df_input[row*total_width + input_offset +
+	     f*width + column] = df_output_element;
+  }
+}
+
+__global__ void receptive_field(const nucleotide_t *input,
+				{{ data_type }} *target, 
+				const {{ data_type }} *filter,
+				const unsigned int input_offset,
+				const unsigned int width,
+				const unsigned int total_width,
+				const unsigned int height, 
+				const unsigned int total_target_width,
+				const unsigned int target_offset,
+				const unsigned int n_filters) {
+
+  /* This is a simple variation of the convolution operation where the
+     filter is the same size as the input. 
+   */
+
+  const unsigned int f = blockIdx.z;
+  const unsigned int i = blockIdx.x*blockDim.x+threadIdx.x; // Row
+  const unsigned int j = threadIdx.y; // Column
+  const unsigned int row_start = i*total_width + input_offset;
+  const unsigned int filter_elements = STRIDE*width; // Actual number of elements in filter
+  const {{ data_type }} input_element = input[i*total_width+input_offset+j];
+  unsigned int shared_idx, input_idx, target_idx;
+  nucleotide_t nt;
+    
+  extern __shared__ {{ data_type }} sdata[];
+  {{ data_type }} *filter_shared = sdata; // size: filter_elements
+  {{ data_type }} *output_shared = sdata + filter_elements;
+
+  // Load filter elements into shared memory
+  if (threadIdx.x < filter_elements)
+    filter_shared[threadIdx.x] = filter[f*filter_elements+threadIdx.x];
+  __syncthreads();
+
+  const {{ data_type }} filter_A = filter_shared[j*STRIDE];
+  const {{ data_type }} filter_C = filter_shared[j*STRIDE+1];
+  const {{ data_type }} filter_G = filter_shared[j*STRIDE+2];
+  const {{ data_type }} filter_T = filter_shared[j*STRIDE+3];
+
+  // Compute output
+  if (i < height && j < width) {
+    {{ data_type }} Pvalue;
+    for (int k=0; k < filter_width; k++) {
+      if (j < width) {
+	if (CHECK_NT(nt, DNA_A))
+	  Pvalue = filter_A;
+
+	if (CHECK_NT(nt, DNA_C))
+	  Pvalue = filter_C;
+
+	if (CHECK_NT(nt, DNA_G))
+	  Pvalue = filter_G;
+
+	if (CHECK_NT(nt, DNA_T))
+	  Pvalue = filter_T;
+
+	if (CHECK_NT(nt, DNA_R))
+	  Pvalue = .5 * (filter_A + filter_G);
+
+	if (CHECK_NT(nt, DNA_Y))
+	  Pvalue = .5 * (filter_C + filter_T);
       }
-      __syncthreads();
     }
-    
-    if (tx==0) {
-      const unsigned int target_idx = i*total_width_pooled +
-	pooled_offset + f*width_pooled + blockIdx.x;
-      target[target_idx] = max_shared[0];
-      argmax[target_idx] = argmax_shared[0];
+
+    // Write output to shared memory
+    output_shared[j] = Pvalue;
+  } else {
+    output_shared[j] = 0.;
+  }
+  __syncthreads();
+
+  // Sum up all the filter elements
+  for (unsigned int s=blockDim.y/2; s>0; s>>=1) {
+    if (j < s) {
+      output_shared[j] += output_shared[j+s];
     }
+    __syncthreads();
   }
 
-  __global__ void max_pool_gradient(
-				    const unsigned int *argmax,
-				    const {{ data_type }} *df_output,
-				    {{ data_type }} *df_input,
-				    const unsigned int input_offset,
-				    const unsigned int height,
-				    const unsigned int total_width,
-				    const unsigned int width,
-				    const unsigned int pooled_offset,
-				    const unsigned int total_width_pooled,
-				    const unsigned int width_pooled) {
-
-    /* Gradient of max-pooling operation
-     */
-    
-    const unsigned int tx = threadIdx.x;
-    const unsigned int bx = blockIdx.x;
-    const unsigned int f = blockIdx.y;
-    const unsigned int row = blockIdx.z;
-    const unsigned int column = bx*blockDim.x+tx;
-    
-    const unsigned int pooled_idx = row*total_width_pooled +
-      pooled_offset + f*width_pooled + bx;
-    const unsigned int max_idx = argmax[pooled_idx];
-    const {{ data_type }} df_output_element = df_output[pooled_idx];
-
-    if (column < width) {
-      df_input[row*total_width + input_offset +
-	       f*width + column] =
-	(column == max_idx) ? df_output_element : 0.;
-    }
+  // Write final output
+  if (j == 0) {
+    const unsigned int target_idx = i*total_target_width+target_offset+f;
+    target[target_idx] = output_shared[0];
   }
+}
+
+__global__ void receptive_field_gradient(const nucleotide_t *input,
+					 const {{ data_type }} *df_output,
+					 {{ data_type }} *df_weights,
+					 const unsigned int input_offset,
+					 const unsigned int df_output_offset,
+					 const unsigned int total_input_width,
+					 const unsigned int total_df_output_width,
+					 const unsigned int width,
+					 const unsigned int height,
+					 const unsigned int n_filters) {
+
+  const unsigned int tx = threadIdx.x;
+  const unsigned int i = blockDim.x*blockIdx.x+tx; // Row
+  const unsigned int j = threadIdx.y; // Column
+  const unsigned int f = threadIdx.z; // Filter
+  const unsigned int input_idx = row*total_input_width+input_offset+j;
+  
+  const nucleotide_t input_element = input[input_idx];
+
+  extern __shared__ {{ data_type }} sdata[];
+  {{ data_type }} *df_output_shared = sdata; // size: blockDim.x
+  {{ data_type }} *df_weights_shared = df_output_shared + blockDim.x; // size: blockDim.x * width * STRIDE
+
+  // Load df_output into shared memory
+  if (j == 0) {
+    const unsigned int df_output_idx = i*total_df_output_width+df_output_offset+f;
+    df_output_shared[tx] = df_output[df_output_idx];
+  }
+  __syncthreads();
+
+  const {{ data_type }} df_output_element = df_output_shared[tx];
+  
+  // Compute gradient
+  const unsigned int df_weights_shared_idx = tx*STRIDE*width+j*STRIDE;
+  if (i < height && j < width) {
+    // DNA_A
+    df_weights_shared[df_weights_shared_idx] = CHECK_NT(input_element, DNA_A) ?
+      df_output_element : 0;
+    // DNA_C
+    df_weights_shared[df_weights_shared_idx+1] = CHECK_NT(input_element, DNA_C) ?
+      df_output_element : 0;
+    // DNA_G
+    df_weights_shared[df_weights_shared_idx+2] = CHECK_NT(input_element, DNA_G) ?
+      df_output_element : 0;
+    // DNA_T
+    df_weights_shared[df_weights_shared_idx+3] = CHECK_NT(input_element, DNA_T) ?
+      df_output_element : 0;
+
+    if (CHECK_NT(input_element, DNA_R)) {
+      df_weights_shared[df_weights_shared_idx] = .5 * df_output_element;
+      df_weights_shared[df_weights_shared_idx+2] = .5 * df_output_element;
+    }
+
+    if (CHECK_NT(input_element, DNA_Y)) {
+      df_weights_shared[df_weights_shared_idx+1] = .5 * df_output_element;
+      df_weights_shared[df_weights_shared_idx+3] = .5 * df_output_element;
+    }
+  } else {
+    df_weights_shared[df_weights_shared_idx] = 0.;
+    df_weights_shared[df_weights_shared_idx+1] = 0.;
+    df_weights_shared[df_weights_shared_idx+2] = 0.;
+    df_weights_shared[df_weights_shared_idx+2] = 0.;
+  }
+  __syncthreads();
+
+  // Stage 1 reduction
+  unsigned int df_weights_shared_idx_next;
+  for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+    if (tx < s) {
+      df_weights_shared_idx_next = (tx+s)*STRIDE*width+j*STRIDE;
+      df_weights_shared[df_weights_shared_idx] += df_weights_shared[df_weights_shared_idx_next];
+      df_weights_shared[df_weights_shared_idx+1] += df_weights_shared[df_weights_shared_idx_next+1];
+      df_weights_shared[df_weights_shared_idx+2] += df_weights_shared[df_weights_shared_idx_next+2];
+      df_weights_shared[df_weights_shared_idx+3] += df_weights_shared[df_weights_shared_idx_next+3];
+    }
+    __syncthreads();
+  }
+  
+  // Write output
+  if (tx==0) {
+    const unsigned_int df_weights_idx = blockIdx.x*STRIDE*width+j*STRIDE;
+    df_weights[df_weights_idx] = df_weights_shared[j*STRIDE];
+    df_weights[df_weights_idx+1] = df_weights_shared[j*STRIDE+1];
+    df_weights[df_weights_idx+2] = df_weights_shared[j*STRIDE+2];
+    df_weights[df_weights_idx+3] = df_weights_shared[j*STRIDE+3];
+  }
+}
