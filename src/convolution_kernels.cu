@@ -415,7 +415,7 @@ __global__ void sum_pool(const {{ data_type }} *mat,
   }
 }
 
-__global__ void max_pool_gradient(
+__global__ void sum_pool_gradient(
 				  const {{ data_type }} *df_output,
 				  {{ data_type }} *df_input,
 				  const unsigned int input_offset,
@@ -426,7 +426,7 @@ __global__ void max_pool_gradient(
 				  const unsigned int total_width_pooled,
 				  const unsigned int width_pooled) {
 
-  /* Gradient of max-pooling operation
+  /* Gradient of sum-pooling operation
    */
     
   const unsigned int tx = threadIdx.x;
@@ -445,37 +445,39 @@ __global__ void max_pool_gradient(
   }
 }
 
-__global__ void receptive_field(const nucleotide_t *input,
-				{{ data_type }} *target, 
-				const {{ data_type }} *filter,
-				const unsigned int input_offset,
-				const unsigned int width,
-				const unsigned int total_width,
-				const unsigned int height, 
-				const unsigned int total_target_width,
-				const unsigned int target_offset,
-				const unsigned int n_filters) {
+__global__ void fully_connected_layer(const nucleotide_t *input,
+				      {{ data_type }} *target, 
+				      const {{ data_type }} *filter,
+				      const {{ data_type }} *bias,
+				      const unsigned int input_offset,
+				      const unsigned int width,
+				      const unsigned int total_width,
+				      const unsigned int height, 
+				      const unsigned int total_target_width,
+				      const unsigned int target_offset,
+				      const unsigned int n_filters) {
 
   /* This is a simple variation of the convolution operation where the
      filter is the same size as the input. 
-   */
+  */
 
   const unsigned int f = blockIdx.z;
+  const unsigned int tx = threadIdx.x;
+  const unsigned int dimy = blockDim.y;
   const unsigned int i = blockIdx.x*blockDim.x+threadIdx.x; // Row
   const unsigned int j = threadIdx.y; // Column
-  const unsigned int row_start = i*total_width + input_offset;
   const unsigned int filter_elements = STRIDE*width; // Actual number of elements in filter
-  const {{ data_type }} input_element = input[i*total_width+input_offset+j];
-  unsigned int shared_idx, input_idx, target_idx;
-  nucleotide_t nt;
+  const nucleotide_t input_element = (i < height && j < width) ? 
+    input[i*total_width+input_offset+j] : 0. ;
     
   extern __shared__ {{ data_type }} sdata[];
   {{ data_type }} *filter_shared = sdata; // size: filter_elements
-  {{ data_type }} *output_shared = sdata + filter_elements;
+  {{ data_type }} *output_shared = sdata + filter_elements; // size: blockDim.x * width
 
   // Load filter elements into shared memory
-  if (threadIdx.x < filter_elements)
-    filter_shared[threadIdx.x] = filter[f*filter_elements+threadIdx.x];
+  const unsigned int tid = threadIdx.x*blockDim.y+threadIdx.y;
+  if (tid < filter_elements)
+    filter_shared[tid] = filter[f*filter_elements+tid];
   __syncthreads();
 
   const {{ data_type }} filter_A = filter_shared[j*STRIDE];
@@ -486,66 +488,65 @@ __global__ void receptive_field(const nucleotide_t *input,
   // Compute output
   if (i < height && j < width) {
     {{ data_type }} Pvalue;
-    for (int k=0; k < filter_width; k++) {
-      if (j < width) {
-	if (CHECK_NT(nt, DNA_A))
-	  Pvalue = filter_A;
+    if (CHECK_NT(input_element, DNA_A))
+      Pvalue = filter_A;
 
-	if (CHECK_NT(nt, DNA_C))
-	  Pvalue = filter_C;
+    if (CHECK_NT(input_element, DNA_C))
+      Pvalue = filter_C;
 
-	if (CHECK_NT(nt, DNA_G))
-	  Pvalue = filter_G;
+    if (CHECK_NT(input_element, DNA_G))
+      Pvalue = filter_G;
 
-	if (CHECK_NT(nt, DNA_T))
-	  Pvalue = filter_T;
+    if (CHECK_NT(input_element, DNA_T))
+      Pvalue = filter_T;
 
-	if (CHECK_NT(nt, DNA_R))
-	  Pvalue = .5 * (filter_A + filter_G);
+    if (CHECK_NT(input_element, DNA_R))
+      Pvalue = .5 * (filter_A + filter_G);
 
-	if (CHECK_NT(nt, DNA_Y))
-	  Pvalue = .5 * (filter_C + filter_T);
-      }
-    }
+    if (CHECK_NT(input_element, DNA_Y))
+      Pvalue = .5 * (filter_C + filter_T);
+
+    if (j == 0)
+      Pvalue += bias[f];
 
     // Write output to shared memory
-    output_shared[j] = Pvalue;
+    output_shared[tx*dimy+j] = Pvalue;
   } else {
-    output_shared[j] = 0.;
+    output_shared[tx*dimy+j] = 0.;
   }
   __syncthreads();
 
   // Sum up all the filter elements
   for (unsigned int s=blockDim.y/2; s>0; s>>=1) {
     if (j < s) {
-      output_shared[j] += output_shared[j+s];
+      output_shared[tx*dimy+j] += output_shared[tx*dimy+j+s];
     }
     __syncthreads();
   }
 
   // Write final output
-  if (j == 0) {
+  if (i < height and j == 0) {
     const unsigned int target_idx = i*total_target_width+target_offset+f;
-    target[target_idx] = output_shared[0];
+    target[target_idx] = output_shared[tx*dimy];
   }
 }
 
-__global__ void receptive_field_gradient(const nucleotide_t *input,
-					 const {{ data_type }} *df_output,
-					 {{ data_type }} *df_weights,
-					 const unsigned int input_offset,
-					 const unsigned int df_output_offset,
-					 const unsigned int total_input_width,
-					 const unsigned int total_df_output_width,
-					 const unsigned int width,
-					 const unsigned int height,
-					 const unsigned int n_filters) {
+__global__ void fully_connected_layer_gradient(const nucleotide_t *input,
+					       const {{ data_type }} *df_output,
+					       {{ data_type }} *df_weights,
+					       const unsigned int input_offset,
+					       const unsigned int df_output_offset,
+					       const unsigned int total_input_width,
+					       const unsigned int total_df_output_width,
+					       const unsigned int width,
+					       const unsigned int height,
+					       const unsigned int n_filters) {
 
   const unsigned int tx = threadIdx.x;
   const unsigned int i = blockDim.x*blockIdx.x+tx; // Row
   const unsigned int j = threadIdx.y; // Column
   const unsigned int f = threadIdx.z; // Filter
-  const unsigned int input_idx = row*total_input_width+input_offset+j;
+  const unsigned int input_idx = i*total_input_width+input_offset+j;
   
   const nucleotide_t input_element = input[input_idx];
 
@@ -610,7 +611,7 @@ __global__ void receptive_field_gradient(const nucleotide_t *input,
   
   // Write output
   if (tx==0) {
-    const unsigned_int df_weights_idx = blockIdx.x*STRIDE*width+j*STRIDE;
+    const unsigned int df_weights_idx = blockIdx.x*STRIDE*width+j*STRIDE;
     df_weights[df_weights_idx] = df_weights_shared[j*STRIDE];
     df_weights[df_weights_idx+1] = df_weights_shared[j*STRIDE+1];
     df_weights[df_weights_idx+2] = df_weights_shared[j*STRIDE+2];
