@@ -28,7 +28,7 @@ class ParameterUpdater(object):
     def post_gradient_update(self, gradients, stream=None):
         pass
 
-        
+
 class SimpleSGDUpdate(ParameterUpdater):
     def post_gradient_update(self, gradients, batch_size,
                              learning_parameters,

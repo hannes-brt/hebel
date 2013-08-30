@@ -139,7 +139,7 @@ class MultitaskTopLayer(TopLayer):
               task.backprop(input_data, targets_task,
                             cache_task)
 
-            df_input.mul_add(1., df_input_task, task_weight)
+            df_input = df_input.mul_add(1., df_input_task, task_weight)
 
             gradients.extend(gradients_task)
 
