@@ -31,11 +31,15 @@ def encode_sequence(seq):
 class SeqArrayDataProvider(MultiTaskDataProvider):
     def __init__(self, sequences,
                  targets, batch_size,
-                 data_inputs=None, event_info=None,
+                 data_inputs=None,
+                 event_id=None,
+                 tissue=None,
+                 psi_mean=None,
                  gpu=True):
 
-        if event_info is not None:
-            self.event_id, self.tissue, self.psi_mean = zip(*event_info)
+        self.event_id = event_id
+        self.tissue = tissue
+        self.psi_mean = psi_mean
 
         self._gpu = gpu
         self.sequences = sequences

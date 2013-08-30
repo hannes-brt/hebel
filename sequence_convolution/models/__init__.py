@@ -18,3 +18,4 @@ from sequence_convolution_layer import SequenceConvolutionLayer
 from max_pooling_layer import MaxPoolingLayer
 from multi_sequence_convolution_layer import MultiSequenceConvolutionLayer
 from sequence_convolution_net import SequenceConvolutionNet
+from sequence_fully_connected_layer import SequenceFullyConnectedLayer

@@ -543,28 +543,29 @@ __global__ void fully_connected_layer_gradient(const nucleotide_t *input,
 					       const unsigned int n_filters) {
 
   const unsigned int tx = threadIdx.x;
+  const unsigned int ty = threadIdx.y;
   const unsigned int i = blockDim.x*blockIdx.x+tx; // Row
-  const unsigned int j = threadIdx.y; // Column
-  const unsigned int f = threadIdx.z; // Filter
+  const unsigned int j = blockDim.y*blockIdx.y+ty; // Column
+  const unsigned int f = blockIdx.z; // Filter
   const unsigned int input_idx = i*total_input_width+input_offset+j;
   
   const nucleotide_t input_element = input[input_idx];
 
   extern __shared__ {{ data_type }} sdata[];
   {{ data_type }} *df_output_shared = sdata; // size: blockDim.x
-  {{ data_type }} *df_weights_shared = df_output_shared + blockDim.x; // size: blockDim.x * width * STRIDE
+  {{ data_type }} *df_weights_shared = df_output_shared + blockDim.x; // size: blockDim.x * blockDim.y * STRIDE
 
   // Load df_output into shared memory
-  if (j == 0) {
+  if (ty == 0) {
     const unsigned int df_output_idx = i*total_df_output_width+df_output_offset+f;
-    df_output_shared[tx] = df_output[df_output_idx];
+    df_output_shared[tx] = (i < height) ? df_output[df_output_idx] : 0.;
   }
   __syncthreads();
 
   const {{ data_type }} df_output_element = df_output_shared[tx];
   
   // Compute gradient
-  const unsigned int df_weights_shared_idx = tx*STRIDE*width+j*STRIDE;
+  const unsigned int df_weights_shared_idx = tx*STRIDE*blockDim.y+ty*STRIDE;
   if (i < height && j < width) {
     // DNA_A
     df_weights_shared[df_weights_shared_idx] = CHECK_NT(input_element, DNA_A) ?
@@ -592,15 +593,16 @@ __global__ void fully_connected_layer_gradient(const nucleotide_t *input,
     df_weights_shared[df_weights_shared_idx] = 0.;
     df_weights_shared[df_weights_shared_idx+1] = 0.;
     df_weights_shared[df_weights_shared_idx+2] = 0.;
-    df_weights_shared[df_weights_shared_idx+2] = 0.;
+    df_weights_shared[df_weights_shared_idx+3] = 0.;
   }
+
   __syncthreads();
 
   // Stage 1 reduction
   unsigned int df_weights_shared_idx_next;
   for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
     if (tx < s) {
-      df_weights_shared_idx_next = (tx+s)*STRIDE*width+j*STRIDE;
+      df_weights_shared_idx_next = (tx+s)*STRIDE*blockDim.y+ty*STRIDE;
       df_weights_shared[df_weights_shared_idx] += df_weights_shared[df_weights_shared_idx_next];
       df_weights_shared[df_weights_shared_idx+1] += df_weights_shared[df_weights_shared_idx_next+1];
       df_weights_shared[df_weights_shared_idx+2] += df_weights_shared[df_weights_shared_idx_next+2];
@@ -610,11 +612,23 @@ __global__ void fully_connected_layer_gradient(const nucleotide_t *input,
   }
   
   // Write output
-  if (tx==0) {
-    const unsigned int df_weights_idx = blockIdx.x*STRIDE*width+j*STRIDE;
-    df_weights[df_weights_idx] = df_weights_shared[j*STRIDE];
-    df_weights[df_weights_idx+1] = df_weights_shared[j*STRIDE+1];
-    df_weights[df_weights_idx+2] = df_weights_shared[j*STRIDE+2];
-    df_weights[df_weights_idx+3] = df_weights_shared[j*STRIDE+3];
+  if (tx==0 && j < width) {
+    unsigned int df_weights_idx;
+
+    // DNA_A
+    df_weights_idx = f*gridDim.x*STRIDE*width+j*STRIDE*gridDim.x+blockIdx.x;
+    df_weights[df_weights_idx] = df_weights_shared[ty*STRIDE];
+
+    // DNA_C
+    df_weights_idx = f*gridDim.x*STRIDE*width+(j*STRIDE+1)*gridDim.x+blockIdx.x;
+    df_weights[df_weights_idx] = df_weights_shared[ty*STRIDE+1];
+
+    // DNA_G
+    df_weights_idx = f*gridDim.x*STRIDE*width+(j*STRIDE+2)*gridDim.x+blockIdx.x;
+    df_weights[df_weights_idx] = df_weights_shared[ty*STRIDE+2];
+
+    // DNA_T
+    df_weights_idx = f*gridDim.x*STRIDE*width+(j*STRIDE+3)*gridDim.x+blockIdx.x;
+    df_weights[df_weights_idx] = df_weights_shared[ty*STRIDE+3];
   }
 }

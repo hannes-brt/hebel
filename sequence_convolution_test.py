@@ -10,7 +10,7 @@ import numpy as np
 import pycuda.autoinit
 from sequence_convolution.pycuda_ops import convolve_sequence, \
      convolve_sequence_gradient, max_pool, max_pool_gradient, \
-     fully_connected_layer
+     fully_connected_layer, fully_connected_layer_gradient
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from sequence_convolution.models import SequenceConvolutionNet, \
@@ -756,6 +756,51 @@ class TestFullyConnectedLayer(unittest.TestCase):
 
                 err = np.abs(act_cpu - act_np).max() / width
                 self.assertLess(err, TOL)
+
+
+class TestFullyConnectedLayerGradient(unittest.TestCase):
+    TOL_FLOAT = 1e-6
+    TOL_DOUBLE = 1e-12
+
+    @staticmethod
+    def fc_layer_grad_cpu(S, df_output):
+        height, width = S.shape
+        n_filters = df_output.shape[1]
+        dtype = df_output.dtype
+
+        S_enc = np.zeros((height * width, 4), dtype)
+        S_flat = S.ravel()
+
+        S_enc[S_flat == 'A', 0] = 1.
+        S_enc[S_flat == 'C', 1] = 1.
+        S_enc[S_flat == 'G', 2] = 1.
+        S_enc[S_flat == 'T', 3] = 1.
+
+        S_enc = S_enc.reshape((height, 4 * width))
+
+        df_weights = np.dot(S_enc.T, df_output).T
+        return df_weights
+
+    def test_fc_layer_gradient(self):
+        for dtype, tol in ((np.float32, self.TOL_FLOAT),
+                           (np.float64, self.TOL_DOUBLE)):
+            for i in range(20):
+                width = np.random.randint(50, 200)
+                height = np.random.randint(100, 1000)
+                n_filters = np.random.randint(5, 32)
+
+                seq = sample_sequence(width, height)
+                S = gpuarray.to_gpu(encode_sequence(seq))
+
+                df_output = curand((height, n_filters), dtype)
+
+                df_weights_np = self.fc_layer_grad_cpu(S.get(),
+                                                       df_output.get())
+                df_weights_gpu = fully_connected_layer_gradient(S, df_output)
+                df_weights_cpu = df_weights_gpu.get()
+
+                err = np.abs(df_weights_cpu - df_weights_np).max() / height
+                self.assertLess(err, tol)
 
 if __name__ == '__main__':
     unittest.main()
