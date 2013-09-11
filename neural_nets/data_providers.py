@@ -58,6 +58,13 @@ class MiniBatchDataProvider(DataProvider):
         minibatch_targets = self.targets[self.i:self.i+self.batch_size]
 
         self.i += self.batch_size
+
+        if not isinstance(minibatch_data, gpuarray.GPUArray):
+            minibatch_data = gpuarray.to_gpu(minibatch_data)
+
+        if not isinstance(minibatch_targets, gpuarray.GPUArray):
+            minibatch_targets = gpuarray.to_gpu(minibatch_targets)
+
         return minibatch_data, minibatch_targets
 
 
@@ -84,17 +91,25 @@ class MultiTaskDataProvider(DataProvider):
         if not isinstance(self.data, (list, tuple)):
             minibatch_data = \
               self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+            if not isinstance(minibatch_data, gpuarray.GPUArray):
+                minibatch_data = gpuarray.to_gpu(minibatch_data)
         else:
             minibatch_data = \
               [d[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
                for d in self.data]
+            if not isinstance(minibatch_data[0], gpuarray.GPUArray):
+                minibatch_data = [gpuarray.to_gpu(d) for d in minibatch_data]
         if not isinstance(self.data, (list, tuple)):
             minibatch_targets = \
               self.targets[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+            if not isinstance(minibatch_targets, gpuarray.GPUArray):
+                minibatch_targets = gpuarray.to_gpu(minibatch_targets)
         else:
             minibatch_targets = \
               [t[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
                for t in self.targets]
+            if not isinstance(minibatch_targets[0], gpuarray.GPUArray):
+                minibatch_targets = [gpuarray.to_gpu(d) for d in minibatch_targets]
         return minibatch_data, minibatch_targets
 
     def next(self):
@@ -104,16 +119,24 @@ class MultiTaskDataProvider(DataProvider):
 
         if not isinstance(self.data, (list, tuple)):
             minibatch_data = self.data[self.i:self.i+self.batch_size]
+            if not isinstance(minibatch_data, gpuarray.GPUArray):
+                minibatch_data = gpuarray.to_gpu(minibatch_data)
         else:
             minibatch_data = \
               [d[self.i:self.i+self.batch_size]
                for d in self.data]
+            if not isinstance(minibatch_data[0], gpuarray.GPUArray):
+                minibatch_data = [gpuarray.to_gpu(d) for d in minibatch_data]
 
         if not isinstance(self.targets, (list, tuple)):
             minibatch_targets = self.targets[self.i:self.i+self.batch_size]
+            if not isinstance(minibatch_targets, gpuarray.GPUArray):
+                minibatch_targets = gpuarray.to_gpu(minibatch_targets)
         else:
             minibatch_targets = [t[self.i:self.i+self.batch_size]
                                  for t in self.targets]
+            if not isinstance(minibatch_targets[0], gpuarray.GPUArray):
+                minibatch_targets = [gpuarray.to_gpu(d) for d in minibatch_targets]
         self.i += self.batch_size
         return minibatch_data, minibatch_targets
 
