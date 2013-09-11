@@ -35,7 +35,8 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
                  event_id=None,
                  tissue=None,
                  psi_mean=None,
-                 gpu=True):
+                 gpu=True,
+                 **kwargs):
 
         self.event_id = event_id
         self.tissue = tissue
@@ -48,6 +49,9 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
             data = self.enc_seq + data_inputs
         else:
             data = self.enc_seq
+
+        for key, value in kwargs.iteritems():
+            self.__dict__[key] = value
         super(SeqArrayDataProvider, self).__init__(data, targets, batch_size)
 
     @property
@@ -57,10 +61,20 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
     @gpu.setter
     def gpu(self, val):
         if val and not self._gpu:
-            self.enc_seq = [gpuarray.to_gpu(x) for x in self.enc_seq]
+            self.data = [gpuarray.to_gpu(x) for x in self.data]
+
+            if not isinstance(self.targets, (list, tuple)):
+                self.targets = gpuarray.to_gpu(self.targets)
+            else:
+                self.targets = [gpuarray.to_gpu(t) for t in self.targets]
 
         if not val and self._gpu:
-            self.enc_seq = [x.get() for x in self.enc_seq]
+            self.data = [x.get() for x in self.data]
+
+            if not isinstance(self.targets, (list, tuple)):
+                self.targets = self.targets.get()
+            else:
+                self.targets = [t.get() for t in self.targets]        
 
     @property
     def sequences(self):

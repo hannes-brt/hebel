@@ -159,7 +159,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
             self.n_units += sum((fcl.n_units for fcl in self.fully_connected_layers))
         else:
-            self.fc_layer_offset = None
+            self.fc_layer_offset = [self.n_units]
 
         self.master_layers = filter(lambda l: l['layer_type'] == 'master',
                                     self.subregion_layers)
