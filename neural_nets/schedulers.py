@@ -14,7 +14,10 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-""" A bunch of different schedulers to scale learning parameters
+""" A bunch of different schedulers to scale learning
+parameters. These are used e.g. to slowly reduce the learning rate
+during training or scale momentum up and down during the early and
+late phases of training.
 """
 
 

@@ -57,7 +57,7 @@ optimizer: !obj:neural_nets.optimizers.SGD {
   progress_monitor:
     !obj:neural_nets.monitors.ProgressMonitor {
       experiment_name: mnist,
-      save_model_path: examples/mnist,      
+      save_model_path: /mnist,      
       save_interval: 10,
       output_to_log: yes,
       dataset: mnist
