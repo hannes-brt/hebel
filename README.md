@@ -17,6 +17,7 @@ Currently, Litzelstetten will only run on Linux and probably Mac OS X (not teste
 
 ## Getting started
 Study the yaml configuration files in `examples/` and run
+    
     python train_model.py examples/mnist_neural_net_shallow.yaml
 
 ## What's with the name?
