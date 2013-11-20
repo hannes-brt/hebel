@@ -14,6 +14,11 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+""" Implements optimization algorithms to train the models. The single
+algorithm we have in online stochastic gradient descent (SGD).
+
+"""
+
 import numpy as np
 import time, cPickle, os, inspect
 from .pycuda_ops.matrix import vector_normalize
