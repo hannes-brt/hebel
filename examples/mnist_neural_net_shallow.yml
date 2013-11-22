@@ -37,7 +37,7 @@ optimizer: !obj:neural_nets.optimizers.SGD {
     init_value: .5, target_value: .9, duration: 10
   },
   progress_monitor:
-    !obj:neural_nets.monitors.ProgressMonitor {
+    !obj:neural_nets.monitors.SimpleProgressMonitor {
       experiment_name: mnist,
       save_model_path: /mnist,      
       save_interval: 10,
