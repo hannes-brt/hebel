@@ -21,6 +21,4 @@ Study the yaml configuration files in `examples/` and run
     python train_model.py examples/mnist_neural_net_shallow.yaml
 
 ## What's with the name?
-Litzelstetten is a village just outside the city of Konstanz in South-West Germany where the author grew up. Litzelstetten's most famous citizen was [Johann Martin Schleyer](http://en.wikipedia.org/wiki/Johann_Martin_Schleyer) (1831-1912), who was the village's priest and teacher and who invented the universal language Volapük, which could never rival Esperanto in popularity.
-
-Litzelstetten is very fun to say! Here's how: https://soundcloud.com/oceanhug/litzelstetten-pronounciation
+_Hebel_ is the German word for _lever_, one of the oldest tools that humans use. As Archimedes said it: _"Give me a lever long enough and a fulcrum on which to place it, and I shall move the world."_
