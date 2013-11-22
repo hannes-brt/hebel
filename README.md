@@ -1,4 +1,4 @@
-# Litzelstetten
+# Hebel
 
 GPU-Accelerated Deep Learning Library in Python
 
