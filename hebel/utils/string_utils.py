@@ -21,7 +21,7 @@ import warnings
 import re
 import functools
 
-from neural_nets.utils.exc import EnvironmentVariableError, NoDataPathError
+from .exc import EnvironmentVariableError, NoDataPathError
 
 def preprocess(string):
     """

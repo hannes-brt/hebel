@@ -14,7 +14,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from neural_net import NeuralNet
+from .neural_net import NeuralNet
 from .multitask_top_layer import MultitaskTopLayer
 
 class MultitaskNeuralNet(NeuralNet):

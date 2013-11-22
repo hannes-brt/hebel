@@ -21,13 +21,13 @@ import os
 import time
 import warnings
 import sys
-from neural_nets.utils.string_utils import preprocess
+from .string_utils import preprocess
 from cPickle import BadPickleGet
 io = None
 hdf_reader = None
 import struct
-from neural_nets.utils import environ
-from neural_nets.utils.string_utils import match
+from . import environ
+from .string_utils import match
 import shutil
 
 def raise_cannot_open(path):

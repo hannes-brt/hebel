@@ -21,7 +21,7 @@ of a function or class constructor.
 import functools
 import inspect
 import types
-from neural_nets.utils.string_utils import match
+from .string_utils import match
 
 def check_call_arguments(to_call, kwargs):
     """

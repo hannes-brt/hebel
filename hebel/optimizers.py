@@ -23,7 +23,7 @@ import numpy as np
 import time, cPickle, os, inspect
 from .pycuda_ops.matrix import vector_normalize
 from .schedulers import constant_scheduler
-from .monitors import ProgressMonitor
+from .monitors import SimpleProgressMonitor
 
 
 class EarlyStoppingModule(object):

@@ -14,7 +14,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from neural_nets.config import run_from_config
+from hebel.config import run_from_config
 
 description = """ Run this script with a yaml configuration file as input.
 E.g.:
