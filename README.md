@@ -19,6 +19,8 @@ Currently, Hebel will only run on Linux and probably Mac OS X (not tested). Hebe
 Study the yaml configuration files in `examples/` and run
     
     python train_model.py examples/mnist_neural_net_shallow.yaml
+    
+The script will create a directory in `examples/mnist` where the models and logs are saved.
 
 ## What's with the name?
 _Hebel_ is the German word for _lever_, one of the oldest tools that humans use. As Archimedes said it: _"Give me a lever long enough and a fulcrum on which to place it, and I shall move the world."_
