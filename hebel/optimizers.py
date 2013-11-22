@@ -90,7 +90,7 @@ class SGD(object):
             self.learning_parameter_iterators.append(momentum_schedule)
 
         if progress_monitor is None:
-            self.progress_monitor = ProgressMonitor(model=self.model)
+            self.progress_monitor = SimpleProgressMonitor(model=self.model)
         else:
             self.progress_monitor = progress_monitor
 

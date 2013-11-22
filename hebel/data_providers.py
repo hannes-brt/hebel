@@ -214,7 +214,7 @@ class MNISTDataProvider(DataProvider):
             self.targets = gpuarray.to_gpu(labels_soft)
             self.N = self.N_test
         else:
-            raise ValueError
+            raise ValueError('Unknown partition "%s"' % array)
 
         self.batch_size = batch_size if batch_size is not None else self.N
         self.i = 0

@@ -1,5 +1,5 @@
 run_conf:
-  iter: 50
+  iterations: 50
 optimizer: !obj:hebel.optimizers.SGD {
   model: !obj:hebel.models.NeuralNet {
     layers: [
@@ -18,17 +18,10 @@ optimizer: !obj:hebel.optimizers.SGD {
   parameter_updater: !import hebel.parameter_updaters.MomentumUpdate,
   train_data: !obj:hebel.data_providers.MNISTDataProvider {
     batch_size: 100,
-    array: train_images
+    array: train
   },
   validation_data: !obj:hebel.data_providers.MNISTDataProvider {
-    array: val_images
-  },
-  train_targets: !obj:hebel.data_providers.MNISTDataProvider {
-    batch_size: 100,
-    array: train_labels
-  },
-  validation_targets: !obj:hebel.data_providers.MNISTDataProvider {
-    array: val_labels
+    array: val
   },
   learning_rate_schedule: !obj:hebel.schedulers.exponential_scheduler {
     init_value: 30., decay: .995
@@ -37,18 +30,14 @@ optimizer: !obj:hebel.optimizers.SGD {
     init_value: .5, target_value: .9, duration: 10
   },
   progress_monitor:
-    !obj:hebel.monitors.SimpleProgressMonitor {
-      experiment_name: mnist,
-      save_model_path: /mnist,      
+    !obj:hebel.monitors.ProgressMonitor {
+      experiment_name: mnist_shallow,
+      save_model_path: examples/mnist,
       save_interval: 10,
-      output_to_log: yes,
-      dataset: mnist
+      output_to_log: yes
     }
-  }
+}
 test_dataset:
   test_data: !obj:hebel.data_providers.MNISTDataProvider {
-    array: test_images
-  }
-  test_targets: !obj:hebel.data_providers.MNISTDataProvider {
-    array: test_labels
+    array: test
   }
