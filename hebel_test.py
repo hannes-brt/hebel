@@ -19,16 +19,16 @@ import random
 import numpy as np
 import pycuda.autoinit
 from pycuda.curandom import rand as curand
-from neural_nets import sampler
-from neural_nets.models import NeuralNet
-from neural_nets.optimizers import SGD
-from neural_nets.parameter_updaters import SimpleSGDUpdate, \
+from hebel import sampler
+from hebel.models import NeuralNet
+from hebel.optimizers import SGD
+from hebel.parameter_updaters import SimpleSGDUpdate, \
     MomentumUpdate, NesterovMomentumUpdate
-from neural_nets.data_providers import MNISTDataProvider
-from neural_nets.monitors import SimpleProgressMonitor
-from neural_nets.schedulers import exponential_scheduler, linear_scheduler_up
-from neural_nets.pycuda_ops.matrix import extract_columns, insert_columns
-from neural_nets.pycuda_ops.elementwise import sample_dropout_mask
+from hebel.data_providers import MNISTDataProvider
+from hebel.monitors import SimpleProgressMonitor
+from hebel.schedulers import exponential_scheduler, linear_scheduler_up
+from hebel.pycuda_ops.matrix import extract_columns, insert_columns
+from hebel.pycuda_ops.elementwise import sample_dropout_mask
 
 
 class TestNeuralNetMNIST(unittest.TestCase):
