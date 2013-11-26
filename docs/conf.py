@@ -16,7 +16,7 @@ import sys, os
 MOCK_MODULES = ['numpy', 'scikits', 'scikits.cuda',
                 'scikits.cuda', 'scikits.cuda.linalg',
                 'pycuda', 'pycuda.autoinit', 'pycuda.gpuarray', 
-                'pycuda.driver', 'pycuda.cumath']
+                'pycuda.driver', 'pycuda.cumath', 'pycuda.elementwise']
 
 for mod_name in MOCK_MODULES:
     sys.modules[mod_name] = mock.Mock()
