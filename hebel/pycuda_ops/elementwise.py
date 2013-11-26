@@ -49,7 +49,7 @@ sigmoid_kernel_float = ElementwiseKernel(
 
 sigmoid_kernel_double = ElementwiseKernel(
         "double *mat",
-        "mat[i] = 1. / (1. + __expf(-mat[i]))",
+        "mat[i] = 1. / (1. + exp(-mat[i]))",
         "sigmoid")
 
 
