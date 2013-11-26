@@ -46,4 +46,9 @@ coverage.xml
 # Sphinx documentation
 docs/_build/
 
+# Example output directory
 examples/mnist/
+
+# Backup files
+*~
+#*#
