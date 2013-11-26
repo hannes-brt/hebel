@@ -18,7 +18,7 @@ from . import eps
 from .reductions import max_by_axis
 from .matrix import add_vec_to_mat
 from .reductions import matrix_sum_out_axis
-from .elementwise import nan_to_zeros_kernel
+from .elementwise import nan_to_zeros
 from pycuda import cumath, gpuarray
 
 
