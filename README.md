@@ -23,7 +23,7 @@ Study the yaml configuration files in `examples/` and run
 The script will create a directory in `examples/mnist` where the models and logs are saved.
 
 ## Documentation
-hebel.readthedocs.org (coming slowly)
+[hebel.readthedocs.org](hebel.readthedocs.org) (coming slowly)
 
 ## What's with the name?
 _Hebel_ is the German word for _lever_, one of the oldest tools that humans use. As Archimedes said it: _"Give me a lever long enough and a fulcrum on which to place it, and I shall move the world."_
