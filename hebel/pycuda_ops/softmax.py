@@ -36,6 +36,6 @@ def softmax(mat):
 
 def cross_entropy(x, y):
     loss = y * cumath.log(x + eps)
-    nan_to_zerosl(loss, loss)
+    nan_to_zeros(loss, loss)
     loss = -gpuarray.sum(loss)
     return float(loss.get())
