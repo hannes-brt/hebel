@@ -133,3 +133,4 @@ into a file called ``output_log``. If you are interested in keeping an
 eye on the training process you can check on that file with::
 
   tail -f output_log
+

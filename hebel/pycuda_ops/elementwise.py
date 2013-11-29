@@ -99,7 +99,7 @@ class Kernel(object):
                  signature_double, code_double):
         self.name = name
         self.kernel_float = ElementwiseKernel(signature_float, code_float, name)
-        self.kernel_float = ElementwiseKernel(signature_double, code_double, name)
+        self.kernel_double = ElementwiseKernel(signature_double, code_double, name)
 
     def __call__(self, *args, **kwargs):
         if args[0].dtype == np.float32:
