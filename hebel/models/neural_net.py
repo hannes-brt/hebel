@@ -19,9 +19,10 @@ from hashlib import md5
 from .hidden_layer import HiddenLayer
 from .top_layer import TopLayer
 from .logistic_layer import LogisticLayer
+from .model import Model
 
 
-class NeuralNet(object):
+class NeuralNet(Model):
     """ A Neural Network Object
     """
 

@@ -22,3 +22,4 @@ from .multitask_neural_net import MultitaskNeuralNet
 from .multitask_top_layer import MultitaskTopLayer
 from .neural_net import NeuralNet
 from .top_layer import TopLayer
+from .model import Model
