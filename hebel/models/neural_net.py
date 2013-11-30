@@ -204,13 +204,13 @@ class NeuralNet(Model):
 
         return loss, gradients
 
-    def test_error(self, input_data, average=True):
+    def test_error(self, test_data, average=True):
         """ Evaulate performance on a test set
 
         """
 
         test_error = 0.
-        for batch_data, batch_targets in input_data:
+        for batch_data, batch_targets in test_data:
             _, hidden_cache, logistic_cache = \
               self.evaluate(batch_data, batch_targets,
                             return_cache=True,
@@ -226,7 +226,7 @@ class NeuralNet(Model):
                                                     cache=logistic_cache,
                                                     prediction=True)
 
-        if average: test_error / float(test_data.N)
+        if average: test_error /= float(test_data.N)
 
         return test_error
 
