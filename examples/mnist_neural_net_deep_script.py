@@ -23,7 +23,7 @@ model = NeuralNet(n_in=train_data.D, n_out=K,
 # Create optimizer object
 progress_monitor = ProgressMonitor(
     experiment_name='mnist',
-    save_model_path='/examples/mnist',
+    save_model_path='examples/mnist',
     save_interval=5,
     output_to_log=True)
 

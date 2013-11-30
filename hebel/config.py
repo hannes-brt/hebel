@@ -50,10 +50,7 @@ def run_from_config(yaml_src):
         model = optimizer.model
         progress_monitor = optimizer.progress_monitor
 
-        test_error = 0
-        for batch_data, batch_targets in test_data:
-            test_error += model.test_error(batch_data, batch_targets, average=False)
-        test_error /= float(test_data.N)
+        test_error = model.test_error(test_data, average=True)
         progress_monitor.test_error = test_error
 
 def load(stream, overrides=None, **kwargs):

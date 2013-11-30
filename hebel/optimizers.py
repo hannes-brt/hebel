@@ -140,16 +140,18 @@ class SGD(object):
                 # Evaluate on validation data
                 if self.validation_data is not None and \
                    not self.epoch % validation_interval:
-                    validation_loss = 0.
-                    for batch_idx, (batch_data, batch_targets) in \
-                      enumerate(self.validation_data):
+                    validation_loss_rate = self.model.test_error(
+                        self.validation_data)
+                    # validation_loss = 0.
+                    # for batch_idx, (batch_data, batch_targets) in \
+                    #   enumerate(self.validation_data):
 
-                        validation_loss += self.model.test_error(batch_data,
-                                                                 batch_targets,
-                                                                 average=False)
+                    #     validation_loss += self.model.test_error(batch_data,
+                    #                                              batch_targets,
+                    #                                              average=False)
 
-                    validation_loss_rate = \
-                        validation_loss / float(self.N_validation)
+                    # validation_loss_rate = \
+                    #     validation_loss / float(self.N_validation)
 
                     if self.early_stopping_module is not None:
                         self.early_stopping_module.update(self.epoch,
