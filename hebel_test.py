@@ -35,7 +35,7 @@ class TestNeuralNetMNIST(unittest.TestCase):
     def setUp(self):
         self.train_data = MNISTDataProvider('train', 100)
         self.test_data = MNISTDataProvider('test')
-        self.D = MNISTDataProvider.D
+        self.D = self.train_data.D
         self.n_out = 10
 
     def test_relu(self):
