@@ -204,26 +204,31 @@ class NeuralNet(Model):
 
         return loss, gradients
 
-    def test_error(self, input_data, targets, average=True, cache=None):
+    def test_error(self, input_data, average=True):
         """ Evaulate performance on a test set
 
         """
-        if cache is None:
+
+        test_error = 0.
+        for batch_data, batch_targets in input_data:
             _, hidden_cache, logistic_cache = \
-                self.evaluate(input_data, targets,
-                              return_cache=True,
-                              prediction=True)
-        else:
-            _, hidden_cache, logistic_cache = cache
+              self.evaluate(batch_data, batch_targets,
+                            return_cache=True,
+                            prediction=True)
 
-        if self.hidden_layers:
-            hidden_activations = hidden_cache[-1]
-        else:
-            hidden_activations = input_data
+            if self.hidden_layers:
+                hidden_activations = hidden_cache[-1]
+            else:
+                hidden_activations = batch_data
 
-        return self.top_layer.test_error(hidden_activations,
-                                         targets, average=average,
-                                         cache=logistic_cache, prediction=True)
+            test_error += self.top_layer.test_error(hidden_activations,
+                                                    batch_targets, average=False,
+                                                    cache=logistic_cache,
+                                                    prediction=True)
+
+        if average: test_error / float(test_data.N)
+
+        return test_error
 
     def feed_forward(self, input_data, return_cache=False, prediction=True):
         """ Get predictions from the model
