@@ -179,16 +179,17 @@ class MNISTDataProvider(DataProvider):
     from skdata.mnist.views import OfficialVectorClassification
     mnist = OfficialVectorClassification()
 
-    train_idx = mnist.fit_idxs
-    val_idx = mnist.val_idxs
-    test_idx = mnist.tst_idxs
-
-    N_train = train_idx.shape[0]
-    N_val = val_idx.shape[0]
-    N_test = test_idx.shape[0]
-    D = mnist.all_vectors.shape[1]
-
     def __init__(self, array, batch_size=None):
+
+        self.train_idx = mnist.fit_idxs
+        self.val_idx = mnist.val_idxs
+        self.test_idx = mnist.tst_idxs
+
+        self.N_train = train_idx.shape[0]
+        self.N_val = val_idx.shape[0]
+        self.N_test = test_idx.shape[0]
+        self.D = mnist.all_vectors.shape[1]
+
         if array == 'train':
             self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.train_idx]
                                    .astype(np.float32) / 255.)
