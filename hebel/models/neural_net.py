@@ -23,7 +23,70 @@ from .model import Model
 
 
 class NeuralNet(Model):
-    """ A Neural Network Object
+    """ A neural network for classification using the cross-entropy
+    loss function.
+
+    **Parameters:**
+
+    layers : array_like
+        An array of either integers or instances of ``HiddenLayer``
+        objects. If integers are given, they represent the number of
+        hidden units in each layer and new ``HiddenLayer`` objects
+        will be created. If ``HiddenLayer`` instances are given, the
+        user must make sure that each ``HiddenLayer`` has ``n_in`` set
+        to the preceding layer's ``n_units``. If ``HiddenLayer``
+        instances are passed, then ``activation_function``,
+        ``dropout``, ``n_in``, ``l1_penalty_weight``, and
+        ``l2_penalty_weight`` are ignored.
+
+    top_layer : ``TopLayer`` instance, optional
+        If ``top_layer`` is given, then it is used for the output
+        layer, otherwise, a ``LogisticLayer`` instance is created.
+
+    activation_function : {'sigmoid', 'tanh', 'relu', or 'linear'}, optional
+        The activation function to be used in the hidden layers.
+
+    dropout : bool, optional
+        Whether to use dropout regularization
+
+    n_in : integer, optional
+        The dimensionality of the input. Must be given, if the first
+        hidden layer is not passed as a ``HiddenLayer`` instance.
+
+    n_out : integer, optional
+        The number of classes to predict from. Must be given, if a
+        ``TopLayer`` instance is not given in ``top_layer``.
+
+    l1_penalty_weight : float, optional
+        Weight for L1 regularization
+
+    l2_penalty_weight : float, optional
+        Weight for L2 regularization
+
+    kwargs : optional
+        Any additional arguments are passed on to ``top_layer``
+
+    **See also:**
+    
+    LogisticRegression, MultitaskNeuralNet
+
+    **Examples**::
+
+        # Simple form
+        model = NeuralNet(layers=[1000, 1000],
+                          activation_function='relu',
+                          dropout=True,
+                          n_in=784, n_out=10,
+                          l1_penalty_weight=.1)
+
+        # Extended form, initializing with ``HiddenLayer`` and ``TopLayer`` objects
+        hidden_layers = [HiddenLayer(784, 1000, 'relu', dropout=True,
+                                     l1_penalty_weight=.2),
+                         HiddenLayer(1000, 1000, 'relu', dropout=True,
+                                     l1_penalty_weight=.1)]
+        logistic_layer = LogisticLayer(1000, 10, l1_penalty_weight=.1)
+
+        model = NeuralNet(hidden_layers, logistic_layer)
     """
 
     TopLayerClass = LogisticLayer
@@ -109,7 +172,7 @@ class NeuralNet(Model):
 
     @property
     def parameters(self):
-        # Gather the parameters
+        """ A property that returns all of the model's parameters. """
         parameters = []
         for hl in self.hidden_layers:
             parameters.extend(hl.parameters)
@@ -118,6 +181,15 @@ class NeuralNet(Model):
 
     @parameters.setter
     def parameters(self, value):
+        """ Used to set all of the model's parameters to new values.
+
+        **Parameters:**
+
+        value : array_like
+            New values for the model parameters. Must be of length
+            ``self.n_parameters``.
+        """
+    
         if len(value) != self.n_parameters:
             raise ValueError("Incorrect length of parameter vector. "
                              "Model has %d parameters, but got %d" %
@@ -130,18 +202,14 @@ class NeuralNet(Model):
 
         self.top_layer.parameters = value[-self.top_layer.n_parameters:]
 
-    def update_parameters(self, value):
-        assert len(value) == self.n_parameters
-
-        i = 0
-        for hl in self.hidden_layers:
-            hl.update_parameters(value[i:i + hl.n_parameters])
-            i += hl.n_parameters
-
-        self.top_layer.update_parameters(value[-self.top_layer.n_parameters:])
-
     @property
     def checksum(self):
+        """ Returns an MD5 digest of the model.
+
+        This can be used to easily identify whether two models have the
+        same architecture.
+        """
+        
         m = md5()
         for hl in self.hidden_layers:
             m.update(str(hl.architecture))
@@ -150,7 +218,41 @@ class NeuralNet(Model):
 
     def evaluate(self, input_data, targets,
                  return_cache=False, prediction=True):
-        """ Evaluate the loss function without computing gradients
+        """ Evaluate the loss function without computing gradients.
+
+        **Parameters:**
+
+        input_data : GPUArray
+            Data to evaluate
+
+        targets: GPUArray
+            Targets
+
+        return_cache : bool, optional
+            Whether to return intermediary variables from the
+            computation and the hidden activations.
+
+        prediction : bool, optional
+            Whether to use prediction model. Only relevant when using
+            dropout. If true, then weights are halved in layers that
+            use dropout.
+
+        **Returns:**
+
+        If ``return_cache == False``:
+
+        loss : float
+            The value of the loss function.
+
+        If ``return_cache == True``:
+
+        loss : float
+
+        hidden_cache : list
+            Cache as returned by ``NeuralNet.feed_forward``.
+
+        activations : list
+            Hidden activations as returned by ``NeuralNet.feed_forward``.
         """
 
         # Forward pass
@@ -174,7 +276,23 @@ class NeuralNet(Model):
             return loss, hidden_cache, activations
 
     def training_pass(self, input_data, targets):
-        """ Perform a full forward and backward pass through the model
+        """ Perform a full forward and backward pass through the model.
+
+        **Parameters:**
+
+        input_data : GPUArray
+            Data to train the model with.
+
+        targets : GPUArray
+            Training targets.
+
+        **Returns:**
+
+        loss : float
+            Value of loss function as evaluated on the data and targets.
+
+        gradients : list of GPUArray
+            Gradients obtained from backpropagation in the backward pass.
         """
 
         # Forward pass
@@ -205,8 +323,20 @@ class NeuralNet(Model):
         return loss, gradients
 
     def test_error(self, test_data, average=True):
-        """ Evaulate performance on a test set
+        """ Evaulate performance on a test set.
 
+        **Parameters:**
+
+        test_data : :class:``hebel.data_provider.DataProvider``
+            A ``DataProvider`` instance to evaluate on the model.
+
+        average : bool, optional
+            Whether to divide the loss function by the number of
+            examples in the test data set.
+
+        **Returns:**
+
+        test_error : float
         """
 
         test_error = 0.
@@ -231,18 +361,42 @@ class NeuralNet(Model):
         return test_error
 
     def feed_forward(self, input_data, return_cache=False, prediction=True):
-        """ Get predictions from the model
+        """ Run data forward through the model.
+
+        **Parameters:**
+
+        input_data : GPUArray
+            Data to run through the model.
+
+        return_cache : bool, optional
+            Whether to return the intermediary results.
+
+        prediction : bool, optional
+            Whether to run in prediction mode. Only relevant when
+            using dropout. If true, weights are halved. If false, then
+            half of hidden units are randomly dropped and the dropout
+            mask is returned in case ``return_cache==True``.
+
+        **Returns:**
+        
+        If ``return_cache == False``:
+
+        prediction : GPUArray
+            Predictions from the model.
+
+        If ``return_cache == True``:
+
+        prediction : GPUArray
+
+        cache : list of GPUArray
+            Results of intermediary computations.    
         """
 
         if self.hidden_layers:
             # Forward pass
             hidden_cache = []
-            # Input layer never has dropout
-            hidden_cache.append(self.hidden_layers[0].feed_forward(input_data,
-                                                                   prediction))
-
-            for i in range(1, self.n_layers):
-                hidden_activations = hidden_cache[i - 1][0]
+            for i in range(self.n_layers):
+                hidden_activations = hidden_cache[i - 1][0] if i else input_data
                 # Use dropout predict if previous layer has dropout
                 hidden_cache.append(self.hidden_layers[i]
                                     .feed_forward(hidden_activations,
@@ -256,7 +410,7 @@ class NeuralNet(Model):
         # Use dropout_predict if last hidden layer has dropout
         activations = \
           self.top_layer.feed_forward(hidden_activations,
-                                      prediction=prediction)
+                                      prediction=False)
 
         if return_cache:
             return activations, hidden_cache
