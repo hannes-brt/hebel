@@ -22,6 +22,8 @@ Study the yaml configuration files in `examples/` and run
     
 The script will create a directory in `examples/mnist` where the models and logs are saved.
 
+Read the Getting started guide at [hebel.readthedocs.org/en/latest/getting_started.html](http://hebel.readthedocs.org/en/latest/getting_started.html) for more information.
+
 ## Documentation
 [hebel.readthedocs.org](http://hebel.readthedocs.org) (coming slowly)
 
