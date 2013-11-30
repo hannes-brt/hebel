@@ -29,17 +29,17 @@ class NeuralNet(Model):
     **Parameters:**
 
     layers : array_like
-        An array of either integers or instances of ``HiddenLayer``
-        objects. If integers are given, they represent the number of
-        hidden units in each layer and new ``HiddenLayer`` objects
-        will be created. If ``HiddenLayer`` instances are given, the
-        user must make sure that each ``HiddenLayer`` has ``n_in`` set
-        to the preceding layer's ``n_units``. If ``HiddenLayer``
-        instances are passed, then ``activation_function``,
-        ``dropout``, ``n_in``, ``l1_penalty_weight``, and
-        ``l2_penalty_weight`` are ignored.
+        An array of either integers or instances of
+        :class:`hebel.models.HiddenLayer` objects. If integers are
+        given, they represent the number of hidden units in each layer
+        and new ``HiddenLayer`` objects will be created. If
+        ``HiddenLayer`` instances are given, the user must make sure
+        that each ``HiddenLayer`` has ``n_in`` set to the preceding
+        layer's ``n_units``. If ``HiddenLayer`` instances are passed,
+        then ``activation_function``, ``dropout``, ``n_in``,
+        ``l1_penalty_weight``, and ``l2_penalty_weight`` are ignored.
 
-    top_layer : ``TopLayer`` instance, optional
+    top_layer : :class:`hebel.models.TopLayer` instance, optional
         If ``top_layer`` is given, then it is used for the output
         layer, otherwise, a ``LogisticLayer`` instance is created.
 
@@ -51,11 +51,13 @@ class NeuralNet(Model):
 
     n_in : integer, optional
         The dimensionality of the input. Must be given, if the first
-        hidden layer is not passed as a ``HiddenLayer`` instance.
+        hidden layer is not passed as a
+        :class:`hebel.models.HiddenLayer` instance.
 
     n_out : integer, optional
         The number of classes to predict from. Must be given, if a
-        ``TopLayer`` instance is not given in ``top_layer``.
+        :class:`hebel.models.HiddenLayer` instance is not given in
+        ``top_layer``.
 
     l1_penalty_weight : float, optional
         Weight for L1 regularization
@@ -68,7 +70,8 @@ class NeuralNet(Model):
 
     **See also:**
     
-    LogisticRegression, MultitaskNeuralNet
+    :class:`hebel.models.LogisticRegression`,
+    :class:`hebel.models.MultitaskNeuralNet`
 
     **Examples**::
 
@@ -249,10 +252,11 @@ class NeuralNet(Model):
         loss : float
 
         hidden_cache : list
-            Cache as returned by ``NeuralNet.feed_forward``.
+            Cache as returned by :meth:`hebel.models.NeuralNet.feed_forward`.
 
         activations : list
-            Hidden activations as returned by ``NeuralNet.feed_forward``.
+            Hidden activations as returned by
+            :meth:`hebel.models.NeuralNet.feed_forward`.
         """
 
         # Forward pass
