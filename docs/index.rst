@@ -14,6 +14,12 @@ Contents:
    introduction
    installation
    getting_started
+   data_providers
+   monitors
+   models
+   optimizers
+   parameter_updaters
+   schedulers
 
 
 

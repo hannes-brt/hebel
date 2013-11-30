@@ -1,4 +1,3 @@
-***************
 Getting Started
 ***************
 
@@ -61,6 +60,8 @@ regularization. The logistic output layer uses 10 classes (the number
 of classes in the MNIST data). You can also add different amounts of
 L1 or L2 penalization to each layer, which we are not doing here.
 
+.. _parameter-updaters:
+
 Next, we define a ``parameter_updater``, which is a rule that defines
 how the weights are updated given the gradients:
 
@@ -76,7 +77,8 @@ There are currently three choices:
 * :class:`hebel.parameter_updaters.NesterovMomentumUpdate`, which performs
    gradient descent with Nesterov momentum.
 
-The next two sections define the data for the model. All data must be given as instances of ``DataProvider`` objects:
+The next two sections define the data for the model. All data must be
+given as instances of ``DataProvider`` objects:
 
 .. literalinclude:: ../examples/mnist_neural_net_shallow.yml
    :lines: 19-25
@@ -133,4 +135,105 @@ into a file called ``output_log``. If you are interested in keeping an
 eye on the training process you can check on that file with::
 
   tail -f output_log
+
+Using Hebel in Your Own Code
+============================
+
+If you want more control over the training procedure or integrate
+Hebel with your own code, then you can use Hebel programmatically. 
+
+For an example, have a look at :file:`examples/mnist_neural_net_deep_script.py`:
+
+.. literalinclude:: ../examples/mnist_neural_net_deep_script.py
+
+There are three basic tasks you have to do to train a model in Hebel:
+
+#. Define the data you want to use for training, validation, or
+   testing using ``DataProvider`` objects,
+#. instantiate a ``Model`` object, and
+#. instantiate an ``SGD`` object that will train the model using
+   stochastic gradient descent.
+
+Defining a Data Set
+-------------------
+
+In this example we're using the MNIST data set again through the
+:class:`hebel.data_providers.MNISTDataProvider` class:
+
+.. literalinclude:: ../examples/mnist_neural_net_deep_script.py
+   :lines: 9-12
+
+We create three data sets, corresponding to the official training,
+validation, and test data splits of MNIST. For the training data set,
+we set a batch size of 100 training examples, while the validation and
+test data sets are used as complete batches.
+
+Instantiating a model
+---------------------
+
+To train a model, you simply need to create an object representing a
+model that inherits from the abstract base class
+:class:`hebel.models.Model`. 
+
+.. literalinclude:: ../examples/mnist_neural_net_deep_script.py
+   :lines: 17-21
+
+Currently, Hebel implements the following models:
+
+* :class:`hebel.models.NeuralNet`: A neural net with any number of
+  hidden layers for classification, using the cross-entropy loss
+  function and softmax units in the output layer.
+
+* :class:`hebel.models.LogisticRegression`: Multi-class logistic
+  regression. Like :class:`hebel.models.NeuralNet` but does not have
+  any hidden layers.
+
+* :class:`hebel.models.MultitaskNeuralNet`: A neural net trained on
+  multiple tasks simultaneously. A multi-task neural net can have any
+  number of hidden layers with weights that are shared between the
+  tasks and any number of output layers with separate weights for each
+  task.
+
+The :class:`hebel.models.NeuralNet` model we are using here takes as
+input the dimensionality of the data, the number of classes, the sizes
+of the hidden layers, the activation function to use, and whether to
+use dropout for regularization. There are also a few more options such
+as for L1 or L2 weight regularization, that we don't use here.
+
+Training the model
+------------------
+
+To train the model, you first need to create an instance of
+:class:`hebel.optimizers.SGD`:
+
+.. literalinclude:: ../examples/mnist_neural_net_deep_script.py
+   :lines: 23-32
+
+First we are creating a :class:`hebel.monitors.ProgressMonitor`
+object, that will save regular snapshots of the model during training
+and save the logs and results to disk.
+
+Next, we are creating the :class:`hebel.optimizers.SGD` object. We
+instantiate the optimizer with the model, the parameter update rule,
+training data, validation data, and the schedulers for the learning
+rate and the momentum parameters.
+
+Finally, we can start the training by invoking the
+:meth:`hebel.optimizers.SGD.run` method. Here we train the model for
+100 epochs. However, by default :class:`hebel.optimizers.SGD` uses
+early stopping which means that it remembers the parameters that give
+the best result on the validation set and will reset the model
+parameters to them after the end of training.
+
+Evaluating on test data
+-----------------------
+
+After training is complete we can do anything we want with the trained
+model, such as using it in some prediction pipeline, pickle it to
+disk, etc. Here we are evaluating the performance of the model on the
+MNIST test data split:
+
+.. literalinclude:: ../examples/mnist_neural_net_deep_script.py
+   :lines: 37-40
+
 
