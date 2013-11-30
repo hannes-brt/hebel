@@ -16,9 +16,7 @@
 
 import numpy as np
 from hashlib import md5
-from .hidden_layer import HiddenLayer
-from .top_layer import TopLayer
-from .logistic_layer import LogisticLayer
+from ..layers import HiddenLayer, TopLayer, LogisticLayer
 from .model import Model
 
 
@@ -242,19 +240,13 @@ class NeuralNet(Model):
 
         **Returns:**
 
-        If ``return_cache == False``:
-
         loss : float
             The value of the loss function.
 
-        If ``return_cache == True``:
-
-        loss : float
-
-        hidden_cache : list
+        hidden_cache : list, only returned if ``return_cache == True``
             Cache as returned by :meth:`hebel.models.NeuralNet.feed_forward`.
 
-        activations : list
+        activations : list, only returned if ``return_cache == True``
             Hidden activations as returned by
             :meth:`hebel.models.NeuralNet.feed_forward`.
         """
@@ -383,16 +375,10 @@ class NeuralNet(Model):
 
         **Returns:**
         
-        If ``return_cache == False``:
-
         prediction : GPUArray
             Predictions from the model.
 
-        If ``return_cache == True``:
-
-        prediction : GPUArray
-
-        cache : list of GPUArray
+        cache : list of GPUArray, only returned if ``return_cache == True``
             Results of intermediary computations.    
         """
 

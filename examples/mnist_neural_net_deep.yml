@@ -3,32 +3,32 @@ run_conf:
 optimizer: !obj:hebel.optimizers.SGD {
   model: !obj:hebel.models.NeuralNet {
     layers: [
-      !obj:hebel.models.HiddenLayer {
+      !obj:hebel.layers.HiddenLayer {
         n_in: 784,
         n_units: 2000,
         dropout: yes,
         l2_penalty_weight: .0
       },
-      !obj:hebel.models.HiddenLayer {
+      !obj:hebel.layers.HiddenLayer {
         n_in: 2000,
         n_units: 2000,
         dropout: yes,
         l2_penalty_weight: .0
       },
-      !obj:hebel.models.HiddenLayer {
+      !obj:hebel.layers.HiddenLayer {
         n_in: 2000,
         n_units: 500,
         dropout: yes,
         l2_penalty_weight: .0
       },
-      !obj:hebel.models.HiddenLayer {
+      !obj:hebel.layers.HiddenLayer {
         n_in: 500,
         n_units: 500,
         dropout: yes,
         l2_penalty_weight: .0
       }    
     ],
-    top_layer: !obj:hebel.models.LogisticLayer {
+    top_layer: !obj:hebel.layers.LogisticLayer {
       n_in: 500,
       n_out: 10     
     }

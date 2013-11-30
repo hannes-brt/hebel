@@ -15,7 +15,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 from .neural_net import NeuralNet
-from .multitask_top_layer import MultitaskTopLayer
+from ..layers import MultitaskTopLayer
 
 class MultitaskNeuralNet(NeuralNet):
     TopLayerClass = MultitaskTopLayer
