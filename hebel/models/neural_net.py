@@ -16,7 +16,7 @@
 
 import numpy as np
 from hashlib import md5
-from ..layers import HiddenLayer, TopLayer, LogisticLayer
+from hebel.layers import HiddenLayer, TopLayer, LogisticLayer
 from .model import Model
 
 
