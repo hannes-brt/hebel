@@ -155,8 +155,8 @@ class MultitaskTopLayer(TopLayer):
                                                 lr_multiplier=lr_multiplier))
 
         else:
-            assert all([self.tasks[0].n_in == t.n_in for t in tasks])
             self.tasks = tasks
+            assert all([self.tasks[0].n_in == t.n_in for t in tasks])
 
             self.n_in = self.tasks[0].n_in
             self.n_out = [t.n_out for t in self.tasks]
