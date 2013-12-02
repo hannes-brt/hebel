@@ -31,6 +31,71 @@ from ..pycuda_ops.reductions import matrix_sum_out_axis
 
 
 class HiddenLayer(object):
+    r"""A fully connected hidden layer.
+
+    The ``HiddenLayer`` class represents a fully connected hidden
+    layer that can use a multitude of activation functions and supports
+    dropout, L1, and L2 regularization.
+
+    **Parameters:**
+
+    n_in : integer
+        Number of input units.
+
+    n_out : integer
+        Number of hidden units.
+
+    activation_function : {``sigmoid``, ``tanh``, ``relu``, ``linear``}, optional
+        Which activation function to use. Default is sigmoid.
+
+    parameters : array_like of ``GPUArray``
+        Parameters used to initialize the layer. If this is omitted,
+        then the weights are initalized randomly using *Bengio's rule*
+        (uniform distribution with scale :math:`4 \cdot \sqrt{6 /
+        (\mathtt{n\_in} + \mathtt{n\_out})}` if using sigmoid
+        activations and :math:`\sqrt{6 / (\mathtt{n\_in} +
+        \mathtt{n\_out})}` if using tanh, relu, or linear activations)
+        and the biases are initialized to zero. If ``parameters`` is
+        given, then is must be in the form ``[weights, biases]``,
+        where the shape of weights is ``(n_in, n_out)`` and the shape
+        of ``biases`` is ``(n_out,)``. Both weights and biases must be
+        ``GPUArray``.
+    
+    weights_scale : float, optional
+        If ``parameters`` is omitted, then this factor is used as
+        scale for initializing the weights instead of *Bengio's rule*.
+
+    l1_penalty_weight : float, optional
+        Weight used for L1 regularization of the weights.
+
+    l2_penalty_weight : float, optional
+       Weight used for L2 regularization of the weights.
+
+    lr_multiplier : float, optional
+        If this parameter is omitted, then the learning rate for the
+        layer is scaled by :math:`2 / \sqrt{\mathtt{n\_in}}`. You may
+        specify a different factor here.
+
+    **Examples**::
+
+        # Use the simple initializer and initialize with random weights
+        hidden_layer = HiddenLayer(500, 10000)
+
+        # Sample weights yourself, specify an L1 penalty, and don't
+        # use learning rate scaling
+        import numpy as np
+        from pycuda import gpuarray
+
+        n_in = 500
+        n_out = 1000
+        weights = gpuarray.to_gpu(.01 * np.random.randn(n_in, n_out))
+        biases = gpuarray.to_gpu(np.zeros((n_out,)))
+        hidden_layer = HiddenLayer(n_in, n_out,
+                                   parameters=(weights, biases),
+                                   l1_penalty_weight=.1,
+                                   lr_multiplier=1.)
+
+    """
     n_parameters = 2
     W = None
     b = None
@@ -40,8 +105,9 @@ class HiddenLayer(object):
                  dropout=False,
                  parameters=None,
                  weights_scale=None,
-                 lr_multiplier=None,
-                 l1_penalty_weight=0., l2_penalty_weight=0.):
+                 l1_penalty_weight=0.,
+                 l2_penalty_weight=0.,
+                 lr_multiplier=None):
 
         self._set_activation_fct(activation_function)
 
@@ -79,25 +145,29 @@ class HiddenLayer(object):
 
     @property
     def parameters(self):
+        """Return a tuple ``(weights, biases)``"""
         return (self.W, self.b)
 
     @parameters.setter
     def parameters(self, value):
+        """Update the parameters. ``value`` must have the shape
+        ``(weights, biases)``"""
         self.W = value[0] if isinstance(value[0], GPUArray) else \
           gpuarray.to_gpu(value[0])
         self.b = value[1] if isinstance(value[0], GPUArray) else \
           gpuarray.to_gpu(value[1])
 
-    def update_parameters(self, values, stream=None):
-        assert len(values) == self.n_parameters
+    # def update_parameters(self, values, stream=None):
+    #     assert len(values) == self.n_parameters
 
-        for (param, (gparam, mult)) \
-            in izip((self.W, self.b), values):
-            param._axpbyz(1., gparam, mult, param,
-                          stream=stream)
+    #     for (param, (gparam, mult)) \
+    #         in izip((self.W, self.b), values):
+    #         param._axpbyz(1., gparam, mult, param,
+    #                       stream=stream)
 
     @property
     def architecture(self):
+        """Returns a dictionary describing the architecture of the layer."""
         arch = {'class': self.__class__,
                 'n_in': self.n_in,
                 'n_units': self.n_units,
@@ -146,21 +216,22 @@ class HiddenLayer(object):
             gpuarray.sum(self.W ** 2.).get()
 
     def feed_forward(self, input_data, prediction=False):
-        """ Propagate forward through the hidden layer.
-        Inputs:
-        input_data -- input from the previous layer
-        prediction -- (bool) whether predicting or training
+        """Propagate forward through the layer
 
-        Outputs:
-        lin_activations
-        activations
+        **Parameters:**
 
-        If self.dropout = True and prediction=False:
-        Output:
-        lin_activations
-        activations
-        dropout_mask: binary mask of dropped units
+        input_data : ``GPUArray``
+            Inpute data to compute activations for.
 
+        prediction : bool, optional
+            Whether to use prediction model. Only relevant when using
+            dropout. If true, then weights are halved if the layers
+            uses dropout.
+
+        **Returns:**
+        
+        activations : ``GPUArray``
+            The activations of the hidden units.
         """
 
         activations = linalg.dot(input_data, self.W)
@@ -180,16 +251,27 @@ class HiddenLayer(object):
     def backprop(self, input_data, df_output, cache=None):
         """ Backpropagate through the hidden layer
 
-        Inputs:
-        input_data
-        df_output: the gradient wrt the output units
-        cache (optional): cache object from the forward pass
+        **Parameters:**
 
-        Output:
-        df_W: gradient wrt the weights
-        df_b: gradient wrt the bias
-        df_input: gradient wrt the input
+        input_data : ``GPUArray``
+            Inpute data to compute activations for.
 
+        df_output : ``GPUArray``
+            Gradients with respect to the activations of this layer
+            (received from the layer above).
+
+        cache : list of ``GPUArray``
+            Cache obtained from forward pass. If the cache is
+            provided, then the activations are not recalculated.
+
+        **Returns:**
+
+        gradients : tuple of ``GPUArray``
+            Gradients with respect to the weights and biases in the
+            form ``(df_weights, df_biases)``.
+
+        df_input : ``GPUArray``
+            Gradients with respect to the input.
         """
 
         # Get cache if it wasn't provided

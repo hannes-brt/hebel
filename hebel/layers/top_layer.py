@@ -18,4 +18,6 @@ from .hidden_layer import HiddenLayer
 
 
 class TopLayer(HiddenLayer):
+    """Abstract base class for a top-level layer."""
+    
     n_tasks = 1

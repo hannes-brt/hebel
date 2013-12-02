@@ -30,9 +30,66 @@ from ..pycuda_ops.softmax import softmax, cross_entropy
 
 
 class LogisticLayer(TopLayer):
-    """ A logistic classification layer, using
-    cross-entropy and softmax activation.
+    r""" A logistic classification layer, using
+    cross-entropy loss function and softmax activations.
 
+    **Parameters:**
+    
+    n_in : integer
+        Number of input units.
+
+    n_out : integer
+        Number of output units (classes).
+
+    parameters : array_like of ``GPUArray``
+        Parameters used to initialize the layer. If this is omitted,
+        then the weights are initalized randomly using *Bengio's rule*
+        (uniform distribution with scale :math:`4 \cdot \sqrt{6 /
+        (\mathtt{n\_in} + \mathtt{n\_out})}`) and the biases are
+        initialized to zero. If ``parameters`` is given, then is must
+        be in the form ``[weights, biases]``, where the shape of
+        weights is ``(n_in, n_out)`` and the shape of ``biases`` is
+        ``(n_out,)``. Both weights and biases must be ``GPUArray``.
+    
+    weights_scale : float, optional
+        If ``parameters`` is omitted, then this factor is used as
+        scale for initializing the weights instead of *Bengio's rule*.
+
+    l1_penalty_weight : float, optional
+        Weight used for L1 regularization of the weights.
+
+    l2_penalty_weight : float, optional
+       Weight used for L2 regularization of the weights.
+
+    lr_multiplier : float, optional
+        If this parameter is omitted, then the learning rate for the
+        layer is scaled by :math:`2 / \sqrt{\mathtt{n\_in}}`. You may
+        specify a different factor here.
+
+    test_error_fct : {``class_error``, ``kl_error``, ``cross_entropy_error``}, optional
+        Which error function to use on the test set. Default is
+        ``class_error`` for classification error. Other choices are
+        ``kl_error``, the Kullback-Leibler divergence, or
+        ``cross_entropy_error``.
+
+    **Examples**::
+
+        # Use the simple initializer and initialize with random weights
+        logistic_layer = LogisticLayer(1000, 10)
+
+        # Sample weights yourself, specify an L1 penalty, and don't
+        # use learning rate scaling
+        import numpy as np
+        from pycuda import gpuarray
+
+        n_in = 1000
+        n_out = 10
+        weights = gpuarray.to_gpu(.01 * np.random.randn(n_in, n_out))
+        biases = gpuarray.to_gpu(np.zeros((n_out,)))
+        logistic_layer = LogisticLayer(n_in, n_out,
+                                       parameters=(weights, biases),
+                                       l1_penalty_weight=.1,
+                                       lr_multiplier=1.)
     """
 
     act_f = softmax
@@ -45,12 +102,6 @@ class LogisticLayer(TopLayer):
                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  lr_multiplier=None,
                  test_error_fct='class_error'):
-        """ Inputs:
-        n_in: number of input units
-        n_out: number of output units (classes)
-        loss_function: currently only works with cross_entropy
-
-        """
 
         # Initialize weight using Bengio's rule
         self.weights_scale = 4 * sqrt(6. / (n_in + n_out)) \
@@ -58,10 +109,7 @@ class LogisticLayer(TopLayer):
                                 else weights_scale
 
         if parameters is not None:
-            if isinstance(parameters, basestring):
-                self.parameters = cPickle.loads(open(parameters))
-            else:
-                self.W, self.b = parameters
+            self.W, self.b = parameters
         else:
             self.W = self.weights_scale * \
                      sampler.gen_uniform((n_in, n_out), dtype=np.float32) \
@@ -87,17 +135,22 @@ class LogisticLayer(TopLayer):
                 'n_out': self.n_out}
 
     def feed_forward(self, input_data, prediction=False):
-        """ Propagate forward through the layer
+        """Propagate forward through the layer.
 
-        Inputs:
-        input_data
-        return_cache: (bool) whether to return the cache object
-        prediction: (bool) whether to half the weights when
-            the preceding layer uses dropout
+        **Parameters:**
 
-        Outputs:
-        activations
+        input_data : ``GPUArray``
+            Inpute data to compute activations for.
 
+        prediction : bool, optional
+            Whether to use prediction model. Only relevant when using
+            dropout. If true, then weights are halved if the layers
+            uses dropout.
+
+        **Returns:**
+        
+        activations : ``GPUArray``
+            The activations of the output units.
         """
         activations = linalg.dot(input_data, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
@@ -107,16 +160,28 @@ class LogisticLayer(TopLayer):
 
     def backprop(self, input_data, targets,
                  cache=None):
-        """ Backpropagate through the logistic layer
+        """ Backpropagate through the logistic layer.
 
-        Inputs:
-        input_data
-        targets
-        get_df_input: (bool) whether to compute and return the
-            gradient wrt the inputs
-        return_cache: (bool) whether to return the cache
-        cache: cache object from forward pass
+        **Parameters:**
 
+        input_data : ``GPUArray``
+            Inpute data to compute activations for.
+
+        targets : ``GPUArray``
+            The target values of the units.
+
+        cache : list of ``GPUArray``
+            Cache obtained from forward pass. If the cache is
+            provided, then the activations are not recalculated.
+
+        **Returns:**
+
+        gradients : tuple of ``GPUArray``
+            Gradients with respect to the weights and biases in the
+            form ``(df_weights, df_biases)``.
+
+        df_input : ``GPUArray``
+            Gradients with respect to the input.
         """
 
         if cache is not None:
@@ -147,6 +212,38 @@ class LogisticLayer(TopLayer):
 
     def test_error(self, input_data, targets, average=True,
                    cache=None, prediction=True):
+        """Compute the test error function given some data and targets.
+
+        Uses the error function defined in
+        :class:`LogisticLayer.test_error_fct`, which may be different
+        from the cross-entropy error function used for
+        training'. Alternatively, the other test error functions may
+        be called directly.
+
+        **Parameters:**
+
+        input_data : ``GPUArray``
+            Inpute data to compute the test error function for.
+
+        targets : ``GPUArray``
+            The target values of the units.
+
+        average : bool
+            Whether to divide the value of the error function by the
+            number of data points given.
+
+        cache : list of ``GPUArray``
+            Cache obtained from forward pass. If the cache is
+            provided, then the activations are not recalculated.
+
+        prediction : bool, optional
+            Whether to use prediction model. Only relevant when using
+            dropout. If true, then weights are halved if the layers
+            uses dropout.
+
+        **Returns:**
+        test_error : float
+        """    
         if self.test_error_fct == 'class_error':
             test_error = self.class_error
         elif self.test_error_fct == 'kl_error':

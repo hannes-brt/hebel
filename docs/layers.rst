@@ -14,42 +14,35 @@
    with this program; if not, write to the Free Software Foundation, Inc.,
    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-Data Providers
-**************
+Layers
+******
 
-Abstract Base Class
-===================
+Hidden Layer
+============
 
-.. autoclass:: hebel.data_providers.DataProvider
+.. autoclass:: hebel.layers.HiddenLayer
    :members:
 
-Minibatch Data Provider
-=======================
-
-.. autoclass:: hebel.data_providers.MiniBatchDataProvider
+.. autoclass:: hebel.layers.DummyLayer
    :members:
 
-Multi-Task Data Provider
-========================
+Top Layers
+==========
 
-.. autoclass:: hebel.data_providers.MultiTaskDataProvider
+Abstract Base Class Top Layer
+-----------------------------
+
+.. autoclass:: hebel.layers.TopLayer
    :members:
 
-Batch Data Provider
-===================
+Logistic Layer
+--------------
 
-.. autoclass:: hebel.data_providers.BatchDataProvider
+.. autoclass:: hebel.layers.LogisticLayer
    :members:
 
-Dummy Data Provider
-===================
+Multitask Top Layer
+-------------------
 
-.. autoclass:: hebel.data_providers.DummyDataProvider
+.. autoclass:: hebel.layers.MultitaskTopLayer
    :members:
-
-MNIST Data Provider
-===================
-
-.. autoclass:: hebel.data_providers.MNISTDataProvider
-   :members:
-

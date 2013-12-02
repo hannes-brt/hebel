@@ -18,7 +18,8 @@ from .hidden_layer import HiddenLayer
 
 
 class DummyLayer(HiddenLayer):
-    """ This class has no input and simply passes through its input
+    """ This class has no hidden units and simply passes through its
+    input
     """
 
     lr_multiplier = []
