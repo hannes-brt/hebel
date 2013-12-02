@@ -43,7 +43,7 @@ class SimpleSGDUpdate(ParameterUpdater):
         multiplier = [-lr_mult * learning_rate / batch_size for lr_mult in
                       self.model.lr_multiplier]
         update = zip(gradients, multiplier)
-        self.model.parameters = update
+        self.model.update_parameters(update)
 
 
 class MomentumUpdate(ParameterUpdater):
@@ -63,7 +63,7 @@ class MomentumUpdate(ParameterUpdater):
                            gparam, -learning_rate * lr_multiplier / batch_size,
                            vparam, stream=stream)
             updates.append((vparam, 1.))
-        self.model.parameters = updates
+        self.model.update_parameters(updates)
 
 
 class NesterovMomentumUpdate(MomentumUpdate):
@@ -73,7 +73,7 @@ class NesterovMomentumUpdate(MomentumUpdate):
         """
 
         updates = zip(self.velocity, self.model.n_parameters * [1.])
-        self.model.parameters = updates
+        self.model.update_parameters(updates)
 
     def post_gradient_update(self, gradients, batch_size,
                              learning_parameters, stream=None):
@@ -97,4 +97,4 @@ class NesterovMomentumUpdate(MomentumUpdate):
             #    - learning_rate*lr_multiplier/batch_size*gparam
             vparam._axpbyz(momentum, gparam, -learning_rate*lr_multiplier/batch_size,
                            vparam, stream=stream)
-        self.model.parameters = updatesn
+        self.model.update_parameters(updates)

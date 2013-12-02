@@ -157,13 +157,13 @@ class HiddenLayer(object):
         self.b = value[1] if isinstance(value[0], GPUArray) else \
           gpuarray.to_gpu(value[1])
 
-    # def update_parameters(self, values, stream=None):
-    #     assert len(values) == self.n_parameters
+    def update_parameters(self, values, stream=None):
+        assert len(values) == self.n_parameters
 
-    #     for (param, (gparam, mult)) \
-    #         in izip((self.W, self.b), values):
-    #         param._axpbyz(1., gparam, mult, param,
-    #                       stream=stream)
+        for (param, (gparam, mult)) \
+            in izip((self.W, self.b), values):
+            param._axpbyz(1., gparam, mult, param,
+                          stream=stream)
 
     @property
     def architecture(self):

@@ -203,7 +203,16 @@ class NeuralNet(Model):
 
         self.top_layer.parameters = value[-self.top_layer.n_parameters:]
 
-    @property
+    def update_parameters(self, value):
+        assert len(value) == self.n_parameters
+
+        i = 0
+        for hl in self.hidden_layers:
+            hl.update_parameters(value[i:i + hl.n_parameters])
+            i += hl.n_parameters
+
+        self.top_layer.update_parameters(value[-self.top_layer.n_parameters:])
+
     def checksum(self):
         """ Returns an MD5 digest of the model.
 
