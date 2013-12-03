@@ -4,6 +4,16 @@ GPU-Accelerated Deep Learning Library in Python
 
 Hebel is a library for deep learning with neural networks in Python using GPU acceleration with CUDA through PyCUDA. It implements the most important types of neural network models and offers a variety of different activation functions and training methods such as momentum, Nesterov momentum, dropout, and early stopping.
 
+## Models
+
+Right now, Hebel implements only feed-forward neural networks for classification on one or multiple tasks. Other models such as neural network regression, Autoencoder, Convolutional neural nets, and Restricted Boltzman machines are planned for the future.
+
+Hebel implements dropout as well as L1 and L2 weight decay for regularization.
+
+## Optimization
+
+Hebel implements stochastic gradient descent (SGD) with regular and Nesterov momentum.
+
 ## Compatibility
 
 Currently, Hebel will only run on Linux and probably Mac OS X (not tested). Hebel currently won't run in Windows, because scikits.cuda is not supported in Windows.
