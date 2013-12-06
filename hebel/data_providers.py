@@ -14,16 +14,33 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-""" DataProviders are classes that provide iterators which return
-batches for training. This makes it possible, e.g. to write special
-DataProviders to fetch data from a database, do some preprocessing on
-each minibatch, etc.
+""" Data Providers
+**************
+
+All data consumed by Hebel models must be provided in the form of
+``DataProvider`` objects. ``DataProviders`` are classes that provide
+iterators which return batches for training. By writing custom
+``DataProviders```, this creates a lot of flexibility about where data
+can come from and enables any sort of pre-processing on the data. For
+example, a user could write a ``DataProvider`` that receives data from
+the internet or through a pipe from a different process. Or, when
+working with text data, a user may define a custom ``DataProvider`` to
+perform tokenization and stemming on the text before returning it.
+
+A ``DataProvider`` is defined by subclassing the
+:class:`hebel.data_provider.DataProvider` class and must implement at
+a minimum the special methods ``__iter__`` and ``next``.
 """
 
 import numpy as np
 from pycuda import gpuarray
 
 class DataProvider(object):
+    """ This is the abstract base class for ``DataProvider``
+    objects. Subclass this class to implement a custom design. At a
+    minimum you must provide implementations of the ``next`` method.
+    """
+    
     def __init__(self, data, targets, batch_size):
         self.data = data
         self.targets = targets
@@ -49,6 +66,22 @@ class DataProvider(object):
 
 
 class MiniBatchDataProvider(DataProvider):
+    """ This is the standard ``DataProvider`` for mini-batch learning
+    with stochastic gradient descent.
+
+    Input and target data may either be provided as ``numpy.array``
+    objects, or as ``pycuda.GPUArray`` objects. The latter is
+    preferred if the data can fit on GPU memory and will be much
+    faster, as the data won't have to be transferred to the GPU for
+    every minibatch. If the data is provided as a ``numpy.array``,
+    then every minibatch is automatically converted to to a
+    ``pycuda.GPUArray`` and transferred to the GPU.
+
+    :param data: Input data.
+    :param targets: Target data.
+    :param batch_size: The size of mini-batches.
+    """
+    
     def __getitem__(self, batch_idx):
         return self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
 
@@ -72,6 +105,23 @@ class MiniBatchDataProvider(DataProvider):
 
 
 class MultiTaskDataProvider(DataProvider):
+    """ ``DataProvider`` for multi-task learning that uses the same
+    training data for multiple targets.
+
+    This ``DataProvider`` is similar to the
+    :class:`hebel.data_provider.MiniBatchDataProvider`, except that it
+    has not one but multiple targets.
+
+    :param data: Input data.
+    :param targets: Multiple targets as a list or tuple.
+    :param batch_size: The size of mini-batches.
+
+    **See also:**
+
+    :class:`hebel.models.MultitaskNeuralNet`, :class:`hebel.layers.MultitaskTopLayer`
+    
+    """
+    
     def __init__(self, data, targets, batch_size=None):
         assert all([targets[0].shape[0] == t.shape[0] for t in targets])
         assert all([type(targets[0]) == type(t) for t in targets])
@@ -145,6 +195,16 @@ class MultiTaskDataProvider(DataProvider):
 
 
 class BatchDataProvider(MiniBatchDataProvider):
+    """``DataProvider`` for batch learning. Always returns the full data set.
+
+    :param data: Input data.
+    :param targets: Target data.
+
+    **See also:**
+
+    :class:`hebel.data_providers.MiniBatchDataProvider`
+
+    """
     def __init__(self, data, targets):
         self.data = data
         self.targets = targets
@@ -166,6 +226,10 @@ class BatchDataProvider(MiniBatchDataProvider):
         return self.data
 
 class DummyDataProvider(DataProvider):
+    """A dummy ``DataProvider`` that does not store any data and
+    always returns ``None``.
+    """
+    
     def __init__(self, *args, **kwargs):
         pass
 
@@ -176,6 +240,17 @@ class DummyDataProvider(DataProvider):
         return None, None
 
 class MNISTDataProvider(DataProvider):
+    """``DataProvider`` that automatically provides data from the
+    `MNIST <http://yann.lecun.com/exdb/mnist/>`_ data set of
+    hand-written digits.
+
+    Depends on the `skdata <http://jaberg.github.io/skdata/>`_ package.
+
+    :param array: {'train', 'val', 'test'}
+        Whether to use the official training, validation, or test data split of MNIST.
+    :param batch_size: The size of mini-batches.
+    """
+    
     from skdata.mnist.views import OfficialVectorClassification
     mnist = OfficialVectorClassification()
 
