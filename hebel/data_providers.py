@@ -210,6 +210,7 @@ class BatchDataProvider(MiniBatchDataProvider):
         self.targets = targets
         self.N = data.shape[0]
         self.i = 0
+        self.batch_size = self.N
 
     def __getitem__(self, batch_idx):
         if batch_idx == 0:
@@ -223,7 +224,7 @@ class BatchDataProvider(MiniBatchDataProvider):
             raise StopIteration
 
         self.i += self.N
-        return self.data
+        return self.data, self.targets
 
 class DummyDataProvider(DataProvider):
     """A dummy ``DataProvider`` that does not store any data and
@@ -251,7 +252,7 @@ class MNISTDataProvider(DataProvider):
     :param batch_size: The size of mini-batches.
     """
     
-    from skdata.mnist.views import OfficialVectorClassification
+    from skdata.mnist.view import OfficialVectorClassification
     mnist = OfficialVectorClassification()
 
     def __init__(self, array, batch_size=None):
