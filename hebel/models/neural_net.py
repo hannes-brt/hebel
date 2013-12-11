@@ -264,7 +264,7 @@ class NeuralNet(Model):
         activations, hidden_cache = self.feed_forward(
             input_data, return_cache=True, prediction=prediction)
 
-        loss = self.top_layer.cross_entropy_error(None,
+        loss = self.top_layer.train_error(None,
             targets, average=False, cache=activations,
             prediction=prediction)
 

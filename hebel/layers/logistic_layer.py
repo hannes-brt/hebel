@@ -272,6 +272,8 @@ class LogisticLayer(TopLayer):
 
         if average: loss = loss.mean()
         return loss
+        
+    train_error = cross_entropy_error
 
     def class_error(self, input_data, targets, average=True,
                     cache=None, prediction=False):

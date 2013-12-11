@@ -17,4 +17,5 @@
 from .logistic_regression import LogisticRegression
 from .multitask_neural_net import MultitaskNeuralNet
 from .neural_net import NeuralNet
+from .neural_net_regression import NeuralNetRegression
 from .model import Model
