@@ -14,40 +14,43 @@
    with this program; if not, write to the Free Software Foundation, Inc.,
    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+Data Providers
+==============
+
 .. automodule:: hebel.data_providers
 
 Abstract Base Class
-===================
+-------------------
 
 .. autoclass:: hebel.data_providers.DataProvider
    :members:
 
 Minibatch Data Provider
-=======================
+-----------------------
 
 .. autoclass:: hebel.data_providers.MiniBatchDataProvider
    :members:
 
 Multi-Task Data Provider
-========================
+------------------------
 
 .. autoclass:: hebel.data_providers.MultiTaskDataProvider
    :members:
 
 Batch Data Provider
-===================
+-------------------
 
 .. autoclass:: hebel.data_providers.BatchDataProvider
    :members:
 
 Dummy Data Provider
-===================
+-------------------
 
 .. autoclass:: hebel.data_providers.DummyDataProvider
    :members:
 
 MNIST Data Provider
-===================
+-------------------
 
 .. autoclass:: hebel.data_providers.MNISTDataProvider
    :members:

@@ -14,9 +14,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-""" Data Providers
-**************
-
+""" 
 All data consumed by Hebel models must be provided in the form of
 ``DataProvider`` objects. ``DataProviders`` are classes that provide
 iterators which return batches for training. By writing custom
