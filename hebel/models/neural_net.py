@@ -316,12 +316,12 @@ class NeuralNet(Model):
         gradients = list(df_top_layer[0][::-1])
         df_hidden = df_top_layer[1]
 
-        hidden_inputs = [input_data] + [c[0] for c in hidden_cache[:-1]]
-        for hl, hc, hi in \
-            zip(self.hidden_layers[::-1], hidden_cache[::-1],
-                hidden_inputs[::-1]):
-            g, df_hidden = hl.backprop(hi, df_hidden, cache=hc)
-            gradients.extend(g[::-1])
+        if self.hidden_layers:
+            for hl, hc, hi in \
+                zip(self.hidden_layers[::-1], hidden_cache[::-1],
+                    hidden_inputs[::-1]):
+                g, df_hidden = hl.backprop(hi, df_hidden, cache=hc)
+                gradients.extend(g[::-1])
 
         gradients.reverse()
 
@@ -391,6 +391,7 @@ class NeuralNet(Model):
             Results of intermediary computations.    
         """
 
+        hidden_cache = None     # Create variable in case there are no hidden layers
         if self.hidden_layers:
             # Forward pass
             hidden_cache = []
