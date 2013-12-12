@@ -160,8 +160,8 @@ class NeuralNet(Model):
         else:
             self.top_layer = top_layer
 
-        self.n_in = self.hidden_layers[0].n_in
-        self.n_out = self.top_layer.n_out
+        self.n_in = self.hidden_layers[0].n_in if self.hidden_layers else n_in
+        self.n_out = self.top_layer.n_out 
 
         self.n_parameters = sum(hl.n_parameters
                                 for hl in self.hidden_layers) + \
