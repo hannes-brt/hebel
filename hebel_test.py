@@ -18,15 +18,17 @@ import unittest
 import random
 import numpy as np
 import pycuda.autoinit
+from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from hebel import sampler
-from hebel.models import NeuralNet
+from hebel.models import NeuralNet, NeuralNetRegression
 from hebel.optimizers import SGD
 from hebel.parameter_updaters import SimpleSGDUpdate, \
     MomentumUpdate, NesterovMomentumUpdate
-from hebel.data_providers import MNISTDataProvider
+from hebel.data_providers import MNISTDataProvider, BatchDataProvider
 from hebel.monitors import SimpleProgressMonitor
-from hebel.schedulers import exponential_scheduler, linear_scheduler_up
+from hebel.schedulers import exponential_scheduler, linear_scheduler_up, \
+    constant_scheduler
 from hebel.pycuda_ops.matrix import extract_columns, insert_columns
 from hebel.pycuda_ops.elementwise import sample_dropout_mask
 
@@ -146,5 +148,35 @@ class TestSampleDropoutMask(unittest.TestCase):
             self.assertTrue(np.all((X.get()[:, start:end] != 0.)
                                    == dropout_mask.get()))
 
+class TestNeuralNetRegression(unittest.TestCase):
+    def test_neural_net_regression(self):
+        for _ in range(20):
+            N = 10000    # Number of data points
+            D = 100      # Dimensionality of exogenous data
+            P = 50       # Dimensionality of endogenous data
+
+            W_true = 10 * np.random.rand(D, P) - 5
+            b_true = 100 * np.random.rand(P) - 50
+
+            X = np.random.randn(N, D)
+            Y = np.dot(X, W_true) + b_true[np.newaxis, :] + np.random.randn(N, P)        
+
+            W_lstsq = np.linalg.lstsq(np.c_[np.ones((N, 1)), X], Y)[0]
+            b_lstsq = W_lstsq[0]
+            W_lstsq = W_lstsq[1:]
+
+            data_provider = BatchDataProvider(gpuarray.to_gpu(X.astype(np.float32)),
+                                              gpuarray.to_gpu(Y.astype(np.float32)))
+
+            model = NeuralNetRegression([], n_in=D, n_out=P)
+            optimizer = SGD(model, SimpleSGDUpdate, 
+                            data_provider, data_provider,
+                            learning_rate_schedule=constant_scheduler(10.),
+                            early_stopping=True)
+            optimizer.run(100)
+
+            self.assertLess(np.abs(W_lstsq - model.top_layer.W.get()).max(),
+                            1e-5)
+        
 if __name__ == '__main__':
     unittest.main()
