@@ -29,6 +29,12 @@ Neural Network
 .. autoclass:: hebel.models.NeuralNet
    :members:
 
+Neural Network Regression
+=========================
+
+.. autoclass:: hebel.models.NeuralNetRegression
+   :members:
+
 Logistic Regression
 ===================
 

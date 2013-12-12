@@ -72,6 +72,12 @@ class LogisticLayer(TopLayer):
         ``kl_error``, the Kullback-Leibler divergence, or
         ``cross_entropy_error``.
 
+    **See also:**
+
+    :class:`hebel.models.NeuralNet`,
+    :class:`hebel.models.NeuralNetRegression`,
+    :class:`hebel.layers.LinearRegressionLayer`
+
     **Examples**::
 
         # Use the simple initializer and initialize with random weights
@@ -92,8 +98,6 @@ class LogisticLayer(TopLayer):
                                        lr_multiplier=1.)
     """
 
-    act_f = softmax
-    loss_f = cross_entropy
     n_parameters = 2
 
     def __init__(self, n_in, n_out,

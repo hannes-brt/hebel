@@ -41,6 +41,12 @@ Logistic Layer
 .. autoclass:: hebel.layers.LogisticLayer
    :members:
 
+Linear Regression Layer
+-----------------------
+
+.. autoclass:: hebel.layers.LinearRegressionLayer
+   :members:
+
 Multitask Top Layer
 -------------------
 

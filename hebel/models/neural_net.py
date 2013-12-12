@@ -69,6 +69,7 @@ class NeuralNet(Model):
     **See also:**
     
     :class:`hebel.models.LogisticRegression`,
+    :class:`hebel.models.NeuralNetRegression`,
     :class:`hebel.models.MultitaskNeuralNet`
 
     **Examples**::

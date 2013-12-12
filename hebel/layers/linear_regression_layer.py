@@ -26,6 +26,56 @@ from ..pycuda_ops.matrix import add_vec_to_mat
 
 
 class LinearRegressionLayer(LogisticLayer):
+    r"""Linear regression layer with linear outputs and squared loss error function.
+
+        **Parameters:**
+    
+    n_in : integer
+        Number of input units.
+
+    n_out : integer
+        Number of output units (classes).
+
+    parameters : array_like of ``GPUArray``
+        Parameters used to initialize the layer. If this is omitted,
+        then the weights are initalized randomly using *Bengio's rule*
+        (uniform distribution with scale :math:`4 \cdot \sqrt{6 /
+        (\mathtt{n\_in} + \mathtt{n\_out})}`) and the biases are
+        initialized to zero. If ``parameters`` is given, then is must
+        be in the form ``[weights, biases]``, where the shape of
+        weights is ``(n_in, n_out)`` and the shape of ``biases`` is
+        ``(n_out,)``. Both weights and biases must be ``GPUArray``.
+    
+    weights_scale : float, optional
+        If ``parameters`` is omitted, then this factor is used as
+        scale for initializing the weights instead of *Bengio's rule*.
+
+    l1_penalty_weight : float, optional
+        Weight used for L1 regularization of the weights.
+
+    l2_penalty_weight : float, optional
+       Weight used for L2 regularization of the weights.
+
+    lr_multiplier : float, optional
+        If this parameter is omitted, then the learning rate for the
+        layer is scaled by :math:`2 / \sqrt{\mathtt{n\_in}}`. You may
+        specify a different factor here.
+
+    test_error_fct : {``class_error``, ``kl_error``, ``cross_entropy_error``}, optional
+        Which error function to use on the test set. Default is
+        ``class_error`` for classification error. Other choices are
+        ``kl_error``, the Kullback-Leibler divergence, or
+        ``cross_entropy_error``.
+
+    **See also:**
+
+    :class:`hebel.models.NeuralNetRegression`,
+    :class:`hebel.models.NeuralNet`,
+    :class:`hebel.layers.LogisticLayer`
+
+    """
+
+    
     n_parameters = 2
     
     def __init__(self, n_in, n_out,
@@ -80,58 +130,6 @@ class LinearRegressionLayer(LogisticLayer):
         activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         return activations
-
-    def backprop(self, input_data, targets,
-                 cache=None):
-        """ Backpropagate through the logistic layer.
-
-        **Parameters:**
-
-        input_data : ``GPUArray``
-            Inpute data to compute activations for.
-
-        targets : ``GPUArray``
-            The target values of the units.
-
-        cache : list of ``GPUArray``
-            Cache obtained from forward pass. If the cache is
-            provided, then the activations are not recalculated.
-
-        **Returns:**
-
-        gradients : tuple of ``GPUArray``
-            Gradients with respect to the weights and biases in the
-            form ``(df_weights, df_biases)``.
-
-        df_input : ``GPUArray``
-            Gradients with respect to the input.
-        """
-
-        if cache is not None:
-            activations = cache
-        else:
-            activations = self.feed_forward(input_data, prediction=False)
-
-        delta = activations - targets
-        nan_to_zeros(delta, delta)
-            
-        # Gradient wrt weights
-        df_W = linalg.dot(input_data, delta, transa='T')
-        # Gradient wrt bias
-        df_b = matrix_sum_out_axis(delta, 0)
-
-        # Gradient wrt input
-        df_input = linalg.dot(delta, self.W, transb='T')
-
-        # L1 penalty
-        if self.l1_penalty_weight:
-            df_W -= self.l1_penalty_weight * sign(self.W)
-
-        # L2 penalty
-        if self.l2_penalty_weight:
-            df_W -= self.l2_penalty_weight * self.W
-
-        return (df_W, df_b), df_input
 
     def test_error(self, input_data, targets, average=True,
                    cache=None, prediction=True):
