@@ -249,8 +249,11 @@ class MNISTDataProvider(DataProvider):
         Whether to use the official training, validation, or test data split of MNIST.
     :param batch_size: The size of mini-batches.
     """
-    
-    from skdata.mnist.view import OfficialVectorClassification
+
+    try:
+        from skdata.mnist.view import OfficialVectorClassification
+    except ImportError:
+        from skdata.mnist.views import OfficialVectorClassification
     mnist = OfficialVectorClassification()
 
     def __init__(self, array, batch_size=None):
