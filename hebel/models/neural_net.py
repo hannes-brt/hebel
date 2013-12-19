@@ -318,6 +318,7 @@ class NeuralNet(Model):
         df_hidden = df_top_layer[1]
 
         if self.hidden_layers:
+            hidden_inputs = [input_data] + [c[0] for c in hidden_cache[:-1]]            
             for hl, hc, hi in \
                 zip(self.hidden_layers[::-1], hidden_cache[::-1],
                     hidden_inputs[::-1]):
