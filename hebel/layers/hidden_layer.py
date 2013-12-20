@@ -48,6 +48,9 @@ class HiddenLayer(object):
     activation_function : {``sigmoid``, ``tanh``, ``relu``, ``linear``}, optional
         Which activation function to use. Default is sigmoid.
 
+    dropout : bool
+        Whether the layer should use dropout (with dropout probability 0.5)
+
     parameters : array_like of ``GPUArray``
         Parameters used to initialize the layer. If this is omitted,
         then the weights are initalized randomly using *Bengio's rule*
