@@ -3,27 +3,35 @@ run_conf:
 optimizer: !obj:hebel.optimizers.SGD {
   model: !obj:hebel.models.NeuralNet {
     layers: [
+      !obj:hebel.layers.InputDropout {
+        n_in: 784,
+        dropout_probability: .2,
+      },
       !obj:hebel.layers.HiddenLayer {
         n_in: 784,
         n_units: 2000,
+        activation_function: relu,
         dropout: yes,
         l2_penalty_weight: .0
       },
       !obj:hebel.layers.HiddenLayer {
         n_in: 2000,
         n_units: 2000,
+        activation_function: relu,
         dropout: yes,
         l2_penalty_weight: .0
       },
       !obj:hebel.layers.HiddenLayer {
         n_in: 2000,
         n_units: 500,
+        activation_function: relu,
         dropout: yes,
         l2_penalty_weight: .0
       },
       !obj:hebel.layers.HiddenLayer {
         n_in: 500,
         n_units: 500,
+        activation_function: relu,
         dropout: yes,
         l2_penalty_weight: .0
       }    
@@ -42,13 +50,13 @@ optimizer: !obj:hebel.optimizers.SGD {
     array: val
   },
   learning_rate_schedule: !obj:hebel.schedulers.exponential_scheduler {
-    init_value: 30., decay: .995
+    init_value: 5., decay: .995
   },
   momentum_schedule: !obj:hebel.schedulers.linear_scheduler_up {
-    init_value: .5, target_value: .9, duration: 10
+    init_value: .1, target_value: .9, duration: 100
   },
   progress_monitor:
-    !obj:hebel.nets.monitors.ProgressMonitor {
+    !obj:hebel.monitors.ProgressMonitor {
       experiment_name: mnist_deep,
       save_model_path: examples/mnist,
       save_interval: 10,
@@ -58,4 +66,4 @@ optimizer: !obj:hebel.optimizers.SGD {
 test_dataset:
   test_data: !obj:hebel.data_providers.MNISTDataProvider {
     array: test
-  }
+}
