@@ -119,7 +119,7 @@ class TestSampleDropoutMask(unittest.TestCase):
     def test_sample_dropout_mask(self):
         for _ in range(20):
             height = 1000
-            width = np.random.randint(500, 10000)
+            width = 10000
             dropout_prob = np.random.rand()
             X = sampler.gen_uniform((height, width), np.float32)
             dropout_mask = sample_dropout_mask(X, dropout_prob)

@@ -16,7 +16,7 @@
 
 import numpy as np
 from hashlib import md5
-from ..layers import HiddenLayer, TopLayer, LogisticLayer
+from ..layers import HiddenLayer, TopLayer, LogisticLayer, InputDropout
 from .model import Model
 
 
@@ -46,6 +46,9 @@ class NeuralNet(Model):
 
     dropout : bool, optional
         Whether to use dropout regularization
+
+    input_dropout : float, in ``[0, 1]``
+        Dropout probability for the input (default 0.0).
 
     n_in : integer, optional
         The dimensionality of the input. Must be given, if the first
@@ -94,7 +97,7 @@ class NeuralNet(Model):
     TopLayerClass = LogisticLayer
 
     def __init__(self, layers, top_layer=None, activation_function='sigmoid',
-                 dropout=False, n_in=None, n_out=None,
+                 dropout=False, input_dropout=0., n_in=None, n_out=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  **kwargs):
         self.n_layers = len(layers)
@@ -134,11 +137,16 @@ class NeuralNet(Model):
                 dropout = [False]
 
         self.hidden_layers = []
+
+        self.input_dropout = input_dropout
+        if input_dropout:
+            self.hidden_layers.append(InputDropout(n_in, dropout_probability))
+        
         for i, hidden_layer in enumerate(layers):
             if isinstance(hidden_layer, HiddenLayer):
                 self.hidden_layers.append(hidden_layer)
             elif isinstance(hidden_layer, int):
-                n_in_hidden = self.hidden_layers[-1].n_units if i > 0 else n_in
+                n_in_hidden = self.hidden_layers[-1].n_units if self.hidden_layers else n_in
                 self.hidden_layers.append(
                     HiddenLayer(
                         n_in_hidden, hidden_layer,

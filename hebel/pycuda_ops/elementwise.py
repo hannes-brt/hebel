@@ -57,20 +57,24 @@ all_kernels_code = {
         },
 
     'sample_dropout_mask': {
-        'float':  ("float *mat, float *dropout, float dropout_probability",
+        'float':  ("float *mat, float *target, float *dropout, float dropout_probability",
                    """if (dropout[i] <= dropout_probability) {
                         dropout[i] = 0.;
-                        mat[i] = 0.;
+                        target[i] = 0.;
                       } else {
                         dropout[i] = 1.;
+                        if (target != mat)
+                            target[i] = mat[i];
                       }
                     """),
-        'double':  ("double *mat, double *dropout, float dropout_probability",
+        'double':  ("double *mat, double *targets, double *dropout, float dropout_probability",
                     """if (dropout[i] <= dropout_probability) {
                         dropout[i] = 0.;
-                        mat[i] = 0.;
+                        target[i] = 0.;
                       } else {
                         dropout[i] = 1.;
+                        if (target != mat)                    
+                            target[i] = mat[i];
                       }
                     """)
         },
@@ -165,7 +169,7 @@ def linear(x):
 def df_linear(x):
     return x
 
-def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None):
+def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None, target=None):
     """ Samples a dropout mask and applies it in place"""
 
     assert x.flags.c_contiguous
@@ -178,8 +182,10 @@ def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None):
     shape = x.shape
     dropout_mask = sampler.gen_uniform(shape, x.dtype, stream)
 
+    if target is None: target = x
+    
     all_kernels['sample_dropout_mask'](
-        x, dropout_mask, np.float32(dropout_probability))
+        x, target, dropout_mask, np.float32(dropout_probability))
 
     if columns is not None:
         insert_columns(x, x_tmp, columns[0])
