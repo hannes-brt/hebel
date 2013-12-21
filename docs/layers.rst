@@ -23,6 +23,9 @@ Hidden Layer
 .. autoclass:: hebel.layers.HiddenLayer
    :members:
 
+.. autoclass:: hebel.layers.InputDropout
+   :members:
+
 .. autoclass:: hebel.layers.DummyLayer
    :members:
 

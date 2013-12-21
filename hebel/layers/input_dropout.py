@@ -26,18 +26,22 @@ from ..pycuda_ops.reductions import matrix_sum_out_axis
 class InputDropout(DummyLayer):
     r"""This layer performs dropout on the input data.
 
+    It does not have any learnable parameters of its own. It should be
+    used as the first layer and will perform dropout with any dropout
+    probability on the incoming data.
+
     **Parameters:**
 
     n_in : integer
         Number of input units.
 
-    dropout_probability : float in ``[0, 1]``
+    dropout_probability : float in [0, 1]
         Probability of dropping out each unit.
 
     compute_input_gradients : Bool
         Whether to compute the gradients with respect to the input
         data. This only necessary if you're training a model where the
-        input itself is learned.'
+        input itself is learned.
 
     """
 
@@ -57,17 +61,16 @@ class InputDropout(DummyLayer):
         **Parameters:**
 
         input_data : ``GPUArray``
-            Inpute data to compute activations for.
+            Inpute data to perform dropout on.
 
         prediction : bool, optional
-            Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            Whether to use prediction model. If true, then the data is
+            scaled by ``1 - dropout_probability`` uses dropout.
 
         **Returns:**
         
-        activations : ``GPUArray``
-            The activations of the hidden units.
+        dropout_data : ``GPUArray``
+            The data after performing dropout.
         """
 
         assert input_data.shape[1] == self.n_in
@@ -87,10 +90,10 @@ class InputDropout(DummyLayer):
         **Parameters:**
 
         input_data : ``GPUArray``
-            Inpute data to compute activations for.
+            Inpute data to perform dropout on.
 
         df_output : ``GPUArray``
-            Gradients with respect to the activations of this layer
+            Gradients with respect to the output of this layer
             (received from the layer above).
 
         cache : list of ``GPUArray``
@@ -99,9 +102,8 @@ class InputDropout(DummyLayer):
 
         **Returns:**
 
-        gradients : tuple of ``GPUArray``
-            Gradients with respect to the weights and biases in the
-            form ``(df_weights, df_biases)``.
+        gradients : empty tuple
+            Gradients are empty since this layer has no parameters.
 
         df_input : ``GPUArray``
             Gradients with respect to the input.
