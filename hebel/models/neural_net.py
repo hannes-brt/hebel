@@ -140,8 +140,8 @@ class NeuralNet(Model):
 
         self.input_dropout = input_dropout
         if input_dropout:
-            self.hidden_layers.append(InputDropout(n_in, dropout_probability))
-        
+            self.hidden_layers.append(InputDropout(n_in, input_dropout))
+
         for i, hidden_layer in enumerate(layers):
             if isinstance(hidden_layer, HiddenLayer):
                 self.hidden_layers.append(hidden_layer)
@@ -405,7 +405,7 @@ class NeuralNet(Model):
         if self.hidden_layers:
             # Forward pass
             hidden_cache = []
-            for i in range(self.n_layers):
+            for i in range(len(self.hidden_layers)):
                 hidden_activations = hidden_cache[i - 1][0] if i else input_data
                 # Use dropout predict if previous layer has dropout
                 hidden_cache.append(self.hidden_layers[i]
