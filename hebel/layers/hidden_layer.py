@@ -25,7 +25,7 @@ from ..pycuda_ops import eps
 from ..pycuda_ops import linalg
 from ..pycuda_ops.elementwise import sigmoid, df_sigmoid, \
      tanh, df_tanh, relu, df_relu, linear, df_linear, \
-     sample_dropout_mask, apply_dropout_mask, sign
+     sample_dropout_mask, apply_dropout_mask, sign, mult_matrix
 from ..pycuda_ops.matrix import add_vec_to_mat
 from ..pycuda_ops.reductions import matrix_sum_out_axis
 
@@ -149,7 +149,12 @@ class HiddenLayer(object):
         self.persistent_temp_objects_config = (
             ('activations', ('batch_size', self.n_units), np.float32),
             ('dropout_prob_array', ('batch_size', self.n_units), np.float32),
-            ('dropout_mask', ('batch_size', self.n_units), np.int8)
+            ('dropout_mask', ('batch_size', self.n_units), np.int8),
+            ('df_W', self.W.shape, self.W.dtype),
+            ('df_b', self.b.shape, self.b.dtype),
+            ('df_input', ('batch_size', self.n_in), np.float32),
+            ('df_activations', ('batch_size', self.n_units), np.float32),
+            ('delta', ('batch_size', self.n_units), np.float32)
         )
 
     def preallocate_temp_objects(self, data_provider):
@@ -284,6 +289,7 @@ class HiddenLayer(object):
 
         return (activations,)
 
+    @profile
     def backprop(self, input_data, df_output, cache=None):
         """ Backpropagate through the hidden layer
 
@@ -324,16 +330,27 @@ class HiddenLayer(object):
         if self.dropout and dropout_mask is not None:
             apply_dropout_mask(df_output, dropout_mask)
 
+        # Get temporary objects
+        df_W = self.get_temp_object('df_W', self.W.shape, self.W.dtype)
+        df_b = self.get_temp_object('df_b', self.b.shape, self.b.dtype)
+        df_input = self.get_temp_object('df_input',
+                input_data.shape, input_data.dtype)
+        df_activations = self.get_temp_object('df_activations',
+                activations.shape, activations.dtype)
+        delta = self.get_temp_object('delta',
+                activations.shape, activations.dtype)
+        
+
         # Get gradient wrt activation function
-        df_activations = self.df(activations)
-        delta = df_activations * df_output
+        self.df(activations, df_activations)
+        mult_matrix(df_activations, df_output, delta)
 
         # Gradient wrt weights
-        df_W = linalg.dot(input_data, delta, transa='T')
+        linalg.dot(input_data, delta, transa='T', target=df_W)
         # Gradient wrt bias
-        df_b = matrix_sum_out_axis(delta, 0)
+        matrix_sum_out_axis(delta, 0, target=df_b)
         # Gradient wrt inputs
-        df_input = linalg.dot(delta, self.W, transb='T')
+        linalg.dot(delta, self.W, transb='T', target=df_input)
 
         # L1 weight decay
         if self.l1_penalty_weight:

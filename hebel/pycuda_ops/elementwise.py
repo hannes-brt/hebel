@@ -26,35 +26,55 @@ all_kernels_code = {
                    "target[i] = (mat[i] > 0.) - (mat[i] < 0);"),
         'double': ("double *mat, double *target",
                    "target[i] = (mat[i] > 0.) - (mat[i] < 0);")
-        },
+    },
 
     'sigmoid': {
         'float':  ("float *mat",
                    "mat[i] = 1. / (1. + __expf(-mat[i]))",),
         'double': ("double *mat",
                    "mat[i] = 1. / (1. + exp(-mat[i]))")
-        },
+    },
+
+    'df_sigmoid': {
+        'float': ("float *mat, float *target",
+                  """const float f = mat[i];
+                  target[i] = f * (1 - f);
+                  """),
+        'double': ("double *mat, double *target",
+                   """const double f = mat[i],
+                   target[i] = f * (1 - f);
+                   """)
+    },
 
     'tanh': {
         'float':  ("float *mat",
                    "mat[i] = tanhf(mat[i]);"),
         'double': ("double *mat",
                    "mat[i] = tanh(mat[i]);")
-        },
+    },
+
+    'df_tanh': {
+        'float': ("float *mat, float *target",
+                  """float f = mat[i];
+                  target[i] = 1 - pow(f, 2);"""),
+        'double': ("double *mat, double *target",
+                   """double f = mat[i];
+                   target[i] = 1 - pow(f, 2);""")
+    },
 
     'relu': {
         'float':  ("float *mat",
                    "if (mat[i] < 0.) mat[i] = 0.",),
         'double': ("double *mat",
                    "if (mat[i] < 0.) mat[i] = 0.")
-        },
+    },
 
     'df_relu': {
         'float':  ("float *mat, float *target",
                    "if (mat[i] <= 0.)\n  target[i] = 0.;\nelse\n  target[i] = 1.;"),
         'double': ("double *mat, double *target",
                    "if (mat[i] <= 0.)\n  target[i] = 0.;\nelse\n  target[i] = 1.;")
-        },
+    },
 
     'sample_dropout_mask': {
         'float':  ("float *mat, float *target, char *dropout_mask, "
@@ -79,21 +99,29 @@ all_kernels_code = {
                             target[i] = mat[i];
                       }
                     """)
-        },
+    },
 
     'apply_dropout_mask': {
         'float':    ("float *mat, char *mask",
                      "if (mask[i] == 0.) mat[i] = 0;"),
         'double':   ("double *mat, char *mask",
                      "if (mask[i] == 0.) mat[i] = 0;"),
-        },
+    },
 
     'nan_to_zeros': {
         'float':    ("float *mat, float *target",
                      "target[i] = isnan(mat[i]) ? 0. : mat[i];"),
         'double':   ("double *mat, double *target",
                      "target[i] = isnan(mat[i]) ? 0. : mat[i];")
-        }
+    },
+
+    'mult_matrix': {
+        'float': ("const float *a, const float *b, float *c",
+                  "c[i] = a[i] * b[i];"),
+        'double': ("const double *b, const double *b, double *c",
+                   "c[i] = a[i] * b[i];")
+
+    }
 }
 
 class Kernel(object):
@@ -141,29 +169,34 @@ def sigmoid(x):
     assert x.flags.c_contiguous
     all_kernels['sigmoid'](x)
 
-def df_sigmoid(f):
+def df_sigmoid(f, target=None):
     assert f.flags.c_contiguous
-    df = f * (1 - f)
-    return df
+    if target is not None:
+        target = gpuarray.empty_like(f)
+    all_kernels['df_sigmoid'](f, target)
+    return target
 
 def tanh(x):
     assert x.flags.c_contiguous
     all_kernels['tanh'](x)
 
-def df_tanh(f):
+def df_tanh(f, target=None):
     assert f.flags.c_contiguous
-    df = 1 - f ** 2.
-    return df
+    if target is None:
+        target = gpuarray.empty_like(f)
+    all_kernels['df_tanh'](f, target)
+    return target
 
 def relu(x):
     assert x.flags.c_contiguous
     all_kernels['relu'](x)
 
-def df_relu(x):
+def df_relu(x, target=None):
     assert x.flags.c_contiguous
-    df = gpuarray.empty_like(x)
-    all_kernels['df_relu'](x, df)
-    return df
+    if target is None:
+        target = gpuarray.empty_like(x)        
+    all_kernels['df_relu'](x, target)
+    return target
 
 def linear(x):
     pass
@@ -224,4 +257,13 @@ def nan_to_zeros(x, target=None):
         target = gpuarray.empty_like(x)
     assert target.flags.c_contiguous
     all_kernels['nan_to_zeros'](x, target)
+    return target
+
+@profile
+def mult_matrix(a, b, target=None):
+    assert a.shape == b.shape
+    if target is None:
+        target = gpuarray.empty_like(a)
+
+    all_kernels['mult_matrix'](a, b, target)
     return target

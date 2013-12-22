@@ -154,7 +154,7 @@ def dot(x_gpu, y_gpu, transa='N', transb='N', handle=None, target=None):
 
         if target is None:
             target = gpuarray.empty((n, ldc), x_gpu.dtype)
-        assert target.shape == (n, ldc)
+        
         cublas_func(handle, transb, transa, m, n, k, alpha, y_gpu.gpudata,
                     lda, x_gpu.gpudata, ldb, beta, target.gpudata, ldc)
 

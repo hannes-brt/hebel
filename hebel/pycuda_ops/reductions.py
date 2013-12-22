@@ -17,7 +17,7 @@
 import numpy as np
 from pycuda import gpuarray
 from pycuda.compiler import SourceModule
-from scikits.cuda import linalg
+from . import linalg
 
 code = """
 #include "float.h"
@@ -112,18 +112,26 @@ def max_by_axis(mat, axis=0):
 def _matrix_sum_out_axis_wrapper():
     one_vector_cache = {}
 
-    def f(mat, axis=0, cache_one_vector=True):
+    def f(mat, axis=0, cache_one_vector=True, target=None):
         assert mat.flags.c_contiguous
         N, M = mat.shape
 
         if axis == 0:
-            vec_shape = (N,)
+            vec_shape = (N, 1)
             try:
                 ones = one_vector_cache[vec_shape]
             except KeyError:
                 ones = gpuarray.empty(vec_shape, dtype=mat.dtype).fill(1.)
                 if cache_one_vector: one_vector_cache[vec_shape] = ones
-            target = linalg.dot(ones, mat).ravel()
+
+            if target is None:
+                target = gpuarray.empty((M,), mat.dtype)
+
+            # if len(target.shape) == 1:
+                # target = target.reshape((target.shape[0], 1))
+                # target.shape = (target.shape[0], 1)
+            assert target.shape == (M,)
+            linalg.dot(mat, ones, transa='T', target=target)
         elif axis == 1:
             vec_shape = (M, 1)
             try:
@@ -131,10 +139,18 @@ def _matrix_sum_out_axis_wrapper():
             except KeyError:
                 ones = gpuarray.empty((M, 1), dtype=mat.dtype).fill(1.)
                 if cache_one_vector: one_vector_cache[vec_shape] = ones
-            target = linalg.dot(mat, ones).ravel()
+
+            if target is None:
+                target = gpuarray.empty((N,), mat.dtype)
+
+            # if len(target.shape) == 1:
+            #     target = target.reshape((target.shape[0], 1))
+            assert target.shape == (N,)
+            linalg.dot(mat, ones, target=target)
         else:
             raise ValueError('axis must be 0 or 1')
 
+        # target.shape = (target.shape[0], 1)
         return target
     return f
 matrix_sum_out_axis = _matrix_sum_out_axis_wrapper()
