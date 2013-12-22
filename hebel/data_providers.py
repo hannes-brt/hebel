@@ -47,6 +47,18 @@ class DataProvider(object):
         self.N = data.shape[0]
 
         self.i = 0
+        self._make_batches()
+
+    def _make_batches(self):
+        self.data_batches = tuple(
+            self.data[i:i+self.batch_size]
+            for i in range(0, self.N, self.batch_size)
+        )
+        self.targets_batches = tuple(
+            self.targets[i:i+self.batch_size]
+            for i in range(0, self.N, self.batch_size)
+        )
+        self.n_batches = len(self.data_batches)
 
     def __getitem__(self, batch_idx):
         raise NotImplementedError
@@ -81,17 +93,18 @@ class MiniBatchDataProvider(DataProvider):
     """
     
     def __getitem__(self, batch_idx):
-        return self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+        # return self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+        return self.batches[batch_idx]
 
     def next(self):
-        if self.i >= self.N:
+        if self.i >= self.n_batches:
             self.i = 0
             raise StopIteration
 
-        minibatch_data  = self.data[self.i:self.i+self.batch_size]
-        minibatch_targets = self.targets[self.i:self.i+self.batch_size]
+        minibatch_data  = self.data_batches[self.i]
+        minibatch_targets = self.targets_batches[self.i]
 
-        self.i += self.batch_size
+        self.i += 1
 
         if not isinstance(minibatch_data, gpuarray.GPUArray):
             minibatch_data = gpuarray.to_gpu(minibatch_data)
@@ -238,7 +251,7 @@ class DummyDataProvider(DataProvider):
     def next(self):
         return None, None
 
-class MNISTDataProvider(DataProvider):
+class MNISTDataProvider(MiniBatchDataProvider):
     """``DataProvider`` that automatically provides data from the
     `MNIST <http://yann.lecun.com/exdb/mnist/>`_ data set of
     hand-written digits.
@@ -296,28 +309,29 @@ class MNISTDataProvider(DataProvider):
 
         self.batch_size = batch_size if batch_size is not None else self.N
         self.i = 0
+        self._make_batches()
 
-    def __getitem__(self, batch_idx):
-        if self.batch_size is None:
-            if batch_idx == 0:
-                return self.data, self.targets
-            else:
-                raise ValueError("batch_idx out of bounds")
-        else:
-            minibatch_data = self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-            minibatch_targets = self.targets[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-            return minibatch_data, minibatch_targets
+    # def __getitem__(self, batch_idx):
+    #     if self.batch_size is None:
+    #         if batch_idx == 0:
+    #             return self.data, self.targets
+    #         else:
+    #             raise ValueError("batch_idx out of bounds")
+    #     else:
+    #         minibatch_data = self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+    #         minibatch_targets = self.targets[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
+    #         return minibatch_data, minibatch_targets
 
-    def next(self):
-        if self.i >= self.N:
-            self.i = 0
-            raise StopIteration
+    # def next(self):
+    #     if self.i >= self.N:
+    #         self.i = 0
+    #         raise StopIteration
 
-        if self.batch_size is None:
-            self.i += self.N
-            return self.data, self.targets
-        else:
-            minibatch_data = self.data[self.i:self.i+self.batch_size]
-            minibatch_targets = self.targets[self.i:self.i+self.batch_size]
-            self.i += self.batch_size
-            return minibatch_data, minibatch_targets
+    #     if self.batch_size is None:
+    #         self.i += self.N
+    #         return self.data, self.targets
+    #     else:
+    #         minibatch_data = self.data[self.i:self.i+self.batch_size]
+    #         minibatch_targets = self.targets[self.i:self.i+self.batch_size]
+    #         self.i += self.batch_size
+    #         return minibatch_data, minibatch_targets
