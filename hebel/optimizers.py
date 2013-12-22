@@ -100,6 +100,8 @@ class SGD(object):
         self.early_stopping_module = EarlyStoppingModule(self.model) \
                                      if early_stopping else None
 
+        self.model.preallocate_temp_objects(self.train_data)
+
     def run(self, iterations=200, validation_interval=5,
             yaml_config=None,
             task_id=None):

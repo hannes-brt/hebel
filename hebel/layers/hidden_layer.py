@@ -20,9 +20,9 @@ from itertools import izip
 from pycuda import gpuarray
 from pycuda.gpuarray import GPUArray
 from math import sqrt
-from scikits.cuda import linalg
 from .. import sampler
 from ..pycuda_ops import eps
+from ..pycuda_ops import linalg
 from ..pycuda_ops.elementwise import sigmoid, df_sigmoid, \
      tanh, df_tanh, relu, df_relu, linear, df_linear, \
      sample_dropout_mask, apply_dropout_mask, sign
@@ -146,6 +146,31 @@ class HiddenLayer(object):
 
         self.dropout = dropout
 
+        self.persistent_temp_objects_config = (
+            ('activations', ('batch_size', self.n_units), np.float32),
+            ('dropout_prob_array', ('batch_size', self.n_units), np.float32),
+            ('dropout_mask', ('batch_size', self.n_units), np.int8)
+        )
+
+    def preallocate_temp_objects(self, data_provider):
+        batch_size = data_provider.batch_size
+
+        if hasattr(self, 'persistent_temp_objects_config'):
+            self.persistent_temp_objects = {}
+            for tmp_obj_name, tmp_obj_shape, tmp_obj_dtype \
+              in self.persistent_temp_objects_config:
+                tmp_obj_shape = tuple(s if not s == 'batch_size' else batch_size
+                                      for s in tmp_obj_shape)
+                tmp_obj = gpuarray.empty(tmp_obj_shape, tmp_obj_dtype)
+                self.persistent_temp_objects[tmp_obj_name] = tmp_obj
+
+    def get_temp_object(self, name, shape, dtype):
+        if name in self.persistent_temp_objects:
+            tmp_obj = self.persistent_temp_objects[name]
+            if tmp_obj.shape == shape and tmp_obj.dtype == dtype:
+                return tmp_obj
+        return gpuarray.empty(shape, dtype)
+
     @property
     def parameters(self):
         """Return a tuple ``(weights, biases)``"""
@@ -237,7 +262,9 @@ class HiddenLayer(object):
             The activations of the hidden units.
         """
 
-        activations = linalg.dot(input_data, self.W)
+        activations = self.get_temp_object('activations',
+            (input_data.shape[0], self.n_units), input_data.dtype)
+        linalg.dot(input_data, self.W, target=activations)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         self.f(activations)
@@ -246,7 +273,13 @@ class HiddenLayer(object):
             activations *= .5
 
         if self.dropout and not prediction:
-            dropout_mask = sample_dropout_mask(activations)
+            dropout_mask = self.get_temp_object('dropout_mask', activations.shape,
+                                                np.int8)
+            dropout_prob_array = self.get_temp_object('dropout_prob_array',
+                                                      activations.shape,
+                                                      activations.dtype)
+            sample_dropout_mask(activations, dropout_mask=dropout_mask,
+                                dropout_prob_array=dropout_prob_array)
             return activations, dropout_mask
 
         return (activations,)

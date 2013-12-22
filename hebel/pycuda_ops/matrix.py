@@ -20,33 +20,57 @@ from pycuda import driver as drv
 from pycuda.compiler import SourceModule
 
 code = """
-__global__ void addRowVecToMat(float *mat,
-                               float *vec,
+__global__ void addRowVecToMat(const float *mat,
+                               const float *vec,
                                float *target,
-                               int32_t n,
-                               int32_t m)
+                               const int32_t n,
+                               const int32_t m,
+                               const int substract)
 {
-  int tx = blockIdx.x * blockDim.x + threadIdx.x;
-  int ty = blockIdx.y * blockDim.y + threadIdx.y;
+  const int tx = threadIdx.x;
+  const int ty = threadIdx.y;
+  const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
 
-  if ((ty < m) & (tx < n))
+  __shared__ float shared_vec[24];
+
+  if ((tx == 0) & (tidy < m))
+      shared_vec[ty] = vec[tidy];
+  __syncthreads();
+
+  if ((tidy < m) & (tidx < n))
   {
-      target[tx*m+ty] = vec[ty] + mat[tx*m+ty];
+      if (substract)
+          target[tidx*m+tidy] = mat[tidx*m+tidy] - shared_vec[ty];
+      else
+          target[tidx*m+tidy] = mat[tidx*m+tidy] + shared_vec[ty];      
   }
 }
 
-__global__ void addColVecToMat(float *mat,
-                               float *vec,
+__global__ void addColVecToMat(const float *mat,
+                               const float *vec,
                                float *target,
-                               int32_t n,
-                               int32_t m)
+                               const int32_t n,
+                               const int32_t m,
+                               const int substract)
 {
-  int tx = blockIdx.x * blockDim.x + threadIdx.x;
-  int ty = blockIdx.y * blockDim.y + threadIdx.y;
+  const int tx = threadIdx.x;
+  const int ty = threadIdx.y;
+  const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
 
-  if ((ty < m) & (tx < n))
+  __shared__ float shared_vec[24];
+
+  if ((ty == 0) & (tidx < n))
+      shared_vec[tx] = vec[tidx];
+  __syncthreads();
+    
+  if ((tidy < m) & (tidx < n))
   {
-      target[tx*m+ty] = vec[tx] + mat[tx*m+ty];
+      if (substract)
+          target[tidx*m+tidy] = mat[tidx*m+tidy] - shared_vec[tx];
+      else
+          target[tidx*m+tidy] = mat[tidx*m+tidy] + shared_vec[tx];      
   }
 }
 
@@ -88,8 +112,8 @@ add_row_vec_kernel = mod.get_function('addRowVecToMat')
 add_col_vec_kernel = mod.get_function('addColVecToMat')
 vector_normalize_kernel = mod.get_function("kVectorNormalize")
 
-
-def add_vec_to_mat(mat, vec, axis=None, inplace=False):
+def add_vec_to_mat(mat, vec, axis=None, inplace=False,
+                   target=None, substract=False):
     """ Add a vector to a matrix
     """
 
@@ -106,24 +130,24 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False):
 
     n, m = mat.shape
 
-    block = (12, 12, 1)
+    block = (24, 24, 1)
     gridx = n // block[0] + 1 * (n % block[0] != 0)
     gridy = m // block[1] + 1 * (m % block[1] != 0)
     grid = (gridx, gridy, 1)
 
     if inplace:
         target = mat
-    else:
-        target = gpuarray.empty_like(mat)
+    elif target is None:
+            target = gpuarray.empty_like(mat)
 
     if axis == 0:
         assert vec.shape[0] == mat.shape[0]
         add_col_vec_kernel(mat, vec, target, np.uint32(n), np.uint32(m),
-                           block=block, grid=grid)
+                           np.int32(substract), block=block, grid=grid)
     elif axis == 1:
         assert vec.shape[0] == mat.shape[1]
         add_row_vec_kernel(mat, vec, target, np.uint32(n), np.uint32(m),
-                           block=block, grid=grid)
+                           np.int32(substract), block=block, grid=grid)
     return target
 
 

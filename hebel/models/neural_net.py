@@ -179,7 +179,14 @@ class NeuralNet(Model):
         self.lr_multiplier = [lr for hl in
                               self.hidden_layers + [self.top_layer]
                               for lr in hl.lr_multiplier]
-
+    
+    def preallocate_temp_objects(self, data_provider):
+        for hl in self.hidden_layers:
+            if hasattr(hl, 'preallocate_temp_objects'):
+                hl.preallocate_temp_objects(data_provider)
+        if hasattr(self.top_layer, 'preallocate_temp_objects'):
+            self.top_layer.preallocate_temp_objects(data_provider)
+    
     @property
     def parameters(self):
         """ A property that returns all of the model's parameters. """

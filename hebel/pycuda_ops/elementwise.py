@@ -57,22 +57,24 @@ all_kernels_code = {
         },
 
     'sample_dropout_mask': {
-        'float':  ("float *mat, float *target, float *dropout, float dropout_probability",
-                   """if (dropout[i] <= dropout_probability) {
-                        dropout[i] = 0.;
+        'float':  ("float *mat, float *target, char *dropout_mask, "
+                   "float *dropout_prob_array, float dropout_probability",
+                   """if (dropout_prob_array[i] <= dropout_probability) {
+                        dropout_mask[i] = 0.;
                         target[i] = 0.;
                       } else {
-                        dropout[i] = 1.;
+                        dropout_mask[i] = 1.;
                         if (target != mat)
                             target[i] = mat[i];
                       }
                     """),
-        'double':  ("double *mat, double *targets, double *dropout, float dropout_probability",
-                    """if (dropout[i] <= dropout_probability) {
-                        dropout[i] = 0.;
+        'double':  ("double *mat, double *targets, char *dropout_mask, "
+                    "double *dropout_prob_array float dropout_probability",
+                    """if (dropout_prob_array[i] <= dropout_probability) {
+                        dropout_mask[i] = 0.;
                         target[i] = 0.;
                       } else {
-                        dropout[i] = 1.;
+                        dropout_mask[i] = 1.;
                         if (target != mat)                    
                             target[i] = mat[i];
                       }
@@ -80,9 +82,9 @@ all_kernels_code = {
         },
 
     'apply_dropout_mask': {
-        'float':    ("float *mat, float *mask",
+        'float':    ("float *mat, char *mask",
                      "if (mask[i] == 0.) mat[i] = 0;"),
-        'double':   ("double *mat, double *mask",
+        'double':   ("double *mat, char *mask",
                      "if (mask[i] == 0.) mat[i] = 0;"),
         },
 
@@ -169,7 +171,8 @@ def linear(x):
 def df_linear(x):
     return x
 
-def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None, target=None):
+def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None, target=None,
+                        dropout_mask=None, dropout_prob_array=None):
     """ Samples a dropout mask and applies it in place"""
 
     assert x.flags.c_contiguous
@@ -180,12 +183,19 @@ def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None, ta
         x = extract_columns(x, columns[0], columns[1])
 
     shape = x.shape
-    dropout_mask = sampler.gen_uniform(shape, x.dtype, stream)
+
+    if dropout_prob_array is None:
+        dropout_prob_array = gpuarray.empty(shape, x.dtype)
+    sampler.fill_uniform(dropout_prob_array, stream)
+
+    if dropout_mask is None:
+        dropout_mask = gpuarray.empty(shape, np.int8)
 
     if target is None: target = x
     
     all_kernels['sample_dropout_mask'](
-        x, target, dropout_mask, np.float32(dropout_probability))
+        x, target, dropout_mask, dropout_prob_array,
+        np.float32(dropout_probability))
 
     if columns is not None:
         insert_columns(x, x_tmp, columns[0])

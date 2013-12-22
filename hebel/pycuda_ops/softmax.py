@@ -19,13 +19,25 @@ from .reductions import max_by_axis
 from .matrix import add_vec_to_mat
 from .reductions import matrix_sum_out_axis
 from .elementwise import nan_to_zeros
-from pycuda import cumath, gpuarray
+from pycuda import cumath, gpuarray, elementwise
+import numpy as np
 
-def logsumexp(mat):
+exp_func = elementwise.get_unary_func_kernel('__expf', np.float32)
+
+def logsumexp(mat, tmp=None):
     max_dim = max_by_axis(mat, 1)
-    tmp = add_vec_to_mat(mat, -max_dim, 0)
-    L = max_dim + cumath.log(matrix_sum_out_axis(cumath.exp(tmp), 1))
-    return L
+    if tmp is None:
+        tmp = gpuarray.empty_like(mat)
+    add_vec_to_mat(mat, max_dim, 0, target=tmp, substract=True)
+
+    exp_func.prepared_async_call(tmp._grid, tmp._block, None,
+                                 tmp.gpudata, tmp.gpudata, tmp.mem_size)
+    
+    # tmp = cumath.exp(tmp)
+    tmp = matrix_sum_out_axis(tmp, 1)
+    tmp = cumath.log(tmp)
+    max_dim += tmp
+    return max_dim
 
 def softmax(mat):
     L = logsumexp(mat)
