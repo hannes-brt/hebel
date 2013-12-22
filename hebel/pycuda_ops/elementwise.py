@@ -259,7 +259,6 @@ def nan_to_zeros(x, target=None):
     all_kernels['nan_to_zeros'](x, target)
     return target
 
-@profile
 def mult_matrix(a, b, target=None):
     assert a.shape == b.shape
     if target is None:

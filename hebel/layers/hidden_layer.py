@@ -289,7 +289,6 @@ class HiddenLayer(object):
 
         return (activations,)
 
-    @profile
     def backprop(self, input_data, df_output, cache=None):
         """ Backpropagate through the hidden layer
 
