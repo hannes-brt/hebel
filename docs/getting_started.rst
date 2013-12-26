@@ -156,7 +156,11 @@ Using Hebel in Your Own Code
 ============================
 
 If you want more control over the training procedure or integrate
-Hebel with your own code, then you can use Hebel programmatically. 
+Hebel with your own code, then you can use Hebel programmatically.
+
+Unlike the simpler one hidden layer model from the previous part, here
+we are going to build a more powerful deep neural net with multiple
+hidden layers.
 
 For an example, have a look at :file:`examples/mnist_neural_net_deep_script.py`:
 
@@ -210,11 +214,18 @@ Currently, Hebel implements the following models:
   tasks and any number of output layers with separate weights for each
   task.
 
+* :class:`hebel.models.NeuralNetRegression`: A neural net with a
+  linear regression output layer to model continuous variables.
+
 The :class:`hebel.models.NeuralNet` model we are using here takes as
 input the dimensionality of the data, the number of classes, the sizes
 of the hidden layers, the activation function to use, and whether to
 use dropout for regularization. There are also a few more options such
 as for L1 or L2 weight regularization, that we don't use here.
+
+Here, we are using the simpler form of the constructor rather than the
+extended form that we used in the YAML example. Also we are adding a
+small amount of dropout (20%) to the input layer.
 
 Training the model
 ------------------
@@ -223,7 +234,7 @@ To train the model, you first need to create an instance of
 :class:`hebel.optimizers.SGD`:
 
 .. literalinclude:: ../examples/mnist_neural_net_deep_script.py
-   :lines: 23-32
+   :lines: 23-35
 
 First we are creating a :class:`hebel.monitors.ProgressMonitor`
 object, that will save regular snapshots of the model during training
