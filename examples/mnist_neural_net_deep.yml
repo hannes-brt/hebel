@@ -1,5 +1,5 @@
 run_conf:
-  iterations: 500
+  iterations: 3000
 optimizer: !obj:hebel.optimizers.SGD {
   model: !obj:hebel.models.NeuralNet {
     layers: [
@@ -9,6 +9,13 @@ optimizer: !obj:hebel.optimizers.SGD {
       },
       !obj:hebel.layers.HiddenLayer {
         n_in: 784,
+        n_units: 2000,
+        activation_function: relu,
+        dropout: yes,
+        l2_penalty_weight: .0
+      },
+      !obj:hebel.layers.HiddenLayer {
+        n_in: 2000,
         n_units: 2000,
         activation_function: relu,
         dropout: yes,
@@ -41,7 +48,7 @@ optimizer: !obj:hebel.optimizers.SGD {
       n_out: 10     
     }
   },
-  parameter_updater: !import hebel.parameter_updaters.MomentumUpdate,
+  parameter_updater: !import hebel.parameter_updaters.NesterovMomentumUpdate,
   train_data: !obj:hebel.data_providers.MNISTDataProvider {
     batch_size: 100,
     array: train
@@ -50,10 +57,10 @@ optimizer: !obj:hebel.optimizers.SGD {
     array: val
   },
   learning_rate_schedule: !obj:hebel.schedulers.exponential_scheduler {
-    init_value: 5., decay: .995
+    init_value: 2., decay: .995
   },
   momentum_schedule: !obj:hebel.schedulers.linear_scheduler_up {
-    init_value: .1, target_value: .9, duration: 100
+    init_value: .1, target_value: .99, duration: 200
   },
   progress_monitor:
     !obj:hebel.monitors.ProgressMonitor {
