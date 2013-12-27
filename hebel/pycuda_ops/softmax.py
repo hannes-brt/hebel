@@ -22,7 +22,8 @@ from .elementwise import nan_to_zeros
 from pycuda import cumath, gpuarray, elementwise
 import numpy as np
 
-exp_func = elementwise.get_unary_func_kernel('__expf', np.float32)
+exp_func = elementwise.get_unary_func_kernel('expf', np.float32)
+log_func = elementwise.get_unary_func_kernel('logf', np.float32)
 
 def logsumexp(mat, tmp=None):
     max_dim = max_by_axis(mat, 1)
@@ -35,13 +36,21 @@ def logsumexp(mat, tmp=None):
     
     # tmp = cumath.exp(tmp)
     tmp = matrix_sum_out_axis(tmp, 1)
-    tmp = cumath.log(tmp)
+    # tmp = cumath.log(tmp)
+    log_func.prepared_async_call(tmp._grid, tmp._block, None,
+                                 tmp.gpudata, tmp.gpudata, tmp.mem_size)
     max_dim += tmp
     return max_dim
 
-def softmax(mat):
-    L = logsumexp(mat)
-    return cumath.exp(add_vec_to_mat(mat, -L, inplace=True))
+def softmax(mat, tmp=None):
+    if tmp is None:
+        tmp = gpuarray.empty_like(mat)
+    L = logsumexp(mat, tmp)
+    add_vec_to_mat(mat, L, target=tmp, substract=True)
+    exp_func.prepared_async_call(tmp._grid, tmp._block, None,
+                                 tmp.gpudata, tmp.gpudata,
+                                 tmp.mem_size)
+    return tmp
 
 def cross_entropy(x, y):
     loss = y * cumath.log(x + eps)

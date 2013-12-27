@@ -170,7 +170,8 @@ class HiddenLayer(object):
                 self.persistent_temp_objects[tmp_obj_name] = tmp_obj
 
     def get_temp_object(self, name, shape, dtype):
-        if name in self.persistent_temp_objects:
+        if hasattr(self, "persistent_temp_objects") and \
+          name in self.persistent_temp_objects:
             tmp_obj = self.persistent_temp_objects[name]
             if tmp_obj.shape == shape and tmp_obj.dtype == dtype:
                 return tmp_obj

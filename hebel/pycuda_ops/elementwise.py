@@ -121,6 +121,12 @@ all_kernels_code = {
         'double': ("const double *b, const double *b, double *c",
                    "c[i] = a[i] * b[i];")
 
+    },
+    'substract_matrix': {
+        'float': ("const float *a, const float *b, float *c",
+                  "c[i] = a[i] - b[i];"),
+        'double': ("const double *a, const double *b, double *c",
+                   "c[i] = a[i] - b[i];")
     }
 }
 
@@ -265,4 +271,12 @@ def mult_matrix(a, b, target=None):
         target = gpuarray.empty_like(a)
 
     all_kernels['mult_matrix'](a, b, target)
+    return target
+
+def substract_matrix(a, b, target=None):
+    assert a.shape == b.shape
+    if target is None:
+        target = gpuarray.empty_like(a)
+
+    all_kernels['substract_matrix'](a, b, target)
     return target
