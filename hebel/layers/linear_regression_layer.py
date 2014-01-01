@@ -17,12 +17,12 @@
 import numpy as np
 from pycuda import gpuarray, cumath
 from math import sqrt
-from scikits.cuda import linalg
 from .. import sampler
 from .logistic_layer import LogisticLayer
 from ..pycuda_ops.elementwise import sign, nan_to_zeros
 from ..pycuda_ops.reductions import matrix_sum_out_axis
 from ..pycuda_ops.matrix import add_vec_to_mat
+from ..pycuda_ops import linalg
 
 
 class LinearRegressionLayer(LogisticLayer):
@@ -108,6 +108,14 @@ class LinearRegressionLayer(LogisticLayer):
         self.lr_multiplier = 2 * [1. / np.sqrt(n_in, dtype=np.float32)] \
           if lr_multiplier is None else lr_multiplier
 
+        self.persistent_temp_objects_config = (
+            ('activations', ('batch_size', self.n_out), np.float32),
+            ('df_W', self.W.shape, self.W.dtype),
+            ('df_b', self.b.shape, self.b.dtype),
+            ('df_input', ('batch_size', self.n_in), np.float32),
+            ('delta', ('batch_size', self.n_out), np.float32)
+        )
+
     def feed_forward(self, input_data, prediction=False):
         """Propagate forward through the layer.
 
@@ -126,7 +134,11 @@ class LinearRegressionLayer(LogisticLayer):
         activations : ``GPUArray``
             The activations of the output units.
         """
-        activations = linalg.dot(input_data, self.W)
+
+        activations = self.get_temp_object('activations',
+            (input_data.shape[0], self.n_out), input_data.dtype)
+        
+        linalg.dot(input_data, self.W, target=activations)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         return activations
