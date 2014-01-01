@@ -214,20 +214,16 @@ class LogisticLayer(TopLayer):
         delta = self.get_temp_object('delta',
                 activations.shape, activations.dtype)
 
-        # substract_matrix(activations, targets, delta)
-        delta = activations - targets
+        substract_matrix(activations, targets, delta)
         nan_to_zeros(delta, delta)
 
         # Gradient wrt weights
-        # linalg.dot(input_data, delta, transa='T', target=df_W)
-        df_W = linalg.dot(input_data, delta, transa='T')
+        linalg.dot(input_data, delta, transa='T', target=df_W)
         # Gradient wrt bias
-        # matrix_sum_out_axis(delta, 0, target=df_b)
-        df_b = matrix_sum_out_axis(delta, 0)
+        matrix_sum_out_axis(delta, 0, target=df_b)
 
         # Gradient wrt input
-        # linalg.dot(delta, self.W, transb='T', target=df_input)
-        df_input = linalg.dot(delta, self.W, transb='T')
+        linalg.dot(delta, self.W, transb='T', target=df_input)
 
         # L1 penalty
         if self.l1_penalty_weight:
