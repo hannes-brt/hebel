@@ -138,7 +138,7 @@ class ProgressMonitor(object):
         # Pickle model
         filename = 'model_%s_end_%s.pkl' % (
             self.experiment_name,
-            self.model.checksum)
+            self.model.checksum())
         path = os.path.join(self.save_path, filename)
         print "Saving model to %s" % path
         cPickle.dump(self.model, open(path, 'wb'))
