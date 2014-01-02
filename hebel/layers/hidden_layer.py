@@ -157,8 +157,12 @@ class HiddenLayer(object):
             ('delta', ('batch_size', self.n_units), np.float32)
         )
 
-    def preallocate_temp_objects(self, data_provider):
-        batch_size = data_provider.batch_size
+    def preallocate_temp_objects(self, batch_size):
+        from ..data_providers import DataProvider
+
+        if isinstance(batch_size, DataProvider):
+            batch_size = batch_size.batch_size
+        self._batch_size = batch_size
 
         if hasattr(self, 'persistent_temp_objects_config'):
             self.persistent_temp_objects = {}
@@ -361,3 +365,15 @@ class HiddenLayer(object):
             df_W -= self.l2_penalty_weight * self.W
 
         return (df_W, df_b), df_input
+
+    def __getstate__(self):
+        result = self.__dict__.copy()
+        try:
+            del result['persistent_temp_objects']
+        except KeyError:
+            pass
+        return result
+
+    def __setstate__(self, dict):
+        self.__dict__ = dict
+        self.preallocate_temp_objects(self._batch_size)
