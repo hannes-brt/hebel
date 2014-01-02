@@ -20,7 +20,6 @@ Currently, Hebel will only run on Linux and probably Mac OS X (not tested). Hebe
 
 ## Dependencies
 - PyCUDA
-- scikits.cuda
 - numpy
 - PyYAML
 - skdata (only for MNIST example)
