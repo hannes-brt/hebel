@@ -51,11 +51,12 @@ class ProgressMonitor(object):
 
     @yaml_config.setter
     def yaml_config(self, yaml_config):
-        self._yaml_config = yaml_config
-        yaml_path = os.path.join(self.save_path, 'yaml_config.yml')
-        f = open(yaml_path, 'w')
-        f.write(self._yaml_config)
-        self._yaml_config = yaml_config
+        if yaml_config is not None:
+            self._yaml_config = yaml_config
+            yaml_path = os.path.join(self.save_path, 'yaml_config.yml')
+            f = open(yaml_path, 'w')
+            f.write(self._yaml_config)
+            self._yaml_config = yaml_config
 
     @property
     def test_error(self):
@@ -136,9 +137,7 @@ class ProgressMonitor(object):
         print "Avg. time per epoch %.2fs" % self.avg_epoch_t
 
         # Pickle model
-        filename = 'model_%s_end_%s.pkl' % (
-            self.experiment_name,
-            self.model.checksum())
+        filename = 'model_%s_final.pkl' % self.experiment_name
         path = os.path.join(self.save_path, filename)
         print "Saving model to %s" % path
         cPickle.dump(self.model, open(path, 'wb'))

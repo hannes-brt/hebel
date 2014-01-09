@@ -32,7 +32,4 @@ if __name__ == "__main__":
 
     yaml_src = ''.join(open(args.config_file).readlines())
 
-    import pycuda.autoinit
-    from hebel.pycuda_ops import linalg
-    linalg.init()
     run_from_config(yaml_src)

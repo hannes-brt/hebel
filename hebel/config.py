@@ -91,6 +91,10 @@ def load(stream, overrides=None, **kwargs):
 
     proxy_graph = yaml.load(string, **kwargs)
 
+    from . import init
+    init_dict = proxy_graph.get('init', {})
+    init(**init_dict)
+    
     if overrides is not None:
         handle_overrides(proxy_graph, overrides)
     return instantiate_all(proxy_graph)

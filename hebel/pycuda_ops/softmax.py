@@ -19,11 +19,17 @@ from .reductions import max_by_axis
 from .matrix import add_vec_to_mat
 from .reductions import matrix_sum_out_axis
 from .elementwise import nan_to_zeros
-from pycuda import cumath, gpuarray, elementwise
+from pycuda import cumath, gpuarray
 import numpy as np
 
-exp_func = elementwise.get_unary_func_kernel('expf', np.float32)
-log_func = elementwise.get_unary_func_kernel('logf', np.float32)
+exp_func = None
+log_func = None
+def init():
+    global exp_func
+    global log_func
+    _temp = __import__('hebel.pycuda_ops.elementwise', fromlist=['exp_func', 'log_func'])
+    exp_func = _temp.exp_func
+    log_func = _temp.log_func
 
 def logsumexp(mat, tmp=None):
     max_dim = max_by_axis(mat, 1)

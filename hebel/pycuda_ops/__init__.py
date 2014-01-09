@@ -16,3 +16,16 @@
 
 import numpy as np
 eps = np.finfo(np.float32).eps
+
+def init():
+    from . import elementwise
+    from . import matrix
+    from . import reductions
+    from . import softmax
+    from . import linalg
+
+    elementwise.init()
+    matrix.init()
+    reductions.init()
+    softmax.init()
+    linalg.init()

@@ -15,102 +15,111 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 import numpy as np
-from pycuda import gpuarray
 from pycuda import driver as drv
-from pycuda.compiler import SourceModule
+from pycuda import gpuarray
 
-code = """
-__global__ void addRowVecToMat(const float *mat,
-                               const float *vec,
-                               float *target,
-                               const int32_t n,
-                               const int32_t m,
-                               const int substract)
-{
-  const int tx = threadIdx.x;
-  const int ty = threadIdx.y;
-  const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
-  const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
-
-  __shared__ float shared_vec[24];
-
-  if ((tx == 0) & (tidy < m))
-      shared_vec[ty] = vec[tidy];
-  __syncthreads();
-
-  if ((tidy < m) & (tidx < n))
-  {
-      if (substract)
-          target[tidx*m+tidy] = mat[tidx*m+tidy] - shared_vec[ty];
-      else
-          target[tidx*m+tidy] = mat[tidx*m+tidy] + shared_vec[ty];      
-  }
-}
-
-__global__ void addColVecToMat(const float *mat,
-                               const float *vec,
-                               float *target,
-                               const int32_t n,
-                               const int32_t m,
-                               const int substract)
-{
-  const int tx = threadIdx.x;
-  const int ty = threadIdx.y;
-  const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
-  const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
-
-  __shared__ float shared_vec[24];
-
-  if ((ty == 0) & (tidx < n))
-      shared_vec[tx] = vec[tidx];
-  __syncthreads();
+add_row_vec_kernel = None
+add_col_vec_kernel = None
+vector_normalize_kernel = None
+def init():
+    from pycuda.compiler import SourceModule
     
-  if ((tidy < m) & (tidx < n))
-  {
-      if (substract)
-          target[tidx*m+tidy] = mat[tidx*m+tidy] - shared_vec[tx];
-      else
-          target[tidx*m+tidy] = mat[tidx*m+tidy] + shared_vec[tx];      
-  }
-}
+    global add_row_vec_kernel
+    global add_col_vec_kernel
+    global vector_normalize_kernel
 
-__global__ void kVectorNormalize(float* mat,
-                                 float max_vec_norm,
-                                 unsigned int width,
-                                 unsigned int height) {
+    code = """
+    __global__ void addRowVecToMat(const float *mat,
+                                   const float *vec,
+                                   float *target,
+                                   const int32_t n,
+                                   const int32_t m,
+                                   const int substract)
+    {
+      const int tx = threadIdx.x;
+      const int ty = threadIdx.y;
+      const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
+      const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
 
-    __shared__ float sum_shared[32];
-    __shared__ float vec_norm;
-    float sum = 0;
+      __shared__ float shared_vec[24];
 
-    for (unsigned int i = threadIdx.x; i < height; i += 32)
-        sum += powf(mat[blockIdx.x + i * width], 2);
+      if ((tx == 0) & (tidy < m))
+          shared_vec[ty] = vec[tidy];
+      __syncthreads();
 
-    sum_shared[threadIdx.x] = sum;
-
-    __syncthreads();
-
-    if (threadIdx.x == 0) {
-        sum = 0;
-
-        for (unsigned int i = 0; i < 32; i++)
-            sum += sum_shared[i];
-
-        vec_norm = sqrtf(sum);
+      if ((tidy < m) & (tidx < n))
+      {
+          if (substract)
+              target[tidx*m+tidy] = mat[tidx*m+tidy] - shared_vec[ty];
+          else
+              target[tidx*m+tidy] = mat[tidx*m+tidy] + shared_vec[ty];      
+      }
     }
-    __syncthreads();
 
-    for (unsigned int i = threadIdx.x; i < height; i += 32) {
-        if (vec_norm > max_vec_norm)
-            mat[blockIdx.x + i * width] /= (vec_norm / max_vec_norm);
+    __global__ void addColVecToMat(const float *mat,
+                                   const float *vec,
+                                   float *target,
+                                   const int32_t n,
+                                   const int32_t m,
+                                   const int substract)
+    {
+      const int tx = threadIdx.x;
+      const int ty = threadIdx.y;
+      const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
+      const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
+
+      __shared__ float shared_vec[24];
+
+      if ((ty == 0) & (tidx < n))
+          shared_vec[tx] = vec[tidx];
+      __syncthreads();
+
+      if ((tidy < m) & (tidx < n))
+      {
+          if (substract)
+              target[tidx*m+tidy] = mat[tidx*m+tidy] - shared_vec[tx];
+          else
+              target[tidx*m+tidy] = mat[tidx*m+tidy] + shared_vec[tx];      
+      }
     }
-}
-"""
 
-mod = SourceModule(code)
-add_row_vec_kernel = mod.get_function('addRowVecToMat')
-add_col_vec_kernel = mod.get_function('addColVecToMat')
-vector_normalize_kernel = mod.get_function("kVectorNormalize")
+    __global__ void kVectorNormalize(float* mat,
+                                     float max_vec_norm,
+                                     unsigned int width,
+                                     unsigned int height) {
+
+        __shared__ float sum_shared[32];
+        __shared__ float vec_norm;
+        float sum = 0;
+
+        for (unsigned int i = threadIdx.x; i < height; i += 32)
+            sum += powf(mat[blockIdx.x + i * width], 2);
+
+        sum_shared[threadIdx.x] = sum;
+
+        __syncthreads();
+
+        if (threadIdx.x == 0) {
+            sum = 0;
+
+            for (unsigned int i = 0; i < 32; i++)
+                sum += sum_shared[i];
+
+            vec_norm = sqrtf(sum);
+        }
+        __syncthreads();
+
+        for (unsigned int i = threadIdx.x; i < height; i += 32) {
+            if (vec_norm > max_vec_norm)
+                mat[blockIdx.x + i * width] /= (vec_norm / max_vec_norm);
+        }
+    }
+    """
+
+    mod = SourceModule(code)
+    add_row_vec_kernel = mod.get_function('addRowVecToMat')
+    add_col_vec_kernel = mod.get_function('addColVecToMat')
+    vector_normalize_kernel = mod.get_function("kVectorNormalize")
 
 def add_vec_to_mat(mat, vec, axis=None, inplace=False,
                    target=None, substract=False):

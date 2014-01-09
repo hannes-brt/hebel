@@ -20,116 +20,6 @@ from pycuda.elementwise import ElementwiseKernel
 from .. import sampler
 from .matrix import extract_columns, insert_columns
 
-all_kernels_code = {
-    'sign': {
-        'float':  ("float *mat, float *target",
-                   "target[i] = (mat[i] > 0.) - (mat[i] < 0);"),
-        'double': ("double *mat, double *target",
-                   "target[i] = (mat[i] > 0.) - (mat[i] < 0);")
-    },
-
-    'sigmoid': {
-        'float':  ("float *mat",
-                   "mat[i] = 1. / (1. + __expf(-mat[i]))",),
-        'double': ("double *mat",
-                   "mat[i] = 1. / (1. + exp(-mat[i]))")
-    },
-
-    'df_sigmoid': {
-        'float': ("float *mat, float *target",
-                  """const float f = mat[i];
-                  target[i] = f * (1 - f);
-                  """),
-        'double': ("double *mat, double *target",
-                   """const double f = mat[i],
-                   target[i] = f * (1 - f);
-                   """)
-    },
-
-    'tanh': {
-        'float':  ("float *mat",
-                   "mat[i] = tanhf(mat[i]);"),
-        'double': ("double *mat",
-                   "mat[i] = tanh(mat[i]);")
-    },
-
-    'df_tanh': {
-        'float': ("float *mat, float *target",
-                  """float f = mat[i];
-                  target[i] = 1 - pow(f, 2);"""),
-        'double': ("double *mat, double *target",
-                   """double f = mat[i];
-                   target[i] = 1 - pow(f, 2);""")
-    },
-
-    'relu': {
-        'float':  ("float *mat",
-                   "if (mat[i] < 0.) mat[i] = 0.",),
-        'double': ("double *mat",
-                   "if (mat[i] < 0.) mat[i] = 0.")
-    },
-
-    'df_relu': {
-        'float':  ("float *mat, float *target",
-                   "if (mat[i] <= 0.)\n  target[i] = 0.;\nelse\n  target[i] = 1.;"),
-        'double': ("double *mat, double *target",
-                   "if (mat[i] <= 0.)\n  target[i] = 0.;\nelse\n  target[i] = 1.;")
-    },
-
-    'sample_dropout_mask': {
-        'float':  ("float *mat, float *target, char *dropout_mask, "
-                   "float *dropout_prob_array, float dropout_probability",
-                   """if (dropout_prob_array[i] <= dropout_probability) {
-                        dropout_mask[i] = 0.;
-                        target[i] = 0.;
-                      } else {
-                        dropout_mask[i] = 1.;
-                        if (target != mat)
-                            target[i] = mat[i];
-                      }
-                    """),
-        'double':  ("double *mat, double *targets, char *dropout_mask, "
-                    "double *dropout_prob_array float dropout_probability",
-                    """if (dropout_prob_array[i] <= dropout_probability) {
-                        dropout_mask[i] = 0.;
-                        target[i] = 0.;
-                      } else {
-                        dropout_mask[i] = 1.;
-                        if (target != mat)                    
-                            target[i] = mat[i];
-                      }
-                    """)
-    },
-
-    'apply_dropout_mask': {
-        'float':    ("float *mat, char *mask",
-                     "if (mask[i] == 0.) mat[i] = 0;"),
-        'double':   ("double *mat, char *mask",
-                     "if (mask[i] == 0.) mat[i] = 0;"),
-    },
-
-    'nan_to_zeros': {
-        'float':    ("float *mat, float *target",
-                     "target[i] = isnan(mat[i]) ? 0. : mat[i];"),
-        'double':   ("double *mat, double *target",
-                     "target[i] = isnan(mat[i]) ? 0. : mat[i];")
-    },
-
-    'mult_matrix': {
-        'float': ("const float *a, const float *b, float *c",
-                  "c[i] = a[i] * b[i];"),
-        'double': ("const double *b, const double *b, double *c",
-                   "c[i] = a[i] * b[i];")
-
-    },
-    'substract_matrix': {
-        'float': ("const float *a, const float *b, float *c",
-                  "c[i] = a[i] - b[i];"),
-        'double': ("const double *a, const double *b, double *c",
-                   "c[i] = a[i] - b[i];")
-    }
-}
-
 class Kernel(object):
     """ Defers creation of the ElementwiseKernels until the first
     runtime and automatically selects kernels for double and float.
@@ -157,13 +47,135 @@ class Kernel(object):
         else:
             raise ValueError("Unknown datatype, must be np.float32 or np.float64")
 
-all_kernels = {
-    name: Kernel(name, 
-                 val['float'][0], val['float'][1],
-                 val['double'][0], val['double'][1])
-    for name, val in all_kernels_code.iteritems()
-}
-        
+all_kernels = None
+exp_func = None
+log_func = None
+def init():
+    from pycuda import elementwise
+    
+    global all_kernels
+    global exp_func
+    global log_func
+
+    all_kernels_code = {
+        'sign': {
+            'float':  ("float *mat, float *target",
+                       "target[i] = (mat[i] > 0.) - (mat[i] < 0);"),
+            'double': ("double *mat, double *target",
+                       "target[i] = (mat[i] > 0.) - (mat[i] < 0);")
+        },
+
+        'sigmoid': {
+            'float':  ("float *mat",
+                       "mat[i] = 1. / (1. + __expf(-mat[i]))",),
+            'double': ("double *mat",
+                       "mat[i] = 1. / (1. + exp(-mat[i]))")
+        },
+
+        'df_sigmoid': {
+            'float': ("float *mat, float *target",
+                      """const float f = mat[i];
+                      target[i] = f * (1 - f);
+                      """),
+            'double': ("double *mat, double *target",
+                       """const double f = mat[i],
+                       target[i] = f * (1 - f);
+                       """)
+        },
+
+        'tanh': {
+            'float':  ("float *mat",
+                       "mat[i] = tanhf(mat[i]);"),
+            'double': ("double *mat",
+                       "mat[i] = tanh(mat[i]);")
+        },
+
+        'df_tanh': {
+            'float': ("float *mat, float *target",
+                      """float f = mat[i];
+                      target[i] = 1 - pow(f, 2);"""),
+            'double': ("double *mat, double *target",
+                       """double f = mat[i];
+                       target[i] = 1 - pow(f, 2);""")
+        },
+
+        'relu': {
+            'float':  ("float *mat",
+                       "if (mat[i] < 0.) mat[i] = 0.",),
+            'double': ("double *mat",
+                       "if (mat[i] < 0.) mat[i] = 0.")
+        },
+
+        'df_relu': {
+            'float':  ("float *mat, float *target",
+                       "if (mat[i] <= 0.)\n  target[i] = 0.;\nelse\n  target[i] = 1.;"),
+            'double': ("double *mat, double *target",
+                       "if (mat[i] <= 0.)\n  target[i] = 0.;\nelse\n  target[i] = 1.;")
+        },
+
+        'sample_dropout_mask': {
+            'float':  ("float *mat, float *target, char *dropout_mask, "
+                       "float *dropout_prob_array, float dropout_probability",
+                       """if (dropout_prob_array[i] <= dropout_probability) {
+                            dropout_mask[i] = 0.;
+                            target[i] = 0.;
+                          } else {
+                            dropout_mask[i] = 1.;
+                            if (target != mat)
+                                target[i] = mat[i];
+                          }
+                        """),
+            'double':  ("double *mat, double *targets, char *dropout_mask, "
+                        "double *dropout_prob_array float dropout_probability",
+                        """if (dropout_prob_array[i] <= dropout_probability) {
+                            dropout_mask[i] = 0.;
+                            target[i] = 0.;
+                          } else {
+                            dropout_mask[i] = 1.;
+                            if (target != mat)                    
+                                target[i] = mat[i];
+                          }
+                        """)
+        },
+
+        'apply_dropout_mask': {
+            'float':    ("float *mat, char *mask",
+                         "if (mask[i] == 0.) mat[i] = 0;"),
+            'double':   ("double *mat, char *mask",
+                         "if (mask[i] == 0.) mat[i] = 0;"),
+        },
+
+        'nan_to_zeros': {
+            'float':    ("float *mat, float *target",
+                         "target[i] = isnan(mat[i]) ? 0. : mat[i];"),
+            'double':   ("double *mat, double *target",
+                         "target[i] = isnan(mat[i]) ? 0. : mat[i];")
+        },
+
+        'mult_matrix': {
+            'float': ("const float *a, const float *b, float *c",
+                      "c[i] = a[i] * b[i];"),
+            'double': ("const double *b, const double *b, double *c",
+                       "c[i] = a[i] * b[i];")
+
+        },
+        'substract_matrix': {
+            'float': ("const float *a, const float *b, float *c",
+                      "c[i] = a[i] - b[i];"),
+            'double': ("const double *a, const double *b, double *c",
+                       "c[i] = a[i] - b[i];")
+        }
+    }
+
+    all_kernels = {
+        name: Kernel(name, 
+                     val['float'][0], val['float'][1],
+                     val['double'][0], val['double'][1])
+        for name, val in all_kernels_code.iteritems()
+    }
+
+    exp_func = elementwise.get_unary_func_kernel('expf', np.float32)
+    log_func = elementwise.get_unary_func_kernel('logf', np.float32)
 
 def sign(x):
     assert x.flags.c_contiguous

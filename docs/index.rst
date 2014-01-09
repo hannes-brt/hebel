@@ -26,6 +26,7 @@ Contents:
    introduction
    installation
    getting_started
+   initialization
    data_providers
    layers
    monitors

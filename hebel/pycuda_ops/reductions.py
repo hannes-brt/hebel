@@ -16,10 +16,17 @@
 
 import numpy as np
 from pycuda import gpuarray
-from pycuda.compiler import SourceModule
 from . import linalg
 
-code = """
+max_column = None
+max_row = None
+def init():
+    from pycuda.compiler import SourceModule
+
+    global max_column
+    global max_row
+
+    code = """
 #include "float.h"
 
 __global__ void kMaxColumnwise(float* mat,
@@ -85,9 +92,9 @@ __global__ void kMaxRowwise(float* mat,
 }
 """
 
-mod = SourceModule(code)
-max_column = mod.get_function("kMaxColumnwise")
-max_row = mod.get_function("kMaxRowwise")
+    mod = SourceModule(code)
+    max_column = mod.get_function("kMaxColumnwise")
+    max_row = mod.get_function("kMaxRowwise")
 
 
 def max_by_axis(mat, axis=0):

@@ -14,10 +14,12 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+import hebel
+hebel.init(0)
+
 import unittest
 import random
 import numpy as np
-import pycuda.autoinit
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from hebel import sampler
