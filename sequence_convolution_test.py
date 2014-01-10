@@ -7,7 +7,10 @@
 import unittest
 import random
 import numpy as np
-import pycuda.autoinit
+
+import hebel
+hebel.init()
+
 from sequence_convolution.pycuda_ops import convolve_sequence, \
      convolve_sequence_gradient, max_pool, max_pool_gradient, \
      fully_connected_layer, fully_connected_layer_gradient
@@ -17,11 +20,11 @@ from sequence_convolution.models import SequenceConvolutionNet, \
      SequenceConvolutionLayer, MultiSequenceConvolutionLayer, MaxPoolingLayer
 from sequence_convolution.seq_array import SeqArrayDataProvider, sample_sequence, \
     encode_sequence
-from neural_nets.data_providers import MiniBatchDataProvider
-from neural_nets.optimizers import SGD
-from neural_nets.schedulers import constant_scheduler
-from neural_nets.parameter_updaters import SimpleSGDUpdate
-from neural_nets.monitors import SimpleProgressMonitor
+from hebel.data_providers import MiniBatchDataProvider
+from hebel.optimizers import SGD
+from hebel.schedulers import constant_scheduler
+from hebel.parameter_updaters import SimpleSGDUpdate
+from hebel.monitors import SimpleProgressMonitor
 from copy import copy, deepcopy
 from itertools import izip
 
@@ -604,7 +607,7 @@ class TestMultiSequenceConvolutionLayer(unittest.TestCase):
 
         # Create multi-convolution layer
         self.conv_layer_multi = MultiSequenceConvolutionLayer(
-            self.multi_conv_config)
+            self.multi_conv_config, operation='convolution')
 
         # Convert configuration to single convolution
         single_conv_config = deepcopy(self.multi_conv_config)

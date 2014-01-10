@@ -19,7 +19,7 @@ import numpy as np
 import string
 from pycuda import gpuarray
 import random
-from neural_nets.data_providers import MultiTaskDataProvider
+from hebel.data_providers import MultiTaskDataProvider
 
 
 def encode_sequence(seq):

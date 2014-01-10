@@ -20,7 +20,7 @@ import numpy as np
 import os
 from jinja2 import Template
 from . import sequence_conv_root
-from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
+from hebel.pycuda_ops.reductions import matrix_sum_out_axis
 
 _TILE_SIZE_CONV = 1024
 

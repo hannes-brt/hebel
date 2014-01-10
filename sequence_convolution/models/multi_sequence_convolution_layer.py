@@ -16,15 +16,15 @@
 
 import numpy as np
 from pycuda import gpuarray
-from pycuda.curandom import rand as curand
 from itertools import izip
 from .. import pycuda_ops
 from . import MaxPoolingLayer
-from neural_nets.models import HiddenLayer
-from neural_nets.pycuda_ops.elementwise import sign, sample_dropout_mask, \
+from hebel import sampler
+from hebel.layers import HiddenLayer
+from hebel.pycuda_ops.elementwise import sign, sample_dropout_mask, \
      apply_dropout_mask
-from neural_nets.pycuda_ops.matrix import extract_columns, insert_columns
-from neural_nets.pycuda_ops.reductions import matrix_sum_out_axis
+from hebel.pycuda_ops.matrix import extract_columns, insert_columns
+from hebel.pycuda_ops.reductions import matrix_sum_out_axis
 
 
 class MultiSequenceConvolutionLayer(HiddenLayer):
@@ -81,8 +81,9 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                 _weight_scale = layer.get('weight_scale', weight_scale)
                 if not layer.has_key('W'):
                     W = _weight_scale * \
-                      curand((layer['n_filters'], 4 * layer['filter_width']),
-                             dtype) - .5 * _weight_scale
+                      sampler.gen_uniform(
+                          (layer['n_filters'], 4 * layer['filter_width']),
+                          dtype) - .5 * _weight_scale
                 else:
                     W = layer['W']
 

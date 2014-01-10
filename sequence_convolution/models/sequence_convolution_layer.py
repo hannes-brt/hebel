@@ -18,9 +18,9 @@
 import numpy as np
 from pycuda import gpuarray
 from .. import pycuda_ops
-from neural_nets import sampler
-from neural_nets.models import HiddenLayer
-from neural_nets.pycuda_ops.elementwise import sign
+from hebel import sampler
+from hebel.layers import HiddenLayer
+from hebel.pycuda_ops.elementwise import sign
 
 class SequenceConvolutionLayer(HiddenLayer):
     n_parameters = 2

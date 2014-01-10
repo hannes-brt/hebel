@@ -17,7 +17,7 @@
 import numpy as np
 from .max_pooling_layer import MaxPoolingLayer
 from .sequence_convolution_layer import SequenceConvolutionLayer
-from neural_nets.models import NeuralNet
+from hebel.models import NeuralNet
 
 
 class SequenceConvolutionNet(NeuralNet):

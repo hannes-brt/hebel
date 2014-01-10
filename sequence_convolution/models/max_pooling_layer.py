@@ -15,10 +15,9 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 import numpy as np
-from pycuda.curandom import rand as curand
 from .. import pycuda_ops
-from neural_nets.models import HiddenLayer
-from neural_nets.pycuda_ops.elementwise import sample_dropout_mask, \
+from hebel.layers import HiddenLayer
+from hebel.pycuda_ops.elementwise import sample_dropout_mask, \
      apply_dropout_mask
 
 
