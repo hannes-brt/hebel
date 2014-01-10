@@ -78,12 +78,12 @@ def init():
                       target[i] = f * (1 - f);
                       """),
             'double': ("double *mat, double *target",
-                       """const double f = mat[i],
+                       """const double f = mat[i];
                        target[i] = f * (1 - f);
                        """)
         },
 
-        'tanh': {
+        'tanh_inplace': {
             'float':  ("float *mat",
                        "mat[i] = tanhf(mat[i]);"),
             'double': ("double *mat",
@@ -189,14 +189,14 @@ def sigmoid(x):
 
 def df_sigmoid(f, target=None):
     assert f.flags.c_contiguous
-    if target is not None:
+    if target is None:
         target = gpuarray.empty_like(f)
     all_kernels['df_sigmoid'](f, target)
     return target
 
 def tanh(x):
     assert x.flags.c_contiguous
-    all_kernels['tanh'](x)
+    all_kernels['tanh_inplace'](x)
 
 def df_tanh(f, target=None):
     assert f.flags.c_contiguous
