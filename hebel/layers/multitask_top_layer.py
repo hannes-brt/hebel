@@ -198,12 +198,12 @@ class MultitaskTopLayer(TopLayer):
             task.parameters = value[i:i + task.n_parameters]
             i += task.n_parameters
 
-    # def update_parameters(self, value):
-    #     assert len(value) == self.n_parameters
-    #     i = 0
-    #     for task in self.tasks:
-    #         task.update_parameters(value[i:i + task.n_parameters])
-    #         i += task.n_parameters
+    def update_parameters(self, value):
+        assert len(value) == self.n_parameters
+        i = 0
+        for task in self.tasks:
+            task.update_parameters(value[i:i + task.n_parameters])
+            i += task.n_parameters
 
     @property
     def architecture(self):
@@ -366,3 +366,5 @@ class MultitaskTopLayer(TopLayer):
             return sum(loss)
         else:
             return loss
+
+    train_error = cross_entropy_error
