@@ -46,6 +46,7 @@ class _Sampler(object):
 
     def set_seed(self, seed):
         self.seed = seed
+        self._sampler = None
 sampler = _Sampler()
 
 def init(device_id=None, random_seed=None):
