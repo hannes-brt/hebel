@@ -74,7 +74,9 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
             if not isinstance(self.targets, (list, tuple)):
                 self.targets = self.targets.get()
             else:
-                self.targets = [t.get() for t in self.targets]        
+                self.targets = [t.get() for t in self.targets]
+
+        self._make_batches()
 
     @property
     def sequences(self):

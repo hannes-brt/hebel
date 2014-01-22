@@ -55,9 +55,14 @@ class SequenceConvolutionLayer(HiddenLayer):
 
         self.lr_multiplier = [1., 1.]
 
-    def feed_forward(self, input, prediction=False):
-        activations = \
-            pycuda_ops.convolve_sequence(input, self.W, self.b)
+        self.persistent_temp_objects_config = (
+            ('activations', ('batch_size', self.n_filters*self.n_in), np.float32)
+        )
+
+    def feed_forward(self, input_data, prediction=False):
+        activations = self.get_temp_object('activations',
+            (input_data.shape[0], self.n_filters*self.n_in), input_data.dtype)
+        pycuda_ops.convolve_sequence(input, self.W, self.b, target=activations)
 
         self.f(activations)
         return (activations,)

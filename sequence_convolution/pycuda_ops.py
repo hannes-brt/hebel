@@ -112,80 +112,85 @@ def convolve_sequence(mat, conv_filter, bias,
     return target
 
 
-def convolve_sequence_gradient(mat, df_output, filter_width, n_filters,
-                               input_offset=0, df_output_offset=0, width=None,
-                               target=None, stream=None, block_size=1024):
+def convolve_sequence_gradient_wrapper():
+    target_tmp_cache = []
+    
+    def f(mat, df_output, filter_width, n_filters, input_offset=0,
+          df_output_offset=0, width=None,target=None, stream=None,
+          block_size=128):
 
-    assert mat.flags.c_contiguous
-    assert df_output.flags.c_contiguous
+        assert mat.flags.c_contiguous
+        assert df_output.flags.c_contiguous
 
-    stride = 4
-    dtype = df_output.dtype
-    assert dtype in (np.float32, np.float64)
+        stride = 4
+        dtype = df_output.dtype
+        assert dtype in (np.float32, np.float64)
 
-    height, total_width = mat.shape
+        height, total_width = mat.shape
 
-    if input_offset > 0:
-        assert width is not None
-        assert input_offset + width <= total_width
+        if input_offset > 0:
+            assert width is not None
+            assert input_offset + width <= total_width
 
-    total_df_output_width = df_output.shape[1]
+        total_df_output_width = df_output.shape[1]
 
-    if df_output_offset > 0:
-        assert width is not None
-        assert df_output_offset + n_filters * width <= total_df_output_width
+        if df_output_offset > 0:
+            assert width is not None
+            assert df_output_offset + n_filters * width <= total_df_output_width
 
-    if width is None:
-        width = total_width
-    n_elements = height*width
+        if width is None:
+            width = total_width
+        n_elements = height*width
 
-    block = (block_size, 1, 1)
-    grid = (int(np.ceil(n_elements / float(block_size))), n_filters, 1)
-    shared = (filter_width - 1 + block_size +  # df_output_share
-              stride * block_size              # df_weights_reduce
-              ) * np.dtype(dtype).itemsize
+        block = (block_size, 1, 1)
+        grid = ((n_elements + block_size - 1) / block_size, n_filters, 1 )
+        shared = (filter_width - 1 + block_size +  # df_output_share
+                  stride * block_size              # df_weights_reduce
+                  ) * np.dtype(dtype).itemsize
 
-    if target is not None:
-        assert target.dtype == dtype
-        assert target.shape == (n_filters, stride*filter_width, grid[0])
-        assert targets.flags.c_contiguous
-    else:
-        target = gpuarray.empty((n_filters, stride*filter_width,
-                                 grid[0]), dtype=dtype)
+        target_tmp = None
+        for x in target_tmp_cache:
+            if x.shape == (n_filters, stride*filter_width, grid[0]) and \
+               x.dtype == dtype:
+                target_tmp = x
+        if target_tmp is None:
+            target_tmp = gpuarray.empty((n_filters, stride*filter_width,
+                                         grid[0]), dtype=dtype)
+            target_tmp_cache.append(target_tmp)
 
-    dname = _dtype_name[dtype]
-    _kernels[dname]['convolve_sequence_gradient_kernel'](
-        mat,
-        df_output,
-        target,
-        np.uint32(input_offset),
-        np.uint32(df_output_offset),
-        np.uint32(total_width),
-        np.uint32(total_df_output_width),
-        np.uint32(width),
-        np.uint32(height),
-        np.uint32(filter_width),
-        np.uint32(n_filters),
-        block=block, grid=grid, shared=shared, stream=stream)
+        dname = _dtype_name[dtype]
+        _kernels[dname]['convolve_sequence_gradient_kernel'](
+            mat,
+            df_output,
+            target_tmp,
+            np.uint32(input_offset),
+            np.uint32(df_output_offset),
+            np.uint32(total_width),
+            np.uint32(total_df_output_width),
+            np.uint32(width),
+            np.uint32(height),
+            np.uint32(filter_width),
+            np.uint32(n_filters),
+            block=block, grid=grid, shared=shared, stream=stream)
 
-    if grid[0] > 1:
-        target_sum = gpuarray.empty((n_filters, stride*filter_width), dtype)
+        if target is None:
+            target = gpuarray.empty((n_filters, stride*filter_width), dtype)
         block_sum = (max((1, 2**int(np.ceil(np.log2(grid[0])-1)))), 1, 1)
         grid_sum = (n_filters, stride*filter_width, 1)
         shared = block_sum[0] * np.dtype(dtype).itemsize
 
         _kernels[dname]['gradient_reduce_kernel'](
+            target_tmp,
             target,
-            target_sum,
             np.uint32(n_filters),
             np.uint32(filter_width),
             np.uint32(grid[0]),
             block=block_sum, grid=grid_sum,
             shared=shared, stream=stream)
-    else:
-        target_sum = target.reshape((n_filters, stride*filter_width))
 
-    return target_sum
+        return target
+    return f
+convolve_sequence_gradient = convolve_sequence_gradient_wrapper()
 
 
 def max_pool(mat, pool_size, n_filters, width=None,
@@ -303,14 +308,21 @@ def max_pool_gradient(mat, argmax,
     return target
 
 
-def sum_delta(delta, n_filters, cache_one_vector=True):
+def sum_delta(delta, n_filters, cache_one_vector=True,
+              target_tmp=None, target_sum=None):
     assert delta.flags.c_contiguous
     assert not delta.shape[1] % n_filters
     width = delta.shape[1] / n_filters
-    delta_sum_a = matrix_sum_out_axis(delta, 0, cache_one_vector)
-    delta_r = delta_sum_a.reshape((n_filters, width))
-    delta_sum_b = matrix_sum_out_axis(delta_r, 1, cache_one_vector).ravel()
-    return delta_sum_b
+    if target_tmp is None:
+        target_tmp = gpuarray.empty(delta.shape[1:], delta.dtype)
+    target_tmp = matrix_sum_out_axis(delta, 0, cache_one_vector,
+                                      target=target_tmp)
+    delta_r = target_tmp.reshape((n_filters, width))
+    if target_sum is None:
+        target_sum = gpuarray.empty(delta_r.shape[:1], delta_r.dtype)
+    target_sum = matrix_sum_out_axis(delta_r, 1, cache_one_vector,
+                                      target=target_sum).ravel()
+    return target_sum
 
 
 def fully_connected_layer(mat, filters, bias,

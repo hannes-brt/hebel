@@ -18,7 +18,7 @@ import numpy as np
 from pycuda import gpuarray
 from itertools import izip
 from .. import pycuda_ops
-from . import MaxPoolingLayer
+from . import MaxPoolingLayer, SubregionLayer, SlavedSubregionLayer
 from hebel import sampler
 from hebel.layers import HiddenLayer
 from hebel.pycuda_ops.elementwise import sign, sample_dropout_mask, \
@@ -33,12 +33,11 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                  n_filters=None,
                  filter_width=None,
                  pool_size=None,
-                 operation=None,
                  activation_function=None,
                  dropout=None,
-                 lr_multiplier=None,
-                 l1_penalty_weight=None,
-                 l2_penalty_weight=None,
+                 lr_multiplier=1.,
+                 l1_penalty_weight=0.,
+                 l2_penalty_weight=0.,
                  dtype=np.float32,
                  weight_scale=.01):
 
@@ -46,97 +45,45 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         self.dtype = dtype
         self.dropout = dropout
 
-        self.W = []
-        self.b = []
-
         output_offset = 0
         param_idx = 0
-        for layer in subregion_layers:
-            n_in = layer['n_in']
-
+        for i, layer in enumerate(subregion_layers):
             # Replace defaults
-            if n_filters is not None:
+            if n_filters is not None and 'n_filters' not in layer:
                 layer['n_filters'] = n_filters
-            if operation is not None:
-                layer['operation'] = operation
-            if filter_width is not None:
+            if filter_width is not None and 'filter_width' not in layer:
                 layer['filter_width'] = filter_width
-            if pool_size is not None:
+            if pool_size is not None and 'pool_sizse' not in layer:
                 layer['pool_size'] = pool_size
-            if activation_function is not None:
+            if activation_function is not None and 'activation_function' not in layer:
                 layer['activation_function'] = activation_function
-            if l1_penalty_weight is not None:
+            if 'l1_penalty_weight' not in layer:
                 layer['l1_penalty_weight'] = l1_penalty_weight
-            if l2_penalty_weight is not None:
+            if 'l2_penalty_weight' not in layer:
                 layer['l2_penalty_weight'] = l2_penalty_weight
-            if lr_multiplier is not None:
+            if 'lr_multiplier' not in layer:
                 layer['lr_multiplier'] = lr_multiplier
-
-            assert layer['operation'] in ('convolution', 'fully_connected')
-            if layer['operation'] == 'fully_connected':
-                layer['filter_width'] = layer['n_in']
+            layer['output_offset'] = output_offset
 
             if not layer.has_key('weight_share'):
-                layer['layer_type'] = 'master'
                 _weight_scale = layer.get('weight_scale', weight_scale)
-                if not layer.has_key('W'):
-                    W = _weight_scale * \
-                      sampler.gen_uniform(
-                          (layer['n_filters'], 4 * layer['filter_width']),
-                          dtype) - .5 * _weight_scale
-                else:
-                    W = layer['W']
-
-                assert W.shape == (layer['n_filters'],
-                                   4 * layer['filter_width'])
-                self.W.append(W)
-
-                if not layer.has_key('b'):
-                    b = gpuarray.zeros((layer['n_filters'],), dtype)
-                else:
-                    b = layer['b']
-
-                assert b.shape == (layer['n_filters'],)
-                self.b.append(b)
-
-                layer['param_idx'] = param_idx
+                subregion_layers[i] = SubregionLayer(layer['n_in'],
+                                                     layer['n_filters'],
+                                                     layer['filter_width'],
+                                                     layer['pool_size'],
+                                                     layer['activation_function'],
+                                                     layer['l1_penalty_weight'],
+                                                     layer['l2_penalty_weight'],
+                                                     layer['lr_multiplier'],
+                                                     weight_scale=weight_scale,
+                                                     param_idx=param_idx,
+                                                     output_offset=output_offset)
                 param_idx += 1
-
-                layer['f'], layer['df'] = \
-                  self._resolve_activation_fct(layer['activation_function'])
-
-                if not layer.has_key('l1_penalty_weight'):
-                    layer['l1_penalty_weight'] = 0.
-                if not layer.has_key('l2_penalty_weight'):
-                    layer['l2_penalty_weight'] = 0.
-                if not layer.has_key('lr_multiplier'):
-                    if layer['operation'] == 'convolution':
-                        layer['lr_multiplier'] = 1.
-                    elif layer['operation'] == 'fully_connected':
-                        layer['lr_multiplier'] = \
-                            float(1. / np.sqrt([layer['n_in']]))
-
             else:
-                layer['layer_type'] = 'slave'
                 master_layer = subregion_layers[layer['weight_share']]
-                layer['n_filters'] = master_layer['n_filters']
-                layer['filter_width'] = master_layer['filter_width']
-                layer['param_idx'] = master_layer['param_idx']
-                layer['activation_function'] = master_layer['activation_function']
-                layer['f'] = master_layer['f']
-                layer['df'] = master_layer['df']
-                layer['operation'] = master_layer['operation']
+                subregion_layers[i] = SlavedSubregionLayer(master_layer, output_offset)
 
-            if layer['operation'] == 'convolution':
-                layer['n_units'] = MaxPoolingLayer._compute_n_units(
-                    layer['n_in'], layer['pool_size'], layer['n_filters'])
-            elif layer['operation'] == 'fully_connected':
-                layer['n_units'] = layer['n_filters']
-            else:
-                raise ValueError
-
-            layer['output_offset'] = output_offset
-            output_offset += layer['n_units']
+            output_offset += subregion_layers[i].n_units
 
         if fully_connected_layers is None:
             self.fully_connected_layers = None
@@ -151,7 +98,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                     raise TypeError("fully connected layer must be a dictionary or "
                       "an instance of HiddenLayer")
 
-        self.n_units = sum((layer['n_units'] for layer in subregion_layers))
+        self.n_units = sum((layer.n_units for layer in subregion_layers))
         if self.fully_connected_layers is not None:
             self.fc_layer_offset = [self.n_units]
 
@@ -162,13 +109,34 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         else:
             self.fc_layer_offset = [self.n_units]
 
-        self.master_layers = filter(lambda l: l['layer_type'] == 'master',
+        self.master_layers = filter(lambda l: l.is_master_layer,
                                     self.subregion_layers)
 
-        self.l1_penalty_weight = any((l['l1_penalty_weight'] > 0.
+        self.l1_penalty_weight = any((l.l1_penalty_weight > 0.
                                       for l in self.master_layers))
-        self.l2_penalty_weight = any((l['l2_penalty_weight'] > 0.
+        self.l2_penalty_weight = any((l.l2_penalty_weight > 0.
                                       for l in self.master_layers))
+
+        self.persistent_temp_objects_config = (
+            ('activations_pooled', ('batch_size', self.n_units), np.float32),
+            ('argmax', ('batch_size', self.n_units), np.uint32)
+        )
+
+    def preallocate_temp_objects(self, batch_size):
+        super(MultiSequenceConvolutionLayer, self).preallocate_temp_objects(batch_size)
+        
+        for layer in self.subregion_layers:
+            layer.preallocate_temp_objects(batch_size)
+        for layer in self.fully_connected_layers:
+            layer.preallocate_temp_objects(batch_size)
+
+    @property
+    def W(self):
+        return [l.W for l in self.master_layers]
+
+    @property
+    def b(self):
+        return [l.b for l in self.master_layers]
 
     @property
     def n_parameters(self):
@@ -179,12 +147,11 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
     @property
     def n_in(self):
-        return sum((l['n_in'] for l in self.subregion_layers))
+        return sum((l.n_in for l in self.subregion_layers))
 
     @property
     def lr_multiplier(self):
-        lrm = 2 * [l.get('lr_multiplier', 1.) for l in self.subregion_layers
-                   if l['layer_type'] == 'master']
+        lrm = 2 * [l.lr_multiplier for l in self.master_layers]
 
         if self.fully_connected_layers is not None:
             for fcl in self.fully_connected_layers:
@@ -217,8 +184,11 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                 fcl.parameters = fc_params[idx:idx+fcl.n_parameters]
                 idx += fcl.n_parameters
 
-        self.W = conv_params[:len(self.W)]
-        self.b = conv_params[len(self.W):]
+        for layer, W, b in izip(self.master_layers,
+                                conv_params[:len(self.W)],
+                                conv_params[len(self.W):]):
+            layer.W = W
+            layer.b = b
 
     def update_parameters(self, values, stream=None):
         assert len(values) == self.n_parameters
@@ -243,7 +213,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
     @property
     def l1_penalty(self):
         l1_pen = np.sum(
-            [float(l['l1_penalty_weight']) * gpuarray.sum(abs(W)).get()
+            [float(l.l1_penalty_weight) * gpuarray.sum(abs(W)).get()
              for l, W in izip(self.master_layers, self.W)])
 
         if self.fully_connected_layers is not None:
@@ -255,7 +225,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
     @property
     def l2_penalty(self):
         l2_pen = np.sum(
-            [float(l['l2_penalty_weight']) * .5 * gpuarray.sum(W ** 2.).get()
+            [float(l.l2_penalty_weight) * .5 * gpuarray.sum(W ** 2.).get()
              for l, W in izip(self.master_layers, self.W)])
 
         if self.fully_connected_layers is not None:
@@ -268,35 +238,20 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         assert all((input_data[0].shape[0] == i.shape[0] for i in input_data[1:]))
 
         N = input_data[0].shape[0]
-        activations_pooled = gpuarray.empty((N, self.n_units),
-                                            self.dtype)
-        argmax = gpuarray.empty(activations_pooled.shape,
-                                np.uint32)
+        activations_pooled = self.get_temp_object('activations_pooled',
+                                                  (N, self.n_units),
+                                                  self.dtype)
+        argmax = self.get_temp_object('argmax',
+                                      activations_pooled.shape,
+                                      np.uint32)
 
         filtermaps = []
 
         for input_region, layer \
             in izip(input_data, self.subregion_layers):
-            W = self.W[layer['param_idx']]
-            b = self.b[layer['param_idx']]
-            act_fct = layer['f']
-
-            if layer['operation'] == 'convolution':
-                filtermap = pycuda_ops.convolve_sequence(input_region, W, b)
-                act_fct(filtermap)
-                filtermaps.append(filtermap)
-                pycuda_ops.max_pool(filtermap, layer['pool_size'],
-                                    layer['n_filters'],
-                                    width=layer['n_in'],
-                                    pooled_offset=layer['output_offset'],
-                                    target=activations_pooled, argmax=argmax)
-            elif layer['operation'] == 'fully_connected':
-                filtermap = \
-                    pycuda_ops.fully_connected_layer(input_region, W, b)
-                act_fct(filtermap)
-                filtermaps.append(filtermap)
-                insert_columns(filtermap, activations_pooled,
-                               layer['output_offset'])
+            filtermap = layer.feed_forward(input_region, prediction,
+                                           activations_pooled, argmax)
+            filtermaps.append(filtermap)
 
         if self.fully_connected_layers is not None:
             assert len(input_data) == \
@@ -316,25 +271,24 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         else:
             activations_fc = None
 
-        if self.dropout and not prediction:
-            # Dropout only applies to subregion layer
-            dropout_mask = sample_dropout_mask(activations_pooled,
-                                               columns=(0, self.fc_layer_offset[0]))
-        else:
-            dropout_mask = None
+        # if self.dropout and not prediction:
+        #     # Dropout only applies to subregion layer
+        #     dropout_mask = sample_dropout_mask(activations_pooled,
+        #                                        columns=(0, self.fc_layer_offset[0]))
+        # else:
+        #     dropout_mask = None
 
-        return activations_pooled, argmax, filtermaps, \
-            dropout_mask, activations_fc
+        return activations_pooled, argmax, filtermaps, activations_fc
 
     def backprop(self, input_data, df_output, cache=None):
         if cache is None:
             cache = self.feed_forward(input_data)
 
-        activations_pooled, argmax, filtermaps, dropout_mask, fc_cache = cache
+        activations_pooled, argmax, filtermaps, fc_cache = cache
 
-        if self.dropout and dropout_mask is not None:
-            apply_dropout_mask(df_output, dropout_mask,
-                               columns=(0, self.fc_layer_offset[0]))
+        # if self.dropout and dropout_mask is not None:
+        #     apply_dropout_mask(df_output, dropout_mask,
+        #                        columns=(0, self.fc_layer_offset[0]))
 
         df_W = []
         df_b = []
@@ -342,44 +296,19 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
         for input_region, filtermap, layer \
           in izip(input_data, filtermaps, self.subregion_layers):
-            act_df = layer['df']
 
-            if layer['operation'] == 'convolution':
-                df_filtermap = pycuda_ops.max_pool_gradient(
-                    filtermap, argmax, df_output, layer['pool_size'],
-                    layer['n_filters'],
-                    width_pooled=layer['n_units'] / layer['n_filters'],
-                    pooled_offset=layer['output_offset'])
+            ((df_W_layer, df_b_layer), df_filtermap) = \
+                layer.backprop(input_region, df_output,
+                                      filtermap, argmax)
 
-                df_filtermaps.append(df_filtermap)
+            df_filtermaps.append(df_filtermap)
 
-                df_conv = act_df(filtermap)
-                delta = df_conv * df_filtermap
-                df_b_layer = pycuda_ops.sum_delta(delta, layer['n_filters'])
-                df_W_layer = pycuda_ops.convolve_sequence_gradient(
-                    input_region, delta, layer['filter_width'],
-                    layer['n_filters'])
-            elif layer['operation'] == 'fully_connected':
-                df_filtermap = act_df(filtermap)
-                df_filtermaps.append(df_filtermap)
-
-                delta = df_filtermap * df_output
-                df_W_layer = \
-                    pycuda_ops.fully_connected_layer_gradient(input_region, delta)
-                df_b_layer = matrix_sum_out_axis(delta, 0)
-
-            if layer['layer_type'] == 'master':
+            if layer.is_master_layer:
                 df_W.append(df_W_layer)
                 df_b.append(df_b_layer)
             else:
-                df_W[layer['param_idx']] += df_W_layer
-                df_b[layer['param_idx']] += df_b_layer
-
-        for df_W_i, layer in izip(df_W, self.master_layers):
-            if layer['l1_penalty_weight']:
-                df_W_i -= layer['l1_penalty_weight'] * sign(df_W_i)
-            if layer['l2_penalty_weight']:
-                df_W_i -= layer['l2_penalty_weight'] * self.W
+                df_W[layer.param_idx] += df_W_layer
+                df_b[layer.param_idx] += df_b_layer
 
         if self.fully_connected_layers is not None:
             assert len(input_data) == \
@@ -399,7 +328,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                   fcl.backprop(ifc, df_output_fc,
                                cache)
                 grad_fc.extend(grads_layer)
-                df_input_fc.extend(df_input_layer)
+                df_input_fc.append(df_input_layer)
 
             return df_W + df_b + list(grad_fc), \
               (df_filtermaps, df_input_fc)
