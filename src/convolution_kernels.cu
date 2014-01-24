@@ -243,6 +243,12 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
       df_output[output_idx] : 0.;
   }
   
+  // Zero shared memory
+  df_weights_reduce[tx] = 0;
+  df_weights_reduce[blockDim.x+tx] = 0;
+  df_weights_reduce[2*blockDim.x+tx] = 0;
+  df_weights_reduce[3*blockDim.x+tx] = 0;
+
   __syncthreads();
 
   // Compute gradients
@@ -250,37 +256,21 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
     df_output_shift = halo_width-filter_pos;
 
     if (column >= df_output_shift) {
-      df_weights_reduce[STRIDE*tx] = 
-	(CHECK_NT(input_element, DNA_A)) ?
-    	df_output_shared[tx+filter_pos] : 0.;
-
-      df_weights_reduce[STRIDE*tx+1] = 
-	(CHECK_NT(input_element, DNA_C)) ?
-    	df_output_shared[tx+filter_pos] : 0.;
-
-      df_weights_reduce[STRIDE*tx+2] = 
-	(CHECK_NT(input_element, DNA_G)) ?
-    	df_output_shared[tx+filter_pos] : 0.;
-
-      df_weights_reduce[STRIDE*tx+3] = 
-	(CHECK_NT(input_element, DNA_T)) ?
-    	df_output_shared[tx+filter_pos] : 0.;
-
-      if (CHECK_NT(input_element, DNA_R)) {
-	df_weights_reduce[STRIDE*tx] = .5 * df_output_shared[tx+filter_pos];
-	df_weights_reduce[STRIDE*tx+2] = .5 * df_output_shared[tx+filter_pos];
+      if (CHECK_NT(input_element, DNA_A))
+	df_weights_reduce[STRIDE*tx] = df_output_shared[tx+filter_pos];
+      else if (CHECK_NT(input_element, DNA_C))
+	df_weights_reduce[STRIDE*tx+1] = df_output_shared[tx+filter_pos];
+      else if (CHECK_NT(input_element, DNA_G))
+	df_weights_reduce[STRIDE*tx+2] = df_output_shared[tx+filter_pos];
+      else if (CHECK_NT(input_element, DNA_T))
+	df_weights_reduce[STRIDE*tx+3] = df_output_shared[tx+filter_pos];
+      else if (CHECK_NT(input_element, DNA_R)) {
+    	df_weights_reduce[STRIDE*tx] = .5 * df_output_shared[tx+filter_pos];
+    	df_weights_reduce[STRIDE*tx+2] = .5 * df_output_shared[tx+filter_pos];
+      } else if (CHECK_NT(input_element, DNA_Y)) {
+    	df_weights_reduce[STRIDE*tx+1] = .5 * df_output_shared[tx+filter_pos];
+    	df_weights_reduce[STRIDE*tx+3] = .5 * df_output_shared[tx+filter_pos];
       }
-    
-      if (CHECK_NT(input_element, DNA_Y)) {
-	df_weights_reduce[STRIDE*tx+1] = .5 * df_output_shared[tx+filter_pos];
-	df_weights_reduce[STRIDE*tx+3] = .5 * df_output_shared[tx+filter_pos];
-      }
-
-    } else {
-      df_weights_reduce[STRIDE*tx] = 0.;
-      df_weights_reduce[STRIDE*tx+1] = 0.;
-      df_weights_reduce[STRIDE*tx+2] = 0.;
-      df_weights_reduce[STRIDE*tx+3] = 0.;
     }
 
     __syncthreads();
