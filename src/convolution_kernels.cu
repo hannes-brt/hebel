@@ -148,9 +148,14 @@ __global__ void gradient_reduce(const {{ data_type }} *df_weights,
   extern __shared__ {{ data_type }} sdata[];
     
   sdata[tid] = (tid<n_elements) ? df_weights[df_weights_idx] : 0;
-  if (tid+blockDim.x < n_elements)
-    sdata[tid] += df_weights[df_weights_idx+blockDim.x];
-  __syncthreads();
+  const unsigned int size_mult = CEIL_INT(n_elements, blockDim.x);
+  if (size_mult > 1) {
+    for (unsigned int i=1; i<size_mult; i++) {
+      if (tid+i*blockDim.x < n_elements)
+	sdata[tid] += df_weights[df_weights_idx+i*blockDim.x];
+      __syncthreads();
+    }
+  }
     
   for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
     if (tid < s) {
@@ -196,7 +201,8 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
 
   
   const unsigned int tx = threadIdx.x;
-  const unsigned int f = blockIdx.y;
+  const unsigned int filter_pos = blockIdx.y;
+  const unsigned int filter_idx = blockIdx.z;
   const unsigned int lin_idx = blockIdx.x*blockDim.x+tx;
   const unsigned int row = lin_idx / width;
   const unsigned int column = lin_idx % width;
@@ -215,14 +221,14 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
   {{ data_type }} *df_output_shared = sdata;
   {{ data_type }} *df_weights_reduce = df_output_shared + shared_width;
 
-  // Load input element
-  const nucleotide_t input_element = 
-    (lin_idx < len_input) ? input[input_idx] : DNA_N;
+
+  // Load input into shared memory
+  const nucleotide_t input_element = (lin_idx < len_input) ? input[input_idx] : DNA_N;
 
   // Load halo elements on the left into shared memory
   if (tx < halo_width) {
     output_idx = row_start_block*total_df_output_width +
-      df_output_offset + f*width + column_start_block - halo_width + tx;
+      df_output_offset + filter_idx*width + column_start_block - halo_width + tx;
     shared_idx = tx;
     halo_idx = column_start_block - halo_width + tx;
     df_output_shared[shared_idx] = 
@@ -231,7 +237,7 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
 
   // Load remaining shared memory elements
   if (tx < blockDim.x) {
-    output_idx = row*total_df_output_width + df_output_offset + f*width + column;
+    output_idx = row*total_df_output_width + df_output_offset + filter_idx*width + column;
     df_output_shared[tx+halo_width] = 
       (column < width && row < height) ?
       df_output[output_idx] : 0.;
@@ -240,30 +246,34 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
   __syncthreads();
 
   // Compute gradients
-  for (unsigned int k=0; k<filter_width; k++) {
-    df_output_shift = halo_width-k;
+  if (filter_pos < filter_width) {
+    df_output_shift = halo_width-filter_pos;
 
     if (column >= df_output_shift) {
-      df_weights_reduce[STRIDE*tx] = (CHECK_NT(input_element, DNA_A)) ?
-    	df_output_shared[tx+k] : 0.;
+      df_weights_reduce[STRIDE*tx] = 
+	(CHECK_NT(input_element, DNA_A)) ?
+    	df_output_shared[tx+filter_pos] : 0.;
 
-      df_weights_reduce[STRIDE*tx+1] = (CHECK_NT(input_element, DNA_C)) ?
-    	df_output_shared[tx+k] : 0.;
+      df_weights_reduce[STRIDE*tx+1] = 
+	(CHECK_NT(input_element, DNA_C)) ?
+    	df_output_shared[tx+filter_pos] : 0.;
 
-      df_weights_reduce[STRIDE*tx+2] = (CHECK_NT(input_element, DNA_G)) ?
-    	df_output_shared[tx+k] : 0.;
+      df_weights_reduce[STRIDE*tx+2] = 
+	(CHECK_NT(input_element, DNA_G)) ?
+    	df_output_shared[tx+filter_pos] : 0.;
 
-      df_weights_reduce[STRIDE*tx+3] = (CHECK_NT(input_element, DNA_T)) ?
-    	df_output_shared[tx+k] : 0.;
+      df_weights_reduce[STRIDE*tx+3] = 
+	(CHECK_NT(input_element, DNA_T)) ?
+    	df_output_shared[tx+filter_pos] : 0.;
 
       if (CHECK_NT(input_element, DNA_R)) {
-	df_weights_reduce[STRIDE*tx] = .5 * df_output_shared[tx+k];
-	df_weights_reduce[STRIDE*tx+2] = .5 * df_output_shared[tx+k];
+	df_weights_reduce[STRIDE*tx] = .5 * df_output_shared[tx+filter_pos];
+	df_weights_reduce[STRIDE*tx+2] = .5 * df_output_shared[tx+filter_pos];
       }
     
       if (CHECK_NT(input_element, DNA_Y)) {
-	df_weights_reduce[STRIDE*tx+1] = .5 * df_output_shared[tx+k];
-	df_weights_reduce[STRIDE*tx+3] = .5 * df_output_shared[tx+k];
+	df_weights_reduce[STRIDE*tx+1] = .5 * df_output_shared[tx+filter_pos];
+	df_weights_reduce[STRIDE*tx+3] = .5 * df_output_shared[tx+filter_pos];
       }
 
     } else {
@@ -276,22 +286,23 @@ __global__ void convolve_sequence_gradient(const nucleotide_t *input,
     __syncthreads();
 
     // Stage 1 reduction
-    for (unsigned int s=blockDim.x/2; s>0; s>>=1) {
+    df_weights_reduce[tx] += df_weights_reduce[tx+2*blockDim.x];
+    df_weights_reduce[tx+blockDim.x] += df_weights_reduce[tx+3*blockDim.x];
+    __syncthreads();
+
+    for (unsigned int s=blockDim.x; s>2; s>>=1) {
       if (tx<s) {
-	df_weights_reduce[STRIDE*tx] += df_weights_reduce[STRIDE*(tx+s)];
-	df_weights_reduce[STRIDE*tx+1] += df_weights_reduce[STRIDE*(tx+s)+1];
-	df_weights_reduce[STRIDE*tx+2] += df_weights_reduce[STRIDE*(tx+s)+2];
-	df_weights_reduce[STRIDE*tx+3] += df_weights_reduce[STRIDE*(tx+s)+3];
+    	df_weights_reduce[tx] += df_weights_reduce[tx+s];
       }
       __syncthreads();
     }
-    
+
     // Write output
     if (tx<STRIDE) {
       df_weights_idx =
-	f * STRIDE * filter_width * gridDim.x +
-	(tx + STRIDE * df_output_shift) * gridDim.x +
-	blockIdx.x;
+    	filter_idx * STRIDE * filter_width * gridDim.x +
+    	(tx + STRIDE * df_output_shift) * gridDim.x +
+    	blockIdx.x;
       df_weights[df_weights_idx] = df_weights_reduce[tx];
     }
   }

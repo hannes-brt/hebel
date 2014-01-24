@@ -16,6 +16,7 @@
 
 // The ceiling function
 #define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
+#define CEIL_INT(x, y) ((x + y - 1) / y)
 
 typedef char nucleotide_t;
 

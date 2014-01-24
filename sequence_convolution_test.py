@@ -251,7 +251,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             df_output = curand((height, n_filters * width), dtype)
 
             df_w = convolve_sequence_gradient(x, df_output, filter_width,
-                                              n_filters, block_size=1024)
+                                              n_filters)
             df_w_cpu = df_w.get()
             df_w_np = self.grad_weights_cpu(x.get(),
                                             df_output.get(),
@@ -348,7 +348,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
                                                   filter_width, n_filters,
                                                   input_offset,
                                                   df_output_offset,
-                                                  width, block_size=1024)
+                                                  width)
                 df_w_cpu = df_w.get()
                 df_output_cpu = \
                     df_output.get()[:,
@@ -607,7 +607,7 @@ class TestMultiSequenceConvolutionLayer(unittest.TestCase):
 
         # Create multi-convolution layer
         self.conv_layer_multi = MultiSequenceConvolutionLayer(
-            self.multi_conv_config, operation='convolution')
+            self.multi_conv_config)
 
         # Convert configuration to single convolution
         single_conv_config = deepcopy(self.multi_conv_config)

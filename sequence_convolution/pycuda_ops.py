@@ -16,13 +16,14 @@
 
 from pycuda import gpuarray
 from pycuda.compiler import SourceModule
+from pycuda import driver
 import numpy as np
 import os
 from jinja2 import Template
 from . import sequence_conv_root
 from hebel.pycuda_ops.reductions import matrix_sum_out_axis
 
-_TILE_SIZE_CONV = 1024
+_TILE_SIZE_CONV = 128
 
 _src_dir = os.path.join(sequence_conv_root, 'src')
 _code = Template(open(os.path.join(_src_dir, 'convolution_kernels.cu')).read())
@@ -140,12 +141,15 @@ def convolve_sequence_gradient_wrapper():
 
         if width is None:
             width = total_width
-        n_elements = height*width
+        n_elements = height*width        
 
+        # block_y = int(2 ** int(np.ceil(np.log2(filter_width))))
+        # block_size = int(2 ** int(np.ceil(np.log2(block_size))))
+        block_y = filter_width
         block = (block_size, 1, 1)
-        grid = ((n_elements + block_size - 1) / block_size, n_filters, 1 )
-        shared = (filter_width - 1 + block_size +  # df_output_share
-                  stride * block_size              # df_weights_reduce
+        grid = ((n_elements + block_size - 1) / block_size, filter_width, n_filters )
+        shared = (filter_width - 1 + block_size +     # df_output_share
+                  stride * block_size                 # df_weights_reduce
                   ) * np.dtype(dtype).itemsize
 
         target_tmp = None
@@ -175,7 +179,7 @@ def convolve_sequence_gradient_wrapper():
 
         if target is None:
             target = gpuarray.empty((n_filters, stride*filter_width), dtype)
-        block_sum = (max((1, 2**int(np.ceil(np.log2(grid[0])-1)))), 1, 1)
+        block_sum = (min((max((1, 2**int(np.ceil(np.log2(grid[0])-1)))), 1024)), 1, 1)
         grid_sum = (n_filters, stride*filter_width, 1)
         shared = block_sum[0] * np.dtype(dtype).itemsize
 
