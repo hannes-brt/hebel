@@ -174,6 +174,11 @@ class MultitaskTopLayer(TopLayer):
         self.lr_multiplier = [lr for task in self.tasks
                               for lr in task.lr_multiplier]
 
+    def preallocate_temp_objects(self, batch_size):
+        for task in self.tasks:
+            if hasattr(task, 'preallocate_temp_objects'):
+                task.preallocate_temp_objects(batch_size)
+
     @property
     def parameters(self):
         """Return a list where each element contains the parameters for a task.
