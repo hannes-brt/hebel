@@ -39,7 +39,7 @@ class ProgressMonitor(object):
         self.train_error = []
         self.validation_error = []
         self.avg_epoch_t = None
-        self._time = datetime.isoformat(datetime.now())
+        self._time = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
 
         self.epochs = 0
 
@@ -72,7 +72,7 @@ class ProgressMonitor(object):
     def makedir(self):
         experiment_dir_name = '_'.join((
             self.experiment_name,
-            datetime.isoformat(datetime.now())))
+            datetime.now().strftime('%Y-%m-%dT%H:%M:%S')))
 
         path = os.path.join(self.save_model_path,
                             experiment_dir_name)
@@ -92,7 +92,7 @@ class ProgressMonitor(object):
         # Print logs
         self.train_error.append((epoch, train_error))
         if validation_error is not None:
-            self.validation_error.append(validation_error)
+            self.validation_error.append((epoch, validation_error))
         self.print_error(epoch, train_error, validation_error)
 
         if epoch_t is not None:
@@ -155,7 +155,7 @@ class SimpleProgressMonitor(object):
         self.train_error = []
         self.validation_error = []
         self.avg_epoch_t = None
-        self._time = datetime.isoformat(datetime.now())
+        self._time = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
 
     def start_training(self):
         self.start_time = datetime.now()
