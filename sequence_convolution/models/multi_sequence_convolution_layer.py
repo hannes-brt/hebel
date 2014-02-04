@@ -34,7 +34,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                  filter_width=None,
                  pool_size=None,
                  activation_function=None,
-                 dropout=None,
+                 dropout=False,
                  lr_multiplier=1.,
                  l1_penalty_weight=0.,
                  l2_penalty_weight=0.,
@@ -127,8 +127,9 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         
         for layer in self.subregion_layers:
             layer.preallocate_temp_objects(batch_size)
-        for layer in self.fully_connected_layers:
-            layer.preallocate_temp_objects(batch_size)
+        if self.fully_connected_layers:
+            for layer in self.fully_connected_layers:
+                layer.preallocate_temp_objects(batch_size)
 
     @property
     def W(self):
@@ -271,24 +272,26 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         else:
             activations_fc = None
 
-        # if self.dropout and not prediction:
-        #     # Dropout only applies to subregion layer
-        #     dropout_mask = sample_dropout_mask(activations_pooled,
-        #                                        columns=(0, self.fc_layer_offset[0]))
-        # else:
-        #     dropout_mask = None
+        if self.dropout:
+            if not prediction:
+                dropout_mask = sample_dropout_mask(activations_pooled)
+            else:
+                activations_pooled *= 2
+                dropout_mask = None
+        else:
+            dropout_mask = None
 
-        return activations_pooled, argmax, filtermaps, activations_fc
+        return activations_pooled, argmax, filtermaps, activations_fc, dropout_mask
 
     def backprop(self, input_data, df_output, cache=None):
         if cache is None:
             cache = self.feed_forward(input_data)
 
-        activations_pooled, argmax, filtermaps, fc_cache = cache
+        activations_pooled, argmax, filtermaps, \
+            fc_cache, dropout_mask = cache
 
-        # if self.dropout and dropout_mask is not None:
-        #     apply_dropout_mask(df_output, dropout_mask,
-        #                        columns=(0, self.fc_layer_offset[0]))
+        if self.dropout and dropout_mask is not None:
+            apply_dropout_mask(df_output, dropout_mask)
 
         df_W = []
         df_b = []
