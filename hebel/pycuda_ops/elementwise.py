@@ -177,9 +177,13 @@ def init():
     exp_func = elementwise.get_unary_func_kernel('expf', np.float32)
     log_func = elementwise.get_unary_func_kernel('logf', np.float32)
 
-def sign(x):
+def sign(x, target=None):
     assert x.flags.c_contiguous
-    target = gpuarray.GPUArray(x.shape, dtype=x.dtype)
+    if target is None:
+        target = gpuarray.GPUArray(x.shape, dtype=x.dtype)
+    assert target.shape == x.shape
+    assert target.dtype == x.dtype
+    assert target.flags.c_contiguous
     all_kernels['sign'](x, target)
     return target
 
