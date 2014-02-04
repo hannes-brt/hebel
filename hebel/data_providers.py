@@ -42,11 +42,19 @@ class DataProvider(object):
     def __init__(self, data, targets, batch_size):
         self.data = data
         self.targets = targets
-        self.batch_size = batch_size
 
         self.N = data.shape[0]
 
         self.i = 0
+        self.batch_size = batch_size
+
+    @property
+    def batch_size(self):
+        return self._batch_size
+
+    @batch_size.setter
+    def batch_size(self, value):
+        self._batch_size = value
         self._make_batches()
 
     def _make_batches(self):
@@ -134,8 +142,10 @@ class MultiTaskDataProvider(DataProvider):
     """
     
     def __init__(self, data, targets, batch_size=None):
-        assert all([targets[0].shape[0] == t.shape[0] for t in targets])
-        assert all([type(targets[0]) == type(t) for t in targets])
+        if isinstance(targets, (list, tuple)):
+            assert all([targets[0].shape[0] == t.shape[0] for t in targets])
+        if isinstance(data, (list, tuple)):
+            assert all([type(targets[0]) == type(t) for t in targets])
         self.data = data
         self.targets = targets
 
@@ -144,64 +154,49 @@ class MultiTaskDataProvider(DataProvider):
         except AttributeError:
             self.N = data[0].shape[0]
 
+        self.i = 0
         if batch_size is not None:
             self.batch_size = batch_size
         else:
             self.batch_size = self.N
 
-        self.i = 0
+    def _make_batches(self):
+        if not isinstance(self.data, (list, tuple)):
+            self.data_batches = tuple(
+                self.data[i:i+self.batch_size]
+                for i in range(0, self.N, self.batch_size)
+            )
+        else:
+            self.data_batches = \
+                tuple(tuple(d[i:i+self.batch_size]
+                            for d in self.data)
+                      for i in range(0, self.N, self.batch_size))
+
+        if not isinstance(self.targets, (list, tuple)):
+            self.target_batches = tuple(
+                self.targets[i:i+self.batch_size]
+                for i in range(0, self.N, self.batch_size)
+            )
+        else:
+            self.target_batches = \
+                tuple(tuple(tuple(t[i:i+self.batch_size]
+                                  for t in self.targets))
+                      for i in range(0, self.N, self.batch_size)
+            )
+        self.n_batches = len(self.data_batches)
 
     def __getitem__(self, batch_idx):
-        if not isinstance(self.data, (list, tuple)):
-            minibatch_data = \
-              self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-            if not isinstance(minibatch_data, gpuarray.GPUArray):
-                minibatch_data = gpuarray.to_gpu(minibatch_data)
-        else:
-            minibatch_data = \
-              [d[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-               for d in self.data]
-            if not isinstance(minibatch_data[0], gpuarray.GPUArray):
-                minibatch_data = [gpuarray.to_gpu(d) for d in minibatch_data]
-        if not isinstance(self.data, (list, tuple)):
-            minibatch_targets = \
-              self.targets[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-            if not isinstance(minibatch_targets, gpuarray.GPUArray):
-                minibatch_targets = gpuarray.to_gpu(minibatch_targets)
-        else:
-            minibatch_targets = \
-              [t[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-               for t in self.targets]
-            if not isinstance(minibatch_targets[0], gpuarray.GPUArray):
-                minibatch_targets = [gpuarray.to_gpu(d) for d in minibatch_targets]
-        return minibatch_data, minibatch_targets
+        return self.data_batches[batch_idx], self.target_batches[batch_idx]
 
     def next(self):
-        if self.i >= self.N:
+        if self.i >= self.n_batches:
             self.i = 0
             raise StopIteration
 
-        if not isinstance(self.data, (list, tuple)):
-            minibatch_data = self.data[self.i:self.i+self.batch_size]
-            if not isinstance(minibatch_data, gpuarray.GPUArray):
-                minibatch_data = gpuarray.to_gpu(minibatch_data)
-        else:
-            minibatch_data = \
-              [d[self.i:self.i+self.batch_size]
-               for d in self.data]
-            if not isinstance(minibatch_data[0], gpuarray.GPUArray):
-                minibatch_data = [gpuarray.to_gpu(d) for d in minibatch_data]
+        minibatch_data = self.data_batches[self.i]
+        minibatch_targets = self.target_batches[self.i]
 
-        if not isinstance(self.targets, (list, tuple)):
-            minibatch_targets = self.targets[self.i:self.i+self.batch_size]
-            if not isinstance(minibatch_targets, gpuarray.GPUArray):
-                minibatch_targets = gpuarray.to_gpu(minibatch_targets)
-        else:
-            minibatch_targets = [t[self.i:self.i+self.batch_size]
-                                 for t in self.targets]
-            if not isinstance(minibatch_targets[0], gpuarray.GPUArray):
-                minibatch_targets = [gpuarray.to_gpu(d) for d in minibatch_targets]
-        self.i += self.batch_size
+        self.i += 1
         return minibatch_data, minibatch_targets
 
 
