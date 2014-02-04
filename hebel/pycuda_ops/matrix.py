@@ -172,28 +172,31 @@ def vector_normalize(mat, max_vec_norm=1.):
                             block=(32,1,1), grid=(m,1,1))
 
 
-def extract_columns(mat, start=0, stop=None):
+def extract_columns(mat, start=0, stop=None, target=None):
     dtype = mat.dtype
     itemsize = np.dtype(dtype).itemsize
     N, M = mat.shape
+    if stop is None:
+        stop = M
     m = stop - start
 
     assert mat.flags.c_contiguous
     assert start >= 0 and start <= M and stop >= 0 and \
         stop <= M and stop > start
 
-    new_mat = gpuarray.empty((N, m), dtype)
+    if target is None:
+        target = gpuarray.empty((N, m), dtype)
 
     copy = drv.Memcpy2D()
     copy.set_src_device(mat.gpudata)
     copy.src_x_in_bytes = start * itemsize
-    copy.set_dst_device(new_mat.gpudata)
+    copy.set_dst_device(target.gpudata)
     copy.src_pitch = M * itemsize
     copy.dst_pitch = copy.width_in_bytes = m * itemsize
     copy.height = N
     copy(aligned=True)
 
-    return new_mat
+    return target
 
 
 def insert_columns(src, dst, offset):
