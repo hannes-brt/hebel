@@ -295,7 +295,7 @@ class LogisticLayer(TopLayer):
 
         loss = cross_entropy(activations, targets)
 
-        if average: loss = loss.mean()
+        if average: loss /= targets.shape[0]
         return loss
         
     train_error = cross_entropy_error
@@ -314,7 +314,7 @@ class LogisticLayer(TopLayer):
         targets = targets.get().argmax(1)
         class_error = np.sum(activations.get().argmax(1) != targets)
 
-        if average: class_error = class_error.mean()
+        if average: class_error = float(class_error) / targets.shape[0]
         return class_error
 
     def kl_error(self, input_data, targets, average=True,
