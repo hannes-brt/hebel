@@ -147,6 +147,9 @@ class MultiTaskDataProvider(DataProvider):
         if isinstance(data, (list, tuple)):
             assert all([type(targets[0]) == type(t) for t in targets])
         self.data = data
+
+        if not isinstance(targets, gpuarray.GPUArray):
+            targets = gpuarray.to_gpu(targets)
         self.targets = targets
 
         try:
