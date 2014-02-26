@@ -1,0 +1,1 @@
+ceil_div = lambda x, y: (x + y - 1) / y
