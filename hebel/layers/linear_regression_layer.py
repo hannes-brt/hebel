@@ -18,14 +18,14 @@ import numpy as np
 from pycuda import gpuarray, cumath
 from math import sqrt
 from .. import sampler
-from .logistic_layer import LogisticLayer
+from .logistic_layer import SoftmaxLayer
 from ..pycuda_ops.elementwise import sign, nan_to_zeros
 from ..pycuda_ops.reductions import matrix_sum_out_axis
 from ..pycuda_ops.matrix import add_vec_to_mat
 from ..pycuda_ops import linalg
 
 
-class LinearRegressionLayer(LogisticLayer):
+class LinearRegressionLayer(SoftmaxLayer):
     r"""Linear regression layer with linear outputs and squared loss error function.
 
         **Parameters:**
@@ -148,7 +148,7 @@ class LinearRegressionLayer(LogisticLayer):
         """Compute the test error function given some data and targets.
 
         Uses the error function defined in
-        :class:`LogisticLayer.test_error_fct`, which may be different
+        :class:`SoftmaxLayer.test_error_fct`, which may be different
         from the cross-entropy error function used for
         training'. Alternatively, the other test error functions may
         be called directly.

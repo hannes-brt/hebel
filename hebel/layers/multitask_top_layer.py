@@ -18,7 +18,7 @@ import numpy as np
 from itertools import izip
 from pycuda import gpuarray
 from .top_layer import TopLayer
-from .logistic_layer import LogisticLayer
+from .logistic_layer import SoftmaxLayer
 
 
 class MultitaskTopLayer(TopLayer):
@@ -109,11 +109,11 @@ class MultitaskTopLayer(TopLayer):
 
         n_in = 1000              # n_in must be the same for all tasks
         tasks = (
-            LogisticLayer(n_in, 10, l1_penalty_weight=.1),
-            LogisticLayer(n_in, 15, l2_penalty_weight=.2),
-            LogisticLayer(n_in, 10),
-            LogisticLayer(n_in, 10),
-            LogisticLayer(n_in, 20)
+            SoftmaxLayer(n_in, 10, l1_penalty_weight=.1),
+            SoftmaxLayer(n_in, 15, l2_penalty_weight=.2),
+            SoftmaxLayer(n_in, 10),
+            SoftmaxLayer(n_in, 10),
+            SoftmaxLayer(n_in, 20)
         )
         task_weights = [1./5, 1./10, 1./10, 2./5, 1./5]
         multitask_layer = MultitaskTopLayer(tasks=tasks,
@@ -147,7 +147,7 @@ class MultitaskTopLayer(TopLayer):
             for (n_out_task, test_error_task, l1_task, l2_task) in \
               zip(self.n_out, test_error_fct,
                   l1_penalty_weight, l2_penalty_weight):
-                self.tasks.append(LogisticLayer(n_in=n_in,
+                self.tasks.append(SoftmaxLayer(n_in=n_in,
                                                 n_out=n_out_task,
                                                 l1_penalty_weight=l1_task,
                                                 l2_penalty_weight=l2_task,

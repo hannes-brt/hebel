@@ -28,7 +28,7 @@ from ..pycuda_ops.matrix import add_vec_to_mat
 from ..pycuda_ops.softmax import softmax, cross_entropy
 
 
-class LogisticLayer(TopLayer):
+class SoftmaxLayer(TopLayer):
     r""" A logistic classification layer, using
     cross-entropy loss function and softmax activations.
 
@@ -80,7 +80,7 @@ class LogisticLayer(TopLayer):
     **Examples**::
 
         # Use the simple initializer and initialize with random weights
-        logistic_layer = LogisticLayer(1000, 10)
+        logistic_layer = SoftmaxLayer(1000, 10)
 
         # Sample weights yourself, specify an L1 penalty, and don't
         # use learning rate scaling
@@ -91,7 +91,7 @@ class LogisticLayer(TopLayer):
         n_out = 10
         weights = gpuarray.to_gpu(.01 * np.random.randn(n_in, n_out))
         biases = gpuarray.to_gpu(np.zeros((n_out,)))
-        logistic_layer = LogisticLayer(n_in, n_out,
+        logistic_layer = SoftmaxLayer(n_in, n_out,
                                        parameters=(weights, biases),
                                        l1_penalty_weight=.1,
                                        lr_multiplier=1.)
@@ -240,7 +240,7 @@ class LogisticLayer(TopLayer):
         """Compute the test error function given some data and targets.
 
         Uses the error function defined in
-        :class:`LogisticLayer.test_error_fct`, which may be different
+        :class:`SoftmaxLayer.test_error_fct`, which may be different
         from the cross-entropy error function used for
         training'. Alternatively, the other test error functions may
         be called directly.
