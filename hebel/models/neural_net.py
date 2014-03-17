@@ -16,7 +16,7 @@
 
 import numpy as np
 from hashlib import md5
-from ..layers import HiddenLayer, TopLayer, LogisticLayer, InputDropout
+from ..layers import HiddenLayer, TopLayer, SoftmaxLayer, LogisticLayer, InputDropout
 from .model import Model
 
 
@@ -89,18 +89,20 @@ class NeuralNet(Model):
                                      l1_penalty_weight=.2),
                          HiddenLayer(1000, 1000, 'relu', dropout=True,
                                      l1_penalty_weight=.1)]
-        logistic_layer = LogisticLayer(1000, 10, l1_penalty_weight=.1)
+        softmax_layer = LogisticLayer(1000, 10, l1_penalty_weight=.1)
 
-        model = NeuralNet(hidden_layers, logistic_layer)
+        model = NeuralNet(hidden_layers, softmax_layer)
     """
 
-    TopLayerClass = LogisticLayer
+    TopLayerClass = SoftmaxLayer
 
     def __init__(self, layers, top_layer=None, activation_function='sigmoid',
                  dropout=False, input_dropout=0., n_in=None, n_out=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  **kwargs):
         self.n_layers = len(layers)
+        if n_out == 1 and self.TopLayerClass == SoftmaxLayer:
+            self.TopLayerClass = LogisticLayer
 
         if l1_penalty_weight is not None and \
            not np.isscalar(l1_penalty_weight) and \

@@ -18,7 +18,7 @@ import numpy as np
 from pycuda import gpuarray, cumath
 from math import sqrt
 from .. import sampler
-from .logistic_layer import SoftmaxLayer
+from .softmax_layer import SoftmaxLayer
 from ..pycuda_ops.elementwise import sign, nan_to_zeros
 from ..pycuda_ops.reductions import matrix_sum_out_axis
 from ..pycuda_ops.matrix import add_vec_to_mat

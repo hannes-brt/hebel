@@ -22,23 +22,20 @@ from math import sqrt
 from .. import sampler
 from .top_layer import TopLayer
 from ..pycuda_ops import eps, linalg
-from ..pycuda_ops.elementwise import sign, nan_to_zeros, substract_matrix
+from ..pycuda_ops.elementwise import sign, nan_to_zeros, substract_matrix, sigmoid
 from ..pycuda_ops.reductions import matrix_sum_out_axis
 from ..pycuda_ops.matrix import add_vec_to_mat
-from ..pycuda_ops.softmax import softmax, cross_entropy
+from ..pycuda_ops.softmax import cross_entropy_logistic
 
 
-class SoftmaxLayer(TopLayer):
-    r""" A logistic classification layer, using
-    cross-entropy loss function and softmax activations.
+class LogisticLayer(TopLayer):
+    r""" A logistic classification layer for two classes, using
+    cross-entropy loss function and sigmoid activations.
 
     **Parameters:**
     
     n_in : integer
         Number of input units.
-
-    n_out : integer
-        Number of output units (classes).
 
     parameters : array_like of ``GPUArray``
         Parameters used to initialize the layer. If this is omitted,
@@ -98,8 +95,9 @@ class SoftmaxLayer(TopLayer):
     """
 
     n_parameters = 2
+    n_out = 1
 
-    def __init__(self, n_in, n_out,
+    def __init__(self, n_in,
                  parameters=None,
                  weights_scale=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
@@ -107,7 +105,7 @@ class SoftmaxLayer(TopLayer):
                  test_error_fct='class_error'):
 
         # Initialize weight using Bengio's rule
-        self.weights_scale = 4 * sqrt(6. / (n_in + n_out)) \
+        self.weights_scale = 4 * sqrt(6. / (n_in + 1)) \
                              if weights_scale is None \
                                 else weights_scale
 
@@ -115,13 +113,12 @@ class SoftmaxLayer(TopLayer):
             self.W, self.b = parameters
         else:
             self.W = self.weights_scale * \
-                     sampler.gen_uniform((n_in, n_out), dtype=np.float32) \
+                     sampler.gen_uniform((n_in, 1), dtype=np.float32) \
                      - .5 * self.weights_scale
 
-            self.b = gpuarray.zeros((n_out,), dtype=np.float32)
+            self.b = gpuarray.zeros((1,), dtype=np.float32)
 
         self.n_in = n_in
-        self.n_out = n_out
 
         self.test_error_fct = test_error_fct
 
@@ -132,19 +129,18 @@ class SoftmaxLayer(TopLayer):
           if lr_multiplier is None else lr_multiplier
 
         self.persistent_temp_objects_config = (
-            ('activations', ('batch_size', self.n_out), np.float32),
-            ('lin_activations', ('batch_size', self.n_out), np.float32),            
+            ('activations', ('batch_size', 1), np.float32),
             ('df_W', self.W.shape, np.float32),
             ('df_b', self.b.shape, np.float32),
             ('df_input', ('batch_size', self.n_in), np.float32),
-            ('delta', ('batch_size', self.n_out), np.float32)
+            ('delta', ('batch_size', 1), np.float32)
         )
 
     @property
     def architecture(self):
         return {'class': self.__class__,
                 'n_in': self.n_in,
-                'n_out': self.n_out}
+                'n_out': 1}
 
     def feed_forward(self, input_data, prediction=False):
         """Propagate forward through the layer.
@@ -165,13 +161,12 @@ class SoftmaxLayer(TopLayer):
             The activations of the output units.
         """
 
-        lin_activations = self.get_temp_object('lin_activations',
-            (input_data.shape[0], self.n_out), input_data.dtype)
         activations = self.get_temp_object('activations',
-            (input_data.shape[0], self.n_out), input_data.dtype)
-        linalg.dot(input_data, self.W, target=lin_activations)
-        lin_activations = add_vec_to_mat(lin_activations, self.b, inplace=True)
-        softmax(lin_activations, activations)
+            (input_data.shape[0], 1), input_data.dtype)
+        linalg.dot(input_data, self.W, target=activations)
+        activations = add_vec_to_mat(activations, self.b, inplace=True)
+
+        sigmoid(activations)
 
         return activations
 
@@ -271,8 +266,6 @@ class SoftmaxLayer(TopLayer):
         """    
         if self.test_error_fct == 'class_error':
             test_error = self.class_error
-        elif self.test_error_fct == 'kl_error':
-            test_error = self.kl_error
         elif self.test_error_fct == 'cross_entropy_error':
             test_error = self.cross_entropy_error
         else:
@@ -293,7 +286,7 @@ class SoftmaxLayer(TopLayer):
             activations = \
               self.feed_forward(input_data, prediction=prediction)
 
-        loss = cross_entropy(activations, targets)
+        loss = cross_entropy_logistic(activations, targets)
 
         if average: loss /= targets.shape[0]
         return loss
@@ -311,28 +304,8 @@ class SoftmaxLayer(TopLayer):
             activations = \
               self.feed_forward(input_data, prediction=prediction)
 
-        targets = targets.get().argmax(1)
-        class_error = np.sum(activations.get().argmax(1) != targets)
+        targets = targets.get()
+        class_error = np.sum((activations.get() >= .5) != (targets >= .5))
 
         if average: class_error = float(class_error) / targets.shape[0]
         return class_error
-
-    def kl_error(self, input_data, targets, average=True,
-                 cache=None, prediction=True):
-        """ The KL divergence error
-        """
-
-        if cache is not None:
-            activations = cache
-        else:
-            activations = \
-              self.feed_forward(input_data, prediction=prediction)
-
-        targets_non_nan = gpuarray.empty_like(targets)
-        nan_to_zeros(targets, targets_non_nan)
-        kl_error = gpuarray.sum(targets_non_nan *
-                                (cumath.log(targets_non_nan + eps) -
-                                 cumath.log(activations + eps)))
-        if average:
-            kl_error /= targets.shape[0]
-        return float(kl_error.get())

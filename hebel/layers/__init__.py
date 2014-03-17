@@ -16,7 +16,8 @@
 
 from .dummy_layer import DummyLayer
 from .hidden_layer import HiddenLayer
-from .logistic_layer import SoftmaxLayer
+from .softmax_layer import SoftmaxLayer
+from .logistic_layer import LogisticLayer
 from .multitask_top_layer import MultitaskTopLayer
 from .top_layer import TopLayer
 from .linear_regression_layer import LinearRegressionLayer

@@ -18,7 +18,7 @@ import numpy as np
 from itertools import izip
 from pycuda import gpuarray
 from .top_layer import TopLayer
-from .logistic_layer import SoftmaxLayer
+from .softmax_layer import SoftmaxLayer
 
 
 class MultitaskTopLayer(TopLayer):
