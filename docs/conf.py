@@ -37,7 +37,7 @@ MOCK_MODULES = ['hebel.pycuda_ops', 'hebel.pycuda_ops.linalg',
                 'hebel.pycuda_ops.cublas', 'hebel.pycuda_ops.cudadrv', 'skdata',
                 'skdata.mnist', 'skdata.mnist.view', 'pycuda', 'pycuda.autoinit',
                 'pycuda.compiler', 'pycuda.cumath', 'pycuda.driver',
-                'pycuda.elementwise', 'pycuda.gpuarray']
+                'pycuda.elementwise', 'pycuda.gpuarray', 'numpy']
 
 for mod_name in MOCK_MODULES:
     sys.modules[mod_name] = mock.Mock()
