@@ -44,6 +44,12 @@ Logistic Layer
 .. autoclass:: hebel.layers.LogisticLayer
    :members:
 
+Softmax Layer
+-------------
+
+.. autoclass:: hebel.layers.SoftmaxLayer
+   :members:
+
 Linear Regression Layer
 -----------------------
 

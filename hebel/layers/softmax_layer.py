@@ -29,7 +29,7 @@ from ..pycuda_ops.softmax import softmax, cross_entropy
 
 
 class SoftmaxLayer(TopLayer):
-    r""" A logistic classification layer, using
+    r""" A multiclass classification layer, using
     cross-entropy loss function and softmax activations.
 
     **Parameters:**
@@ -73,6 +73,7 @@ class SoftmaxLayer(TopLayer):
 
     **See also:**
 
+    :class:`hebel.layers.LogisticLayer`,
     :class:`hebel.models.NeuralNet`,
     :class:`hebel.models.NeuralNetRegression`,
     :class:`hebel.layers.LinearRegressionLayer`

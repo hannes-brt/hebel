@@ -45,6 +45,11 @@ class ProgressMonitor(object):
 
         self.makedir()
 
+    def print_(self, obj):
+        if self.log is not None:
+            self.log.write(str(obj) + '\n')
+        print obj
+
     @property
     def yaml_config(self):
         return self._yaml_config
@@ -65,7 +70,7 @@ class ProgressMonitor(object):
     @test_error.setter
     def test_error(self, test_error):
         self._test_error = test_error
-        print "Test error: %.4f" % test_error
+        self.print_("Test error: %.4f" % test_error)
         f = open(os.path.join(self.save_path, "test_error"), 'w')
         f.write('%.5f\n' % test_error)
 
@@ -82,18 +87,19 @@ class ProgressMonitor(object):
 
         if self.output_to_log:
             self.log = open(os.path.join(self.save_path, 'output.log'), 'w', 1)
-            sys.stdout = self.log
-            sys.stderr = self.log
+            # sys.stdout = self.log
+            # sys.stderr = self.log
 
     def start_training(self):
         self.start_time = datetime.now()
 
-    def report(self, epoch, train_error, validation_error=None, epoch_t=None):
+    def report(self, epoch, train_error, validation_error=None,
+               new_best=None, epoch_t=None):
         # Print logs
         self.train_error.append((epoch, train_error))
         if validation_error is not None:
             self.validation_error.append((epoch, validation_error))
-        self.print_error(epoch, train_error, validation_error)
+        self.print_error(epoch, train_error, validation_error, new_best)
 
         if epoch_t is not None:
             self.avg_epoch_t = ((epoch - 1) * \
@@ -101,23 +107,31 @@ class ProgressMonitor(object):
                                 if self.avg_epoch_t is not None else epoch_t
 
         # Pickle model
-        if not epoch % self.save_interval:
-            filename = 'model_%s_epoch%04d.pkl' % (
-              self.experiment_name,
-              epoch)
+        if self.save_interval is not None:
+            if not epoch % self.save_interval:
+                filename = 'model_%s_epoch%04d.pkl' % (
+                  self.experiment_name,
+                  epoch)
+                path = os.path.join(self.save_path, filename)
+                cPickle.dump(self.model, open(path, 'wb'))
+        elif new_best is not None and new_best:
+            filename = 'model_%s_current_best.pkl' % self.experiment_name
             path = os.path.join(self.save_path, filename)
             cPickle.dump(self.model, open(path, 'wb'))
 
-    def print_error(self, epoch, train_error, validation_error=None):
+    def print_error(self, epoch, train_error, validation_error=None, new_best=None):
         if validation_error is not None:
-            print 'Epoch %d, Validation error: %.5g, Train Loss: %.3f' % \
+            report_str = 'Epoch %d, Validation error: %.5g, Train Loss: %.3f' % \
               (epoch, validation_error, train_error)
+            if new_best is not None and new_best:
+                report_str += ' (*)'
         else:
-            print 'Epoch %d, Train Loss: %.3f' % \
+            report_str = 'Epoch %d, Train Loss: %.3f' % \
               (epoch, train_error)
+        self.print_(report_str)
 
     def avg_weight(self):
-        print "\nAvg weights:"
+        self.print_("\nAvg weights:")
 
         i = 0
         for param in self.model.parameters:
@@ -125,28 +139,27 @@ class ProgressMonitor(object):
             param_cpu = np.abs(param.get())
             mean_weight = param_cpu.mean()
             std_weight = param_cpu.std()
-            print 'Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight)
+            self.print_('Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight))
             i += 1
 
     def finish_training(self):
         # Print logs
         end_time = datetime.now()
         self.train_time = end_time - self.start_time
-        print "Runtime: %dm %ds" % (self.train_time.total_seconds() // 60,
-                                    self.train_time.total_seconds() % 60)
-        print "Avg. time per epoch %.2fs" % self.avg_epoch_t
+        self.print_("Runtime: %dm %ds" % (self.train_time.total_seconds() // 60,
+                                    self.train_time.total_seconds() % 60))
+        self.print_("Avg. time per epoch %.2fs" % self.avg_epoch_t)
 
         # Pickle model
         filename = 'model_%s_final.pkl' % self.experiment_name
         path = os.path.join(self.save_path, filename)
-        print "Saving model to %s" % path
+        self.print_("Saving model to %s" % path)
         cPickle.dump(self.model, open(path, 'wb'))
+        os.remove(os.path.join(
+            self.save_path, 'model_%s_current_best.pkl' % self.experiment_name))
 
         if self.output_to_log:
             self.log.close()
-            sys.stdout = sys.__stdout__
-            sys.stderr = sys.__stderr__
-
 
 class SimpleProgressMonitor(object):
     def __init__(self, model=None):
@@ -160,7 +173,8 @@ class SimpleProgressMonitor(object):
     def start_training(self):
         self.start_time = datetime.now()
 
-    def report(self, epoch, train_error, validation_error=None, epoch_t=None):
+    def report(self, epoch, train_error, validation_error=None,
+               new_best=None, epoch_t=None):
         self.train_error.append((epoch, train_error))
         if validation_error is not None:
             self.validation_error.append((epoch, validation_error))

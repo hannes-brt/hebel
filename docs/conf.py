@@ -29,8 +29,8 @@
 
 import mock
 import sys, os
-MOCK_MODULES = ['numpy', 'scikits', 'scikits.cuda',
-                'scikits.cuda', 'scikits.cuda.linalg',
+MOCK_MODULES = ['numpy', 'cuda', 're', 'warnings', 'ctypes', 'ctypes.util',
+                'atexit', 'numpy', 
                 'skdata', 'skdata.mnist', 'skdata.mnist.view',
                 'pycuda', 'pycuda.autoinit',  
                 'pycuda.compiler', 'pycuda.cumath', 'pycuda.driver', 

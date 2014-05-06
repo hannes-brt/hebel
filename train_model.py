@@ -19,7 +19,7 @@ from hebel.config import run_from_config
 description = """ Run this script with a yaml configuration file as input.
 E.g.:
 
-python train_model.py examples/mnist_deep.yaml
+python train_model.py examples/mnist_neural_net_deep.yaml
 
 """
 

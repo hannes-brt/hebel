@@ -70,6 +70,7 @@ class LogisticLayer(TopLayer):
 
     **See also:**
 
+    :class:`hebel.layers.SoftmaxLayer`,
     :class:`hebel.models.NeuralNet`,
     :class:`hebel.models.NeuralNetRegression`,
     :class:`hebel.layers.LinearRegressionLayer`
@@ -77,7 +78,7 @@ class LogisticLayer(TopLayer):
     **Examples**::
 
         # Use the simple initializer and initialize with random weights
-        softmax_layer = SoftmaxLayer(1000, 10)
+        logistic_layer = LogisticLayer(1000)
 
         # Sample weights yourself, specify an L1 penalty, and don't
         # use learning rate scaling
@@ -85,13 +86,12 @@ class LogisticLayer(TopLayer):
         from pycuda import gpuarray
 
         n_in = 1000
-        n_out = 10
-        weights = gpuarray.to_gpu(.01 * np.random.randn(n_in, n_out))
-        biases = gpuarray.to_gpu(np.zeros((n_out,)))
-        softmax_layer = SoftmaxLayer(n_in, n_out,
-                                       parameters=(weights, biases),
-                                       l1_penalty_weight=.1,
-                                       lr_multiplier=1.)
+        weights = gpuarray.to_gpu(.01 * np.random.randn(n_in, 1))
+        biases = gpuarray.to_gpu(np.zeros((1,)))
+        softmax_layer = SoftmaxLayer(n_in,
+                                     parameters=(weights, biases),
+                                     l1_penalty_weight=.1,
+                                     lr_multiplier=1.)
     """
 
     n_parameters = 2

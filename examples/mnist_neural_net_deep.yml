@@ -43,7 +43,7 @@ optimizer: !obj:hebel.optimizers.SGD {
         l2_penalty_weight: .0
       }    
     ],
-    top_layer: !obj:hebel.layers.LogisticLayer {
+    top_layer: !obj:hebel.layers.SoftmaxLayer {
       n_in: 500,
       n_out: 10     
     }

@@ -38,6 +38,8 @@ class EarlyStoppingModule(object):
             self.best_params = [p.copy() for p in self.model.parameters]
             assert self.best_params[0] is not self.model.parameters[0]
             self.best_epoch = epoch
+            return True
+        return False
 
     def finish(self):
         self.model.parameters = self.best_params
@@ -155,14 +157,15 @@ class SGD(object):
                     # validation_loss_rate = \
                     #     validation_loss / float(self.N_validation)
 
-                    if self.early_stopping_module is not None:
-                        self.early_stopping_module.update(self.epoch,
-                                                          validation_loss_rate)
+                    new_best = self.early_stopping_module.update(
+                        self.epoch, validation_loss_rate) \
+                        if self.early_stopping_module is not None else None
 
                     epoch_t = time.time() - t
 
                     self.progress_monitor.report(self.epoch, train_loss,
                                                  validation_loss_rate,
+                                                 new_best,
                                                  epoch_t=epoch_t)
                 else:
                     epoch_t = time.time() - t
