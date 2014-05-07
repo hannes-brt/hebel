@@ -1,3 +1,4 @@
+
 # Copyright (C) 2013  Hannes Bretschneider
 
 # This program is free software; you can redistribute it and/or modify
@@ -19,7 +20,7 @@ from hebel.config import run_from_config
 description = """ Run this script with a yaml configuration file as input.
 E.g.:
 
-python train_model.py examples/mnist_neural_net_deep.yaml
+python train_model.py examples/mnist_neural_net_deep.yml
 
 """
 
@@ -29,6 +30,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('config_file')
     args = parser.parse_args()
+
+    if not args.config_file.endswith('.yml') and not args.config_file.endswith('.yaml'):
+        args.config_file = args.config_file + '.yml'
 
     yaml_src = ''.join(open(args.config_file).readlines())
 

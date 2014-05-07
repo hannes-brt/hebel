@@ -39,7 +39,7 @@ class ProgressMonitor(object):
         self.train_error = []
         self.validation_error = []
         self.avg_epoch_t = None
-        self._time = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        self._time = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
 
         self.epochs = 0
 
@@ -77,7 +77,7 @@ class ProgressMonitor(object):
     def makedir(self):
         experiment_dir_name = '_'.join((
             self.experiment_name,
-            datetime.now().strftime('%Y-%m-%dT%H:%M:%S')))
+            datetime.now().strftime('%Y-%m-%dT%H-%M-%S')))
 
         path = os.path.join(self.save_model_path,
                             experiment_dir_name)
@@ -168,7 +168,7 @@ class SimpleProgressMonitor(object):
         self.train_error = []
         self.validation_error = []
         self.avg_epoch_t = None
-        self._time = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        self._time = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
 
     def start_training(self):
         self.start_time = datetime.now()

@@ -29,6 +29,7 @@ def init():
     global vector_normalize_kernel
 
     code = """
+    #include <stdint.h>
     __global__ void addRowVecToMat(const float *mat,
                                    const float *vec,
                                    float *target,
@@ -139,7 +140,7 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False,
 
     n, m = mat.shape
 
-    block = (24, 24, 1)
+    block = (32, 16, 1)
     gridx = n // block[0] + 1 * (n % block[0] != 0)
     gridy = m // block[1] + 1 * (m % block[1] != 0)
     grid = (gridx, gridy, 1)
