@@ -42,7 +42,7 @@ def init():
       const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
       const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
 
-      __shared__ float shared_vec[24];
+      __shared__ float shared_vec[16];
 
       if ((tx == 0) & (tidy < m))
           shared_vec[ty] = vec[tidy];
@@ -69,7 +69,7 @@ def init():
       const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
       const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
 
-      __shared__ float shared_vec[24];
+      __shared__ float shared_vec[16];
 
       if ((ty == 0) & (tidx < n))
           shared_vec[tx] = vec[tidx];
@@ -140,7 +140,7 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False,
 
     n, m = mat.shape
 
-    block = (32, 16, 1)
+    block = (16, 16, 1)
     gridx = n // block[0] + 1 * (n % block[0] != 0)
     gridy = m // block[1] + 1 * (m % block[1] != 0)
     grid = (gridx, gridy, 1)
