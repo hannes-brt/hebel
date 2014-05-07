@@ -17,6 +17,7 @@
 import numpy as np
 from pycuda import driver as drv
 from pycuda import gpuarray
+from hebel.utils.math import ceil_div
 
 add_row_vec_kernel = None
 add_col_vec_kernel = None
@@ -145,8 +146,8 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False,
 
     block = (_compilation_constants['add_vec_block_size'],
              _compilation_constants['add_vec_block_size'], 1)
-    gridx = n // block[0] + 1 * (n % block[0] != 0)
-    gridy = m // block[1] + 1 * (m % block[1] != 0)
+    gridx = ceil_div(n, block[0])
+    gridy = ceil_div(m, block[1])
     grid = (gridx, gridy, 1)
 
     if inplace:
