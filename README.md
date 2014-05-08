@@ -36,5 +36,9 @@ Read the Getting started guide at [hebel.readthedocs.org/en/latest/getting_start
 ## Documentation
 [hebel.readthedocs.org](http://hebel.readthedocs.org) (coming slowly)
 
+## Contact
+Maintained by [Hannes Bretschneider](http://github.com/hannes-brt) (hannes@psi.utoronto.ca).
+If your are using Hebel, please let me know whether you find it useful and file a Github issue if you find any bugs or have feature requests.
+
 ## What's with the name?
 _Hebel_ is the German word for _lever_, one of the oldest tools that humans use. As Archimedes said it: _"Give me a lever long enough and a fulcrum on which to place it, and I shall move the world."_
