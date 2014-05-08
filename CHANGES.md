@@ -1,6 +1,23 @@
 Hebel Changelog
 ===============
 
+Version 0.02
+------------
+
+05-08-2014
+
+* Windows compatibility (Thanks to @Wainberg)
+* CUDA 4.x is no longer supported, please upgrade to CUDA 5 or CUDA 6
+* All initialization is now handled through `hebel.init()`. No need to
+  initialize PyCUDA separately anymore.
+* `LogisticLayer` has been renamed to `SoftmaxLayer`. `LogisticLayer`
+  now does binary classification while `SoftmaxLayer` is for
+  multiclass classification.
+* Framework for cross-validation.
+* When `ProgressMonitor` has `save_interval=None`, then only the
+  currently best model is serialized. If it is a positive integer,
+  then regular snapshots of the model are stored with that frequency.
+
 Version 0.01
 ------------
 
