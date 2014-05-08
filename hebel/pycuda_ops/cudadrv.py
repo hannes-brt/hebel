@@ -39,8 +39,8 @@ if sys.platform == 'linux2':
     _libcuda_libname_list = ['libcuda.so', 'libcuda.so.3', 'libcuda.so.4']
 elif sys.platform == 'darwin':
     _libcuda_libname_list = ['libcuda.dylib']
-elif sys.platform == 'Windows':
-    _libcuda_libname_list = ['cuda.lib']
+elif sys.platform == 'win32':
+    _libcuda_libname_list = ['nvcuda.dll']
 else:
     raise RuntimeError('unsupported platform')
 

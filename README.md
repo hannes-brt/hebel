@@ -16,7 +16,7 @@ Hebel implements stochastic gradient descent (SGD) with regular and Nesterov mom
 
 ## Compatibility
 
-Currently, Hebel will only run on Linux and probably Mac OS X (not tested). Hebel currently won't run in Windows.
+Currently, Hebel will run on Linux and Windows, and probably Mac OS X (not tested). 
 
 ## Dependencies
 - PyCUDA

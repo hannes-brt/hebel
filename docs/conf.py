@@ -29,12 +29,15 @@
 
 import mock
 import sys, os
-MOCK_MODULES = ['numpy', 'cuda', 're', 'warnings', 'ctypes', 'ctypes.util',
-                'atexit', 'numpy', 
-                'skdata', 'skdata.mnist', 'skdata.mnist.view',
-                'pycuda', 'pycuda.autoinit',  
-                'pycuda.compiler', 'pycuda.cumath', 'pycuda.driver', 
-                'pycuda.elementwise', 'pycuda.gpuarray']
+
+MOCK_MODULES = ['hebel.pycuda_ops', 'hebel.pycuda_ops.linalg',
+                'hebel.pycuda_ops.cuda', 'hebel.pycuda_ops.cudart',
+                'hebel.pycuda_ops.elementwise', 'hebel.pycuda_ops.matrix',
+                'hebel.pycuda_ops.reductions', 'hebel.pycuda_ops.softmax',
+                'hebel.pycuda_ops.cublas', 'hebel.pycuda_ops.cudadrv', 'skdata',
+                'skdata.mnist', 'skdata.mnist.view', 'pycuda', 'pycuda.autoinit',
+                'pycuda.compiler', 'pycuda.cumath', 'pycuda.driver',
+                'pycuda.elementwise', 'pycuda.gpuarray', 'numpy']
 
 for mod_name in MOCK_MODULES:
     sys.modules[mod_name] = mock.Mock()

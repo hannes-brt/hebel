@@ -133,33 +133,3 @@ else:
 
         # No SONAME found:
         return ''
-
-class DL_info(ctypes.Structure):
-    _fields_ = [('dli_fname', ctypes.c_char_p),
-                ('dli_fbase', ctypes.c_void_p),
-                ('dli_sname', ctypes.c_char_p),
-                ('dli_saddr', ctypes.c_void_p)]
-libdl = ctypes.cdll.LoadLibrary('libdl.so')
-libdl.dladdr.restype = int
-libdl.dladdr.argtypes = [ctypes.c_void_p,
-                         ctypes.c_void_p]
-    
-def find_lib_path(func):
-    """
-    Find full path of a shared library containing some function.
-
-    Parameter
-    ---------
-    func : ctypes function pointer
-        Pointer to function to search for.
-        
-    Returns
-    -------
-    path : str
-        Full path to library.
-
-    """
-
-    dl_info = DL_info()            
-    libdl.dladdr(func, ctypes.byref(dl_info))
-    return dl_info.dli_fname

@@ -17,10 +17,14 @@
 import numpy as np
 from pycuda import driver as drv
 from pycuda import gpuarray
+from hebel.utils.math import ceil_div
 
 add_row_vec_kernel = None
 add_col_vec_kernel = None
 vector_normalize_kernel = None
+_compilation_constants = {
+    'add_vec_block_size': 16
+}
 def init():
     from pycuda.compiler import SourceModule
     
@@ -29,6 +33,7 @@ def init():
     global vector_normalize_kernel
 
     code = """
+    #include <stdint.h>
     __global__ void addRowVecToMat(const float *mat,
                                    const float *vec,
                                    float *target,
@@ -41,7 +46,7 @@ def init():
       const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
       const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
 
-      __shared__ float shared_vec[24];
+      __shared__ float shared_vec[%(add_vec_block_size)d];
 
       if ((tx == 0) & (tidy < m))
           shared_vec[ty] = vec[tidy];
@@ -68,7 +73,7 @@ def init():
       const int tidx = blockIdx.x * blockDim.x + threadIdx.x;
       const int tidy = blockIdx.y * blockDim.y + threadIdx.y;
 
-      __shared__ float shared_vec[24];
+      __shared__ float shared_vec[%(add_vec_block_size)d];
 
       if ((ty == 0) & (tidx < n))
           shared_vec[tx] = vec[tidx];
@@ -114,7 +119,7 @@ def init():
                 mat[blockIdx.x + i * width] /= (vec_norm / max_vec_norm);
         }
     }
-    """
+    """ % _compilation_constants
 
     mod = SourceModule(code)
     add_row_vec_kernel = mod.get_function('addRowVecToMat')
@@ -139,9 +144,10 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False,
 
     n, m = mat.shape
 
-    block = (24, 24, 1)
-    gridx = n // block[0] + 1 * (n % block[0] != 0)
-    gridy = m // block[1] + 1 * (m % block[1] != 0)
+    block = (_compilation_constants['add_vec_block_size'],
+             _compilation_constants['add_vec_block_size'], 1)
+    gridx = ceil_div(n, block[0])
+    gridy = ceil_div(m, block[1])
     grid = (gridx, gridy, 1)
 
     if inplace:
