@@ -33,7 +33,6 @@ optimizer: !obj:hebel.optimizers.SGD {
     !obj:hebel.monitors.ProgressMonitor {
       experiment_name: mnist_shallow,
       save_model_path: examples/mnist,
-      save_interval: 10,
       output_to_log: yes
     }
 }

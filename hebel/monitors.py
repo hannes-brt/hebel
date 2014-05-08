@@ -27,7 +27,7 @@ from datetime import datetime
 
 class ProgressMonitor(object):
     def __init__(self, experiment_name=None, save_model_path=None,
-                 save_interval=0, output_to_log=False, 
+                 save_interval=None, output_to_log=False, 
                  model=None):
 
         self.experiment_name = experiment_name
@@ -155,11 +155,14 @@ class ProgressMonitor(object):
         path = os.path.join(self.save_path, filename)
         self.print_("Saving model to %s" % path)
         cPickle.dump(self.model, open(path, 'wb'))
-        os.remove(os.path.join(
-            self.save_path, 'model_%s_current_best.pkl' % self.experiment_name))
+        if self.save_interval is None:
+            os.remove(os.path.join(
+                self.save_path, 'model_%s_current_best.pkl' % self.experiment_name))
 
+    def __del__(self):
         if self.output_to_log:
             self.log.close()
+
 
 class SimpleProgressMonitor(object):
     def __init__(self, model=None):
