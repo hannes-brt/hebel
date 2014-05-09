@@ -6,7 +6,7 @@ Version 0.02
 
 05-08-2014
 
-* Windows compatibility (Thanks to @Wainberg)
+* Windows compatibility (Thanks to [@Wainberg](https://github.com/Wainberg))
 * CUDA 4.x is no longer supported, please upgrade to CUDA 5 or CUDA 6
 * All initialization is now handled through `hebel.init()`. No need to
   initialize PyCUDA separately anymore.
