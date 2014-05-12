@@ -526,7 +526,7 @@ __global__ void fully_connected_layer(const nucleotide_t *input,
   }
 
   // Write final output
-  if (i < height and j == 0) {
+  if (i < height && j == 0) {
     const unsigned int target_idx = i*total_target_width+target_offset+f;
     target[target_idx] = output_shared[tx*dimy];
   }
