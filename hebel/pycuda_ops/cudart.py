@@ -57,7 +57,7 @@ for _libcudart_libname in _libcudart_libname_list:
     else:
         break
 if _libcudart == None:
-    OSError('CUDA runtime library not found')
+    raise OSError('CUDA runtime library not found')
 
 # Code adapted from PARRET:
 def POINTER(obj):
