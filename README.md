@@ -27,7 +27,7 @@ Currently, Hebel will run on Linux and Windows, and probably Mac OS X (not teste
 ## Getting started
 Study the yaml configuration files in `examples/` and run
     
-    python train_model.py examples/mnist_neural_net_shallow.yaml
+    python train_model.py examples/mnist_neural_net_shallow.yml
     
 The script will create a directory in `examples/mnist` where the models and logs are saved.
 
