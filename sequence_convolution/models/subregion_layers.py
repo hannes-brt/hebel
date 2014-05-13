@@ -32,6 +32,9 @@ class SubregionLayer(HiddenLayer):
         self.param_idx = param_idx
         self.output_offset = output_offset
 
+        if n_in % pool_size:
+            raise ValueError("Pool size must be an even divider of n_in")
+
         if parameters is None:
             self.W = weight_scale * (sampler.gen_uniform(
                 (self.n_filters, 4 * self.filter_width), np.float32
@@ -71,10 +74,12 @@ class SubregionLayer(HiddenLayer):
             
         pycuda_ops.convolve_sequence(input_data, self.W, self.b, target=filtermap)
         self.f(filtermap)
-        pycuda_ops.max_pool(filtermap, self.pool_size, self.n_filters,
-                            width=self.n_in, pooled_offset=self.output_offset,
-                            target=target_activations, argmax=target_argmax)
-
+        if self.pool_size is None or self.pool_size == 1:
+            insert_columns(filtermap, target_activations, self.output_offset)
+        else:
+            pycuda_ops.max_pool(filtermap, self.pool_size, self.n_filters,
+                                width=self.n_in, pooled_offset=self.output_offset,
+                                target=target_activations, argmax=target_argmax)
         return filtermap
 
     def backprop(self, input_data, df_output, filtermap, argmax):
@@ -95,6 +100,9 @@ class SubregionLayer(HiddenLayer):
         df_b_tmp = self.get_temp_object('df_b_tmp',
                                         (self.n_in * self.n_filters, ),
                                         np.float32)
+        # if self.pool_size is None or self.pool_size == 1:
+        #     df_filtermap=df_output
+        # else:
         pycuda_ops.max_pool_gradient(filtermap, argmax, df_output,
                                      self.pool_size, self.n_filters,
                                      width_pooled=self.n_units/self.n_filters,

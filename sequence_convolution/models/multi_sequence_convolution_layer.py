@@ -302,7 +302,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
             ((df_W_layer, df_b_layer), df_filtermap) = \
                 layer.backprop(input_region, df_output,
-                                      filtermap, argmax)
+                               filtermap, argmax)
 
             df_filtermaps.append(df_filtermap)
 

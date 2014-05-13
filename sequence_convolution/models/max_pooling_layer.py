@@ -41,6 +41,8 @@ class MaxPoolingLayer(HiddenLayer):
     @staticmethod
     def _compute_n_units(n_in, pool_size, n_filters):
         """ Compute the number of output units """
+        if pool_size is None:
+            pool_size = 1
         return int(np.ceil(n_in / float(pool_size))) * n_filters
 
     @property
