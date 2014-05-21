@@ -1,1 +1,1 @@
-ceil_div = lambda x, y: (x + y - 1) / y
+ceil_div = lambda x, y: int((x + y - 1) / y)
