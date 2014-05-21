@@ -24,6 +24,12 @@ Currently, Hebel will run on Linux and Windows, and probably Mac OS X (not teste
 - PyYAML
 - skdata (only for MNIST example)
 
+## Installation
+
+Hebel is on PyPi, so you can install it with
+
+    pip install hebel
+
 ## Getting started
 Study the yaml configuration files in `examples/` and run
     
