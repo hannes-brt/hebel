@@ -1,2 +1,4 @@
 include README.md
+include LICENSE.txt
+include CHANGES.md
 include examples/*.yml

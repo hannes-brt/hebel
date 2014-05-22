@@ -1,2 +1,2 @@
-version = '0.03-dev'
+version = '0.02.1'
 release = '0.02'

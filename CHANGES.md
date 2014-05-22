@@ -1,6 +1,14 @@
 Hebel Changelog
 ===============
 
+Version 0.02.1
+--------------
+
+05-22-2014
+
+* Added setup.py
+* Added to PyPi
+
 Version 0.02
 ------------
 
