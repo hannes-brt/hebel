@@ -40,7 +40,7 @@ The script will create a directory in `examples/mnist` where the models and logs
 Read the Getting started guide at [hebel.readthedocs.org/en/latest/getting_started.html](http://hebel.readthedocs.org/en/latest/getting_started.html) for more information.
 
 ## Documentation
-[hebel.readthedocs.org](http://hebel.readthedocs.org) (coming slowly)
+[hebel.readthedocs.org](http://hebel.readthedocs.org)
 
 ## Contact
 Maintained by [Hannes Bretschneider](http://github.com/hannes-brt) (hannes@psi.utoronto.ca).
