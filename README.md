@@ -56,6 +56,8 @@ If you make use of Hebel in your research, please cite it. The BibTeX reference 
       title         = "{Hebel - GPU-Accelerated Deep Learning Library in Python}",
       month         = "May",
       year          = "2014",
+      doi           = "10.5281/zenodo.10050",
+      url           = "https://zenodo.org/record/10050",
     }
 
 ## What's with the name?
