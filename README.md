@@ -46,5 +46,17 @@ Read the Getting started guide at [hebel.readthedocs.org/en/latest/getting_start
 Maintained by [Hannes Bretschneider](http://github.com/hannes-brt) (hannes@psi.utoronto.ca).
 If your are using Hebel, please let me know whether you find it useful and file a Github issue if you find any bugs or have feature requests.
 
+## Citing
+[![http://dx.doi.org/10.5281/zenodo.10050](https://zenodo.org/badge/doi/10.5281/zenodo.10050.png)](http://dx.doi.org/10.5281/zenodo.10050)
+
+If you make use of Hebel in your research, please cite it. The BibTeX reference is
+    
+    @article{Bretschneider:10050,
+      author        = "Hannes Bretschneider",
+      title         = "{Hebel - GPU-Accelerated Deep Learning Library in Python}",
+      month         = "May",
+      year          = "2014",
+    }
+
 ## What's with the name?
 _Hebel_ is the German word for _lever_, one of the oldest tools that humans use. As Archimedes said it: _"Give me a lever long enough and a fulcrum on which to place it, and I shall move the world."_
