@@ -49,6 +49,28 @@ class _Sampler(object):
         self._sampler = None
 sampler = _Sampler()
 
+class _Context(object):
+    _context = None
+
+    def init_context(self, device_id=None):
+        if device_id is None:
+            from pycuda.autoinit import context
+            self._context = context
+        else:
+            self._context = driver.Device(device_id).make_context()
+            self._context.push()
+
+    def __getattribute__(self, name):
+        if name == 'init_context':
+            return object.__getattribute__(self, name)
+        
+        if object.__getattribute__(self, '_context') is None:
+            raise RuntimeError("Context hasn't been initialized yet")
+        
+        return object.__getattribute__(self, '_context').__getattribute__(name)
+
+context = _Context()
+
 def init(device_id=None, random_seed=None):
     """Initialize Hebel.
 
@@ -80,14 +102,9 @@ def init(device_id=None, random_seed=None):
     global is_initialized
     if not is_initialized:
         is_initialized = True
-    
-    if not device_id:
-        # Initialize using pycuda.autoinit
-        import pycuda.autoinit
-    else:
-        # Initialize specific GPU
-        context = driver.Device(device_id).make_context()
-        context.push()
+
+    global context
+    context.init_context(device_id)
 
     from pycuda import gpuarray, driver, curandom
 
