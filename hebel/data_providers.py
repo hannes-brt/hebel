@@ -102,7 +102,7 @@ class MiniBatchDataProvider(DataProvider):
     
     def __getitem__(self, batch_idx):
         # return self.data[batch_idx*self.batch_size:(batch_idx+1)*self.batch_size]
-        return self.data_batches[batch_idx]
+        return self.data_batches[batch_idx], self.targets_batches[batch_idx]
 
     def next(self):
         if self.i >= self.n_batches:
