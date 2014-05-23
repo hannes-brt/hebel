@@ -417,7 +417,7 @@ class TestMaxPool(unittest.TestCase):
 
                 mat = gpuarray.to_gpu(np.random.rand(height, total_width).astype(dtype))
                 target = gpuarray.empty((height, total_width_pooled), dtype)
-                argmax = gpuarray.empty(target.shape, np.uint64)
+                argmax = gpuarray.empty(target.shape, np.uint32)
                 target, argmax = max_pool(mat, pool_size, width,
                                           input_offset, pooled_offset,
                                           target, argmax)
@@ -491,7 +491,7 @@ class TestMaxPoolGradient(unittest.TestCase):
                                       .astype(dtype))
                 mat_pooled = gpuarray.empty(
                     (height, total_width_pooled), dtype)
-                argmax = gpuarray.empty(mat_pooled.shape, np.uint64)
+                argmax = gpuarray.empty(mat_pooled.shape, np.uint32)
                 mat_pooled, argmax = max_pool(mat, pool_size,
                                               width,
                                               input_offset, pooled_offset,

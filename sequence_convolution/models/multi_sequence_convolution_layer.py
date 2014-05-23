@@ -119,7 +119,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
 
         self.persistent_temp_objects_config = (
             ('activations_pooled', ('batch_size', self.n_units), np.float32),
-            ('argmax', ('batch_size', self.n_units), np.uint64)
+            ('argmax', ('batch_size', self.n_units), np.uint32)
         )
 
     def preallocate_temp_objects(self, batch_size):
@@ -244,7 +244,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                                                   self.dtype)
         argmax = self.get_temp_object('argmax',
                                       activations_pooled.shape,
-                                      np.uint64)
+                                      np.uint32)
 
         filtermaps = []
 

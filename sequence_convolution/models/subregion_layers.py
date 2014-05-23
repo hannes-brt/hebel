@@ -69,7 +69,7 @@ class SubregionLayer(HiddenLayer):
         if target_activations is None:
             target_activations = gpuarray.empty((input_data.shape[0], self.n_units),
                                                 input_data.dtype)
-            target_argmax = gpuarray.empty(target_activations.shape, np.uint64)
+            target_argmax = gpuarray.empty(target_activations.shape, np.uint32)
             target_offset = 0
             
         pycuda_ops.convolve_sequence(input_data, self.W, self.b, target=filtermap)
