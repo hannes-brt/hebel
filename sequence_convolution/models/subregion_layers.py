@@ -69,7 +69,7 @@ class SubregionLayer(HiddenLayer):
         if target_activations is None:
             target_activations = gpuarray.empty((input_data.shape[0], self.n_units),
                                                 input_data.dtype)
-            target_argmax = gpuarray.empty(target_activations.shape, np.uint32)
+            target_argmax = gpuarray.empty(target_activations.shape, np.uint64)
             target_offset = 0
             
         pycuda_ops.convolve_sequence(input_data, self.W, self.b, target=filtermap)
@@ -105,8 +105,8 @@ class SubregionLayer(HiddenLayer):
         #     df_filtermap=df_output
         # else:
         pycuda_ops.max_pool_gradient(filtermap, argmax, df_output,
-                                     self.pool_size, self.n_filters,
-                                     width_pooled=self.n_units/self.n_filters,
+                                     self.pool_size,
+                                     width_pooled=self.n_units,
                                      pooled_offset=self.output_offset, target=df_filtermap)
         self.df(filtermap, target=df_conv)
         mult_matrix(df_conv, df_filtermap, delta)

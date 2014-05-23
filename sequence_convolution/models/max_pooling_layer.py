@@ -30,6 +30,7 @@ class MaxPoolingLayer(HiddenLayer):
         self.n_in = n_in
         self.pool_size = pool_size
         self.n_filters = n_filters
+        assert not (n_in * n_filters) % pool_size
 
         self.l1_penalty_weight = 0.
         self.l2_penalty_weight = 0.
@@ -65,7 +66,7 @@ class MaxPoolingLayer(HiddenLayer):
         return 0.
 
     def feed_forward(self, input, prediction=False):
-        activations, argmax = pycuda_ops.max_pool(input, self.pool_size, self.n_filters)
+        activations, argmax = pycuda_ops.max_pool(input, self.pool_size)
 
         if self.dropout and prediction:
             activations *= .5
@@ -90,11 +91,10 @@ class MaxPoolingLayer(HiddenLayer):
         if self.dropout and dropout_mask is not None:
             apply_dropout_mask(df_output, dropout_mask)
 
-        n, fm = activations.shape
-        activations = activations.reshape((n, self.n_filters, 
-                                           fm / self.n_filters))
+        # n, fm = activations.shape
+        # activations = activations.reshape((n, self.n_filters, 
+        #                                    fm / self.n_filters))
         df_input = pycuda_ops.max_pool_gradient(input, argmax,
                                                 df_output,
-                                                self.pool_size,
-                                                self.n_filters)
+                                                self.pool_size)
         return tuple(), df_input

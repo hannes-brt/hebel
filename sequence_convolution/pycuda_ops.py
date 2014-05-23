@@ -208,6 +208,7 @@ def max_pool(mat, pool_size, width=None,
              input_offset=0, pooled_offset=0,
              target=None, argmax=None, stream=None):
     assert mat.flags.c_contiguous
+    assert len(mat.shape) == 2
 
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
