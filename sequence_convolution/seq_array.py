@@ -98,6 +98,54 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
         self.enc_seq = enc_seq
 
 
+class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
+    def __init__(self, group, split_name, batch_size=None):
+        self.group = group
+        self.table = self.group._f_get_child(split_name)
+        self.batch_size = self.group._v_attrs.batch_size \
+                          if batch_size is None else batch_size
+        self.n_pos_batch = self.group._v_attrs.n_pos_batch
+        self.n_neg_batch = self.group._v_attrs.n_neg_batch
+        self.seq_length = self.table.cols.seq.dtype.itemsize
+
+        self.N = self.table.nrows
+        self.i = 0
+
+        self.get_next_batch()
+        self.n_batches = self.N / self.batch_size
+    
+    def _make_batches(self):
+        pass
+
+    def next(self):
+        if self.i >= self.n_batches:
+            self.i = 0
+            raise StopIteration
+        
+        # self.table.read(self.i, self.i + self.batch_size)
+        # self.sequences = gpuarray.to_gpu(
+        #     np.ndarray((self.batch_size, self.seq_length),
+        #                '|S1', np.ascontiguousarray(self.batch['seq']).data))
+        # self.targets = gpuarray.to_gpu(np.ascontiguousarray(self.batch['label'], np.float32)
+        #                                .reshape((self.batch_size, 1)))
+
+        sequences = self.sequences_next
+        targets = self.targets_next
+
+        self.i += 1
+        self.get_next_batch()
+
+        return [sequences], targets
+
+    def get_next_batch(self):
+        data = self.table.read(self.i, self.i + self.batch_size)
+        self.sequences_next = gpuarray.to_gpu_async(
+            np.ndarray((self.batch_size, self.seq_length),
+                       '|S1', np.ascontiguousarray(data['seq']).data))
+        self.targets_next = gpuarray.to_gpu_async(np.ascontiguousarray(data['label'], np.float32)
+            .reshape((self.batch_size, 1)))
+
+
 def sample_sequence(length, n):
     seq = [''.join((random.choice('ACGT') for _ in range(length)))
            for _ in range(n)]

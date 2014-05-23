@@ -17,6 +17,10 @@
 // The ceiling function
 #define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
 #define CEIL_INT(x, y) ((x + y - 1) / y)
+#define OFFSET_MATRIX_IDX(i, tw, w, h, os) (((i)/(w))*(tw)+(os)+((i)%(w)))
+#define ROW(i, w) ((i)/(w))
+#define COLUMN(i, w) ((i)%(w))
+
 
 typedef char nucleotide_t;
 

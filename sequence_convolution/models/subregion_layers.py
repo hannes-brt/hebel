@@ -77,8 +77,9 @@ class SubregionLayer(HiddenLayer):
         if self.pool_size is None or self.pool_size == 1:
             insert_columns(filtermap, target_activations, self.output_offset)
         else:
-            pycuda_ops.max_pool(filtermap, self.pool_size, self.n_filters,
-                                width=self.n_in, pooled_offset=self.output_offset,
+            pycuda_ops.max_pool(filtermap, self.pool_size,
+                                width=self.n_in*self.n_filters,
+                                pooled_offset=self.output_offset,
                                 target=target_activations, argmax=target_argmax)
         return filtermap
 

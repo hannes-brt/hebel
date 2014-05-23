@@ -18,10 +18,17 @@ from pycuda import gpuarray
 from pycuda.compiler import SourceModule
 from pycuda import driver
 import numpy as np
-import os
+import os, ctypes
 from jinja2 import Template
 from . import sequence_conv_root
 from hebel.pycuda_ops.reductions import matrix_sum_out_axis
+from hebel.utils.math import ceil_div
+
+from hebel import context
+MAX_THREADS_PER_BLOCK = context.get_device()\
+    .get_attribute(driver.device_attribute.MAX_THREADS_PER_BLOCK)
+MAX_SHARED_MEMORY_PER_BLOCK = context.get_device()\
+    .get_attribute(driver.device_attribute.MAX_SHARED_MEMORY_PER_BLOCK)
 
 _TILE_SIZE_CONV = 128
 
@@ -97,14 +104,14 @@ def convolve_sequence(mat, conv_filter, bias,
         target,
         conv_filter,
         bias,
-        np.uint32(input_offset),
-        np.uint32(width),
-        np.uint32(total_width),
-        np.uint32(height),
-        np.uint32(width_filter),
-        np.uint32(total_target_width),
-        np.uint32(target_offset),
-        np.uint32(n_filters),
+        np.uint64(input_offset),
+        np.uint64(width),
+        np.uint64(total_width),
+        np.uint64(height),
+        np.uint64(width_filter),
+        np.uint64(total_target_width),
+        np.uint64(target_offset),
+        np.uint64(n_filters),
         block=block,
         grid=grid,
         stream=stream,
@@ -167,14 +174,14 @@ def convolve_sequence_gradient_wrapper():
             mat,
             df_output,
             target_tmp,
-            np.uint32(input_offset),
-            np.uint32(df_output_offset),
-            np.uint32(total_width),
-            np.uint32(total_df_output_width),
-            np.uint32(width),
-            np.uint32(height),
-            np.uint32(filter_width),
-            np.uint32(n_filters),
+            np.uint64(input_offset),
+            np.uint64(df_output_offset),
+            np.uint64(total_width),
+            np.uint64(total_df_output_width),
+            np.uint64(width),
+            np.uint64(height),
+            np.uint64(filter_width),
+            np.uint64(n_filters),
             block=block, grid=grid, shared=shared, stream=stream)
 
         if target is None:
@@ -186,9 +193,9 @@ def convolve_sequence_gradient_wrapper():
         _kernels[dname]['gradient_reduce_kernel'](
             target_tmp,
             target,
-            np.uint32(n_filters),
-            np.uint32(filter_width),
-            np.uint32(grid[0]),
+            np.uint64(n_filters),
+            np.uint64(filter_width),
+            np.uint64(grid[0]),
             block=block_sum, grid=grid_sum,
             shared=shared, stream=stream)
 
@@ -197,46 +204,55 @@ def convolve_sequence_gradient_wrapper():
 convolve_sequence_gradient = convolve_sequence_gradient_wrapper()
 
 
-def max_pool(mat, pool_size, n_filters, width=None,
+def max_pool(mat, pool_size, width=None,
              input_offset=0, pooled_offset=0,
              target=None, argmax=None, stream=None):
     assert mat.flags.c_contiguous
 
     dtype = mat.dtype
     assert dtype in (np.float32, np.float64)
-    assert pool_size <= mat.shape[1] / n_filters
+    assert pool_size <= mat.shape[1]
 
     height, total_width = mat.shape
 
     if width is None:
         assert input_offset == 0
-        # assert pooled_offset == 0
-        assert not total_width % n_filters
-        width = total_width / n_filters
+        width = total_width
 
-    pooled_width = int(np.ceil(width / float(pool_size)))
+    assert not width % pool_size
+    pooled_width = width // pool_size
 
-    block = (2**int(np.ceil(np.log2(width))), 1, 1)
-    grid = (pooled_width, height, n_filters)
-    shared = block[0]*np.dtype(dtype).itemsize + \
-      block[0]*np.dtype(np.uint32).itemsize
+    block = (min(MAX_THREADS_PER_BLOCK - (MAX_THREADS_PER_BLOCK % pool_size),
+                 width * height / pool_size ), 1, 1)
+    grid = (ceil_div(height*pooled_width, block[0]), 1, 1)
+    shared = block[0]*pool_size*np.dtype(dtype).itemsize
 
+    while shared > MAX_SHARED_MEMORY_PER_BLOCK:
+        new_block_size = block[0] // 2
+        new_block_size -= new_block_size % pool_size
+        block = (new_block_size, 1, 1)
+        try:
+            grid = (ceil_div(height*pooled_width, block[0]), 1, 1)
+        except ZeroDivisionError:
+            raise ValueError("Not sufficient shared memory for pooling size: %d" % pool_size)
+        shared = block[0]*pool_size*np.dtype(dtype).itemsize
+    
     if target is not None:
         assert target.dtype == dtype
         assert target.flags.c_contiguous
         total_width_pooled = target.shape[1]
     else:
-        total_width_pooled = n_filters*pooled_width
+        total_width_pooled = pooled_width
         target = gpuarray.empty(
             (height, total_width_pooled),
             dtype)
 
     if argmax is not None:
-        assert argmax.dtype == np.uint32
+        assert argmax.dtype == np.uint64
         assert argmax.shape == target.shape
         assert argmax.flags.c_contiguous
     else:
-        argmax = gpuarray.empty(target.shape, np.uint32)
+        argmax = gpuarray.empty(target.shape, np.uint64)
 
     dname = _dtype_name[dtype]
 
@@ -244,20 +260,20 @@ def max_pool(mat, pool_size, n_filters, width=None,
         mat,
         target,
         argmax,
-        np.uint32(input_offset),
-        np.uint32(height),
-        np.uint32(total_width),
-        np.uint32(width),
-        np.uint32(pooled_offset),
-        np.uint32(total_width_pooled),
-        np.uint32(pool_size),
-        block=block, grid=grid, shared=shared, stream=stream)
+        np.uint64(input_offset),
+        np.uint64(height),
+        np.uint64(total_width),
+        np.uint64(width),
+        np.uint64(pooled_offset),
+        np.uint64(total_width_pooled),
+        np.uint64(pool_size),
+        block=block, grid=grid, shared=int(shared), stream=stream)
 
     return target, argmax
 
 
 def max_pool_gradient(mat, argmax,
-                      df_output, pool_size, n_filters,
+                      df_output, pool_size,
                       width=None,
                       width_pooled=None,
                       input_offset=0, pooled_offset=0,
@@ -273,20 +289,27 @@ def max_pool_gradient(mat, argmax,
     if width is None:
         assert input_offset == 0
         # assert pooled_offset == 0
-        assert not total_width % n_filters
-        width = total_width / n_filters
+        width = total_width
 
     total_pooled_width = df_output.shape[1]
 
     if width_pooled is None:
-        assert not total_pooled_width % n_filters
-        width_pooled = total_pooled_width / n_filters
+        width_pooled = total_pooled_width
         assert pooled_offset == 0
 
-    assert total_pooled_width >= n_filters * width_pooled
+    assert total_pooled_width >= width_pooled
 
-    block = (pool_size, 1, 1)
-    grid = (width_pooled, n_filters, height)
+    assert not width % width_pooled
+    pool_size = width // width_pooled
+    
+    block_size = MAX_THREADS_PER_BLOCK - (MAX_THREADS_PER_BLOCK % pool_size)
+    block = (block_size, 1, 1)
+    grid = (ceil_div(mat.size, block_size), 1, 1)
+    shared = (block[0] / pool_size) * \
+             (np.dtype(dtype).itemsize + np.dtype(np.uint64).itemsize)
+
+    if shared > MAX_SHARED_MEMORY_PER_BLOCK:
+        raise ValueError('Calculated shared memory exceeds MAX_SHARED_MEMORY_PER_BLOCK')
 
     if target is not None:
         assert target.dtype == dtype
@@ -300,14 +323,20 @@ def max_pool_gradient(mat, argmax,
         argmax,
         df_output,
         target,
-        np.uint32(input_offset),
-        np.uint32(height),
-        np.uint32(total_width),
-        np.uint32(width),
-        np.uint32(pooled_offset),
-        np.uint32(total_pooled_width),
-        np.uint32(width_pooled),
-        block=block, grid=grid, stream=stream)
+        np.uint64(input_offset),
+        np.uint64(height),
+        np.uint64(total_width),
+        np.uint64(width),
+        np.uint64(pooled_offset),
+        np.uint64(total_pooled_width),
+        np.uint64(width_pooled),
+        block=block, grid=grid,
+        shared=shared, stream=stream)
+
+    # try:
+    #     foo = target.get()
+    # except driver.LogicError:
+    #     import pudb; pudb.set_trace()
 
     return target
 
@@ -375,13 +404,13 @@ def fully_connected_layer(mat, filters, bias,
         target,
         filters,
         bias,
-        np.uint32(input_offset),
-        np.uint32(width),
-        np.uint32(total_width),
-        np.uint32(height),
-        np.uint32(total_target_width),
-        np.uint32(target_offset),
-        np.uint32(n_filters),
+        np.uint64(input_offset),
+        np.uint64(width),
+        np.uint64(total_width),
+        np.uint64(height),
+        np.uint64(total_target_width),
+        np.uint64(target_offset),
+        np.uint64(n_filters),
         block=block,
         grid=grid,
         stream=stream,
@@ -441,13 +470,13 @@ def fully_connected_layer_gradient(mat, df_output, n_filters=None,
         mat,
         df_output,
         target,
-        np.uint32(input_offset),
-        np.uint32(df_output_offset),
-        np.uint32(total_width),
-        np.uint32(total_df_output_width),
-        np.uint32(width),
-        np.uint32(height),
-        np.uint32(n_filters),
+        np.uint64(input_offset),
+        np.uint64(df_output_offset),
+        np.uint64(total_width),
+        np.uint64(total_df_output_width),
+        np.uint64(width),
+        np.uint64(height),
+        np.uint64(n_filters),
         block=block, grid=grid, shared=shared, stream=stream)
 
     if grid[0] > 1:
@@ -459,9 +488,9 @@ def fully_connected_layer_gradient(mat, df_output, n_filters=None,
         _kernels[dname]['gradient_reduce_kernel'](
             target,
             target_sum,
-            np.uint32(n_filters),
-            np.uint32(width),
-            np.uint32(grid[0]),
+            np.uint64(n_filters),
+            np.uint64(width),
+            np.uint64(grid[0]),
             block=block_sum, grid=grid_sum,
             shared=shared, stream=stream)
     else:
