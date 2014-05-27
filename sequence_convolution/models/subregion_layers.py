@@ -58,7 +58,7 @@ class SubregionLayer(HiddenLayer):
             ('df_conv', ('batch_size', self.n_in * self.n_filters), np.float32),
             ('delta', ('batch_size', self.n_in * self.n_filters), np.float32),
             ('df_b_tmp', (self.n_in * self.n_filters,), np.float32),
-            ('df_W_sign', self.W.shape, np.float32)
+            ('W_sign', self.W.shape, np.float32)
         )
 
     def feed_forward(self, input_data, prediction=False,
@@ -101,9 +101,7 @@ class SubregionLayer(HiddenLayer):
         df_b_tmp = self.get_temp_object('df_b_tmp',
                                         (self.n_in * self.n_filters, ),
                                         np.float32)
-        # if self.pool_size is None or self.pool_size == 1:
-        #     df_filtermap=df_output
-        # else:
+
         pycuda_ops.max_pool_gradient(filtermap, argmax, df_output,
                                      self.pool_size,
                                      width_pooled=self.n_units,
@@ -115,12 +113,12 @@ class SubregionLayer(HiddenLayer):
                                               self.filter_width, self.n_filters, target=df_W)
 
         if self.l1_penalty_weight:
-            df_W_sign = self.get_temp_object('df_W_sign', df_W.shape, df_W.dtype)
-            sign(df_W, df_W_sign)
-            df_W._axpbyz(1., df_W_sign, -self.l1_penalty_weight, df_W)
+            W_sign = self.get_temp_object('W_sign', self.W.shape, self.W.dtype)
+            sign(self.W, W_sign)
+            df_W._axpbyz(1., W_sign, self.l1_penalty_weight, df_W)
 
         if self.l2_penalty_weight:
-            df_W._axpbyz(1., df_W, -self.l2_penalty_weight, df_W)
+            df_W._axpbyz(1., self.W, self.l2_penalty_weight, df_W)
         
         return (df_W, df_b), df_filtermap
 
