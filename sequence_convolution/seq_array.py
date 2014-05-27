@@ -99,14 +99,16 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
 
 
 class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
-    def __init__(self, group, split_name, batch_size=None):
+    def __init__(self, group, split_name, batch_size=None, trim=None):
         self.group = group
         self.table = self.group._f_get_child(split_name)
         self.batch_size = self.group._v_attrs.batch_size \
                           if batch_size is None else batch_size
         self.n_pos_batch = self.group._v_attrs.n_pos_batch
         self.n_neg_batch = self.group._v_attrs.n_neg_batch
-        self.seq_length = self.table.cols.seq.dtype.itemsize
+        self.seq_length = self.table.cols.seq.dtype.itemsize - \
+                          (sum(trim) if trim is not None else 0)
+        self.trim = trim
 
         self.N = self.table.nrows
         self.i = 0
@@ -139,9 +141,12 @@ class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
 
     def get_next_batch(self):
         data = self.table.read(self.i, self.i + self.batch_size)
-        self.sequences_next = gpuarray.to_gpu_async(
-            np.ndarray((self.batch_size, self.seq_length),
-                       '|S1', np.ascontiguousarray(data['seq']).data))
+        self.sequences_next = \
+            np.ndarray((self.batch_size, data['seq'].itemsize),
+                       '|S1', np.ascontiguousarray(data['seq']).data)
+        if self.trim:
+            self.sequences_next = np.copy(self.sequences_next[:, self.trim[0]:-self.trim[1]])
+        self.sequences_next = gpuarray.to_gpu_async(self.sequences_next)
         self.targets_next = gpuarray.to_gpu_async(np.ascontiguousarray(data['label'], np.float32)
             .reshape((self.batch_size, 1)))
 
