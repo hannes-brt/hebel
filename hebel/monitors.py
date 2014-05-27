@@ -49,6 +49,7 @@ class ProgressMonitor(object):
         if self.log is not None:
             self.log.write(str(obj) + '\n')
         print obj
+        sys.stdout.flush()
 
     @property
     def yaml_config(self):
@@ -140,6 +141,7 @@ class ProgressMonitor(object):
             mean_weight = param_cpu.mean()
             std_weight = param_cpu.std()
             self.print_('Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight))
+            
             i += 1
 
     def finish_training(self):
@@ -189,6 +191,7 @@ class SimpleProgressMonitor(object):
             self.avg_epoch_t = ((epoch - 1) * \
                                 self.avg_epoch_t + epoch_t) / epoch \
                                 if self.avg_epoch_t is not None else epoch_t
+        sys.stdout.flush()
 
     def print_error(self, epoch, train_error, validation_error=None):
         if validation_error is not None:
@@ -209,6 +212,7 @@ class SimpleProgressMonitor(object):
             std_weight = param_cpu.std()
             print 'Layer %d: %.4f [%.4f]' % (i, mean_weight, std_weight)
             i += 1
+        sys.stdout.flush()
 
     def finish_training(self):
         # Print logs
@@ -217,3 +221,4 @@ class SimpleProgressMonitor(object):
         print "Runtime: %dm %ds" % (self.train_time.total_seconds() // 60,
                                     self.train_time.total_seconds() % 60)
         print "Avg. time per epoch %.2fs" % self.avg_epoch_t
+        sys.stdout.flush()
