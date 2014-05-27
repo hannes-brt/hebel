@@ -358,11 +358,11 @@ class HiddenLayer(object):
 
         # L1 weight decay
         if self.l1_penalty_weight:
-            df_W -= self.l1_penalty_weight * sign(self.W)
+            df_W += self.l1_penalty_weight * sign(self.W)
 
         # L2 weight decay
         if self.l2_penalty_weight:
-            df_W -= self.l2_penalty_weight * self.W
+            df_W += self.l2_penalty_weight * self.W
 
         return (df_W, df_b), df_input
 
