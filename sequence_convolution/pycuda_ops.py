@@ -22,7 +22,7 @@ import os, ctypes
 from jinja2 import Template
 from . import sequence_conv_root
 from hebel.pycuda_ops.reductions import matrix_sum_out_axis
-from hebel.utils.math import ceil_div
+from hebel.utils.math import ceil_div, div_up
 
 from hebel import context
 MAX_THREADS_PER_BLOCK = context.get_device()\
@@ -30,88 +30,81 @@ MAX_THREADS_PER_BLOCK = context.get_device()\
 MAX_SHARED_MEMORY_PER_BLOCK = context.get_device()\
     .get_attribute(driver.device_attribute.MAX_SHARED_MEMORY_PER_BLOCK)
 
-_TILE_SIZE_CONV = 128
-
 _src_dir = os.path.join(sequence_conv_root, 'src')
 _code = Template(open(os.path.join(_src_dir, 'convolution_kernels.cu')).read())
 
 
-_source_modules = {dtype: SourceModule(_code.render(data_type=dtype),
+_source_modules = {dtype: SourceModule(_code.render(dtype=dtype, dtype_idx=dtype_idx),
                                        include_dirs=[_src_dir])
-                  for dtype in ('float', 'double')}
+                   for dtype, dtype_idx in (('float', 'unsigned int'),
+                                            ('double', 'unsigned long'))}
 
 _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
-                    for f_name in ('convolve_sequence',
-                                   'convolve_sequence_gradient',
+                    for f_name in ('convolve_dna_sequence',
+                                   'convolve_dna_sequence_gradient',
                                    'gradient_reduce',
                                    'max_pool',
                                    'max_pool_gradient',
                                    'sum_pool',
-                                   'sum_pool_gradient',
-                                   'fully_connected_layer',
-                                   'fully_connected_layer_gradient')}
+                                   'sum_pool_gradient')}
                     for dtype, sm in _source_modules.iteritems()}
 
 _dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
 
 
-def convolve_sequence(mat, conv_filter, bias,
-                      input_offset=0, target_offset=0,
+def convolve_sequence(input_seq, conv_filter, bias,
                       width=None,
                       target=None, stream=None):
 
-    assert mat.flags.c_contiguous
+    assert input_seq.flags.c_contiguous
     assert conv_filter.flags.c_contiguous
     assert bias.flags.c_contiguous
 
     dtype = conv_filter.dtype
     assert dtype in (np.float32, np.float64)
+
+    if dtype == np.float32:
+        dtype_idx = np.uint32
+    else:
+        dtype_idx = np.uint64
+    
     assert bias.shape[0] == conv_filter.shape[0]
 
-    height, total_width = mat.shape
-
-    if input_offset > 0:
-        assert target is not None
-        assert width is not None
-        assert input_offset + width < total_width
-
-    if width is None:
-        width = total_width
+    height, width = input_seq.shape
 
     n_filters = conv_filter.shape[0]
-    width_filter = conv_filter.shape[1] // 4
+    filter_width = conv_filter.shape[1] // 4
 
-    block = (_TILE_SIZE_CONV, 1, 1)
-    grid = (int(np.ceil(mat.size / float(block[0]))),
-            n_filters, 1)
-    shared = ((_TILE_SIZE_CONV + width_filter - 1) * np.dtype(dtype).itemsize +
-              4 * width_filter * np.dtype(dtype).itemsize)  # filter_shared
+    halo_width = filter_width - 1
+    output_width = width - halo_width
+
+    block = (4, 8, 1)
+    grid = (ceil_div(n_filters, block[0]), 128, 1)
+    n_input_elements = ceil_div(block[1], output_width) * width + halo_width
+    shared = div_up(n_input_elements, 4) * np.dtype('|S1').itemsize + \
+             block[0] * filter_width * 4  * np.dtype(dtype).itemsize + \
+             block[0] * np.dtype(dtype).itemsize
+
+    assert np.product(block) < MAX_THREADS_PER_BLOCK
+    assert shared < MAX_SHARED_MEMORY_PER_BLOCK
 
     if target is None:
-        assert target_offset == 0
-        total_target_width = n_filters*total_width
-        target = gpuarray.empty((height, total_target_width),
+        target = gpuarray.empty((height, output_width * n_filters),
                                 dtype=dtype)
-    else:
-        assert target.dtype == dtype
-        assert target.flags.c_contiguous
-        total_target_width = target.shape[1]
-        assert target_offset + n_filters * width <= total_target_width
+    assert target.dtype == dtype
+    assert target.flags.c_contiguous
+    assert target.shape == (height, output_width * n_filters)
 
     dname = _dtype_name[dtype]
-    _kernels[dname]['convolve_sequence_kernel'](
-        mat,
+    _kernels[dname]['convolve_dna_sequence_kernel'](
+        input_seq,
         target,
         conv_filter,
         bias,
-        np.uint32(input_offset),
-        np.uint32(width),
-        np.uint32(total_width),
-        np.uint32(height),
-        np.uint32(width_filter),
-        np.uint32(total_target_width),
-        np.uint32(target_offset),
-        np.uint32(n_filters),
+        dtype_idx(width),
+        dtype_idx(height),
+        dtype_idx(filter_width),
+        dtype_idx(n_filters),
         block=block,
         grid=grid,
         stream=stream,
@@ -359,142 +352,3 @@ def sum_delta(delta, n_filters, cache_one_vector=True,
     return target_sum
 
 
-def fully_connected_layer(mat, filters, bias,
-                          input_offset=0, target_offset=0,
-                          width=None,
-                          target=None, stream=None):
-    assert mat.flags.c_contiguous
-    assert filters.flags.c_contiguous
-    assert bias.flags.c_contiguous
-
-    dtype = filters.dtype
-    assert dtype in (np.float32, np.float64)
-    assert bias.shape[0] == filters.shape[0]
-
-    height, total_width = mat.shape
-
-    if input_offset > 0:
-        assert target is not None
-        assert width is not None
-        assert input_offset + width < total_width
-
-    if width is None:
-        width = total_width
-
-    n_filters = filters.shape[0]
-
-    block_y = 2 ** int(np.ceil(np.log2(width)))
-    block = (_TILE_SIZE_CONV / block_y, block_y, 1)
-    grid = (int(np.ceil(height / float(block[0]))), 1, n_filters)
-    shared = (4 * width +
-              block[0] * block[1]) * np.dtype(dtype).itemsize
-
-    if target is None:
-        assert target_offset == 0
-        total_target_width = n_filters
-        target = gpuarray.empty((height, total_target_width), dtype=dtype)
-    else:
-        assert target.dtype == dtype
-        assert target.flags.c_contiguous
-        total_target_width = target.shape[1]
-        assert target_offset + n_filters * width <= total_target_width
-
-    dname = _dtype_name[dtype]
-    _kernels[dname]['fully_connected_layer_kernel'](
-        mat,
-        target,
-        filters,
-        bias,
-        np.uint32(input_offset),
-        np.uint32(width),
-        np.uint32(total_width),
-        np.uint32(height),
-        np.uint32(total_target_width),
-        np.uint32(target_offset),
-        np.uint32(n_filters),
-        block=block,
-        grid=grid,
-        stream=stream,
-        shared=shared
-    )
-
-    return target
-
-
-def fully_connected_layer_gradient(mat, df_output, n_filters=None,
-                                   input_offset=0, df_output_offset=0, width=None,
-                                   target=None, stream=None, block_size=1024):
-
-    assert mat.flags.c_contiguous
-    assert df_output.flags.c_contiguous
-
-    stride = 4
-    dtype = df_output.dtype
-    assert dtype in (np.float32, np.float64)
-
-    height, total_width = mat.shape
-
-    if input_offset > 0:
-        assert width is not None
-        assert input_offset + width <= total_width
-
-    total_df_output_width = df_output.shape[1]
-    if n_filters is None:
-        assert df_output_offset == 0
-        n_filters = total_df_output_width
-
-    if df_output_offset > 0:
-        assert df_output_offset + n_filters <= total_df_output_width
-
-    if width is None:
-        width = total_width
-
-    block_x = int(np.min((2 ** int(np.ceil(np.log2(height))), block_size)))
-    block_y = block_size // block_x
-    block = (block_x, block_y, 1)
-    grid = (int(np.ceil(height / float(block[0]))),
-            int(np.ceil(width / float(block[1]))), n_filters)
-    shared = (block[0] +                         # df_output_share
-              block[0] * stride * block[1]       # df_weights_reduce
-              ) * np.dtype(dtype).itemsize
-
-    if target is not None:
-        assert target.dtype == dtype
-        assert target.shape == (n_filters, stride * width, grid[0])
-        assert target.flags.c_contiguous
-    else:
-        target = gpuarray.empty((n_filters, stride * width,
-                                 grid[0]), dtype=dtype).fill(99.)
-
-    dname = _dtype_name[dtype]
-    _kernels[dname]['fully_connected_layer_gradient_kernel'](
-        mat,
-        df_output,
-        target,
-        np.uint32(input_offset),
-        np.uint32(df_output_offset),
-        np.uint32(total_width),
-        np.uint32(total_df_output_width),
-        np.uint32(width),
-        np.uint32(height),
-        np.uint32(n_filters),
-        block=block, grid=grid, shared=shared, stream=stream)
-
-    if grid[0] > 1:
-        target_sum = gpuarray.empty((n_filters, stride * width), dtype)
-        block_sum = (max((1, 2 ** int(np.ceil(np.log2(grid[0]) - 1)))), 1, 1)
-        grid_sum = (n_filters, stride * width, 1)
-        shared = block_sum[0] * np.dtype(dtype).itemsize
-
-        _kernels[dname]['gradient_reduce_kernel'](
-            target,
-            target_sum,
-            np.uint32(n_filters),
-            np.uint32(width),
-            np.uint32(grid[0]),
-            block=block_sum, grid=grid_sum,
-            shared=shared, stream=stream)
-    else:
-        target_sum = target.reshape((n_filters, stride * width))
-
-    return target_sum

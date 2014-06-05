@@ -15,12 +15,11 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 // The ceiling function
-#define CEILING(x) (int)(x) + (1 - (int)((int)((x) + 1) - (x)))
-#define CEIL_INT(x, y) ((x + y - 1) / y)
-#define OFFSET_MATRIX_IDX(i, tw, w, h, os) (((i)/(w))*(tw)+(os)+((i)%(w)))
+#define CEIL_DIV(x, y) ((x + y - 1) / y)
+#define DIV_UP(x, y) ((y) * CEIL_DIV(x, y))
 #define ROW(i, w) ((i)/(w))
 #define COLUMN(i, w) ((i)%(w))
-
+#define OUTPUT_TO_INPUT_IDX(idx, iw, ow) (ROW((idx), (ow)) * (iw) + COLUMN((idx), (ow)))
 
 typedef char nucleotide_t;
 
@@ -37,4 +36,4 @@ typedef enum {
 // Check if nucleotide nt is letter l
 #define CHECK_NT(nt, l) (nt == (nucleotide_t) l)
 
-#define STRIDE 4
+#define N_LETTERS 4

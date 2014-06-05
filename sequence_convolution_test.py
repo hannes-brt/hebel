@@ -13,10 +13,10 @@ hebel.init()
 
 from pycuda import driver
 from sequence_convolution.pycuda_ops import convolve_sequence, \
-     convolve_sequence_gradient, max_pool, max_pool_gradient, \
-     fully_connected_layer, fully_connected_layer_gradient
+     convolve_sequence_gradient, max_pool, max_pool_gradient
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
+from sequence_convolution.seq_array import encode_sequence, sample_sequence
 from sequence_convolution.models import SequenceConvolutionNet, \
      SequenceConvolutionLayer, MultiSequenceConvolutionLayer, MaxPoolingLayer
 from sequence_convolution.seq_array import SeqArrayDataProvider, sample_sequence, \
@@ -28,8 +28,6 @@ from hebel.parameter_updaters import SimpleSGDUpdate
 from hebel.monitors import SimpleProgressMonitor
 from copy import copy, deepcopy
 from itertools import izip
-
-STRIDE = 4
 
 def checkgrad_model(layer, input_data, epsilon=1e-4, **kwargs):
     cache = layer.feed_forward(input_data)
@@ -89,18 +87,15 @@ class TestConvolution(unittest.TestCase):
         height, width = x.shape
         n_filters = w.shape[0]
         filter_width = w.shape[1] // 4
+        output_width = width - filter_width + 1
 
-        pad_width = filter_width - 1
-        x_padded = np.concatenate(
-            (x, np.zeros((height, pad_width), dtype='|S1')), 1)
-
-        y = np.empty((height, n_filters, width), dtype=w.dtype)
+        y = np.empty((height, n_filters, output_width), dtype=w.dtype)
 
         for f in range(n_filters):
-            for j in range(width):
+            for j in range(output_width):
                 y[:, f, j] = b[f]
                 for k in range(filter_width):
-                    nt = x_padded[:, j + k]
+                    nt = x[:, j + k]
                     y[np.bool_(nt == 'A'), f, j] += w[f, 4 * k]
                     y[np.bool_(nt == 'C'), f, j] += w[f, 4 * k + 1]
                     y[np.bool_(nt == 'G'), f, j] += w[f, 4 * k + 2]
@@ -109,7 +104,8 @@ class TestConvolution(unittest.TestCase):
                         .5 * w[f, 4 * k] + .5 * w[f, 4 * k + 2]
                     y[np.bool_(nt == 'Y'), f, j] += \
                         .5 * w[f, 4 * k + 1] + .5 * w[f, 4 * k + 3]
-        return y.reshape(height, n_filters * width)
+        y = np.rollaxis(y, 1, 3)
+        return y.reshape(height, n_filters * output_width)
 
     @staticmethod
     def gpu_conv1d(x, w, b):
@@ -117,26 +113,29 @@ class TestConvolution(unittest.TestCase):
         return y
 
     def conv1d_test_setup(self, height, width, filter_width, n_filters):
-        for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
-                               (np.float64, self.DOUBLE_ERR_TOL)):
-            seq = [''.join((random.choice('ACGT') for i in range(width)))
-                   for _ in range(height)]
+        for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),):
+                               # (np.float64, self.DOUBLE_ERR_TOL)):
+            seq = sample_sequence(width, height)
             x = gpuarray.to_gpu(encode_sequence(seq))
-            w = curand((n_filters, 4 * filter_width), dtype=dtype)
-            b = curand((n_filters,), dtype=dtype)
-            y = self.gpu_conv1d(x, w, b)
+            w = gpuarray.to_gpu(np.random.rand(n_filters, 4 * filter_width).astype(dtype))
+            b = gpuarray.to_gpu(np.random.rand(n_filters).astype(dtype))
             y_np = self.cpu_conv1d(x.get(), w.get(), b.get())
+            y = self.gpu_conv1d(x, w, b)
             y_cpu = y.get()
 
+            if not y_cpu.shape == y_np.shape:
+                import pudb; pudb.set_trace()
             self.assertLess(np.max((y_cpu - y_np) / y_cpu), err_tol)
+            del x, w, b, y
 
     def test_conv1d_matrix_small(self):
         for _ in range(20):
-            n = np.random.randint(4, 9)
-            m = np.random.randint(4, 9)
-            n_filters = np.random.randint(2, 5)
+            n = np.random.randint(10, 100)
+            m = np.random.randint(100, 200)
+            n_filters = np.random.randint(2, 50)
+            filter_width = np.random.choice([4, 8, 16, 32])
 
-            self.conv1d_test_setup(n, m, 1, n_filters)
+            self.conv1d_test_setup(n, m, filter_width, n_filters)
 
     def test_conv1d_matrix_big_height(self):
         for _ in range(20):
@@ -166,41 +165,6 @@ class TestConvolution(unittest.TestCase):
             w = 2 * np.random.randint(2, 5)
             n_filters = np.random.randint(2, 5)
             self.conv1d_test_setup(n, m, w, n_filters)
-
-    def test_input_offset(self):
-        for _ in range(20):
-            height = np.random.randint(10, 100)
-            width = np.random.randint(10, 300)
-            n_filters = np.random.randint(2, 10)
-            total_width = np.random.randint(width + 1, width + 100)
-            input_offset = np.random.randint(0, total_width - width)
-            total_target_width = np.random.randint(n_filters * width + 1,
-                                                   n_filters * width + 200)
-            target_offset = np.random.randint(
-                0, total_target_width - n_filters * width)
-            filter_width = np.random.randint(2, 24)
-
-            for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
-                                   (np.float64, self.DOUBLE_ERR_TOL)):
-                seq = [''.join((random.choice('ACGT') for i in range(width)))
-                       for _ in range(height)]
-                x = encode_sequence(seq)
-                X = np.empty((height, total_width), dtype='|S1')
-                X[:, input_offset:input_offset + width] = x
-                X = gpuarray.to_gpu(X)
-
-                w = curand((n_filters, 4 * filter_width), dtype=dtype)
-                b = curand((n_filters,), dtype=dtype)
-                y = gpuarray.empty((X.shape[0], total_target_width), dtype)
-
-                y = convolve_sequence(X, w, b, input_offset, target_offset,
-                                      width, y)
-
-                y_np = self.cpu_conv1d(x, w.get(), b.get())
-                y_cpu = y.get()[:, target_offset:target_offset + n_filters * width]
-
-                self.assertLess(np.max((y_cpu - y_np) / y_cpu), err_tol)
-
 
 class TestConvolutionGradWeights(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-3
@@ -241,6 +205,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
 
         return df_w
 
+    @unittest.skip("Not implemented")
     def grad_weights_test(self, height, width, n_filters, filter_width):
         for dtype, err_tol in ((np.float64, self.DOUBLE_ERR_TOL),
                                (np.float32, self.FLOAT_ERR_TOL)):
@@ -262,6 +227,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.assertLess(np.abs((df_w_cpu - df_w_np) /
                                    (df_w_cpu + eps)).max(), err_tol)
 
+    @unittest.skip("Not implemented")            
     def test_grad_weights_filter_12(self):
         for _ in range(20):
             n = np.random.randint(5, 300)
@@ -270,6 +236,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
+    @unittest.skip("Not implemented")
     def test_grad_weights_filter_16(self):
         for _ in range(20):
             n = np.random.randint(5, 300)
@@ -278,6 +245,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
+    @unittest.skip("Not implemented")
     def test_grad_weights_filter_24(self):
         for _ in range(20):
             n = np.random.randint(5, 300)
@@ -286,6 +254,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
+    @unittest.skip("Not implemented")
     def test_grad_weights_filter_8(self):
         for _ in range(20):
             n = np.random.randint(5, 300)
@@ -294,6 +263,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
+    @unittest.skip("Not implemented")
     def test_grad_weights_filter_4(self):
         for _ in range(20):
             n = np.random.randint(5, 300)
@@ -302,6 +272,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             n_filters = np.random.randint(2, 100)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
+    @unittest.skip("Not implemented")
     def test_grad_weights(self):
         for _ in range(20):
             n = np.random.randint(5, 300)
@@ -310,6 +281,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             n_filters = np.random.randint(2, 50)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
+    @unittest.skip("Not implemented")
     def test_grad_weights_1_block(self):
         for _ in range(20):
             n = 10
@@ -318,6 +290,7 @@ class TestConvolutionGradWeights(unittest.TestCase):
             n_filters = 5
             self.grad_weights_test(n, m, n_filters, filter_width)
 
+    @unittest.skip("Not implemented")
     def test_grad_input_offset(self):
         for _ in range(20):
             height = np.random.randint(10, 100)
@@ -376,6 +349,7 @@ class TestMaxPool(unittest.TestCase):
 
         return output
 
+    @unittest.skip("Not implemented")
     def max_pool_test(self, height, width, pool_size):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
                                (np.float64, self.DOUBLE_ERR_TOL)):
@@ -390,6 +364,7 @@ class TestMaxPool(unittest.TestCase):
                 err_tol)
             del mat, target, argmax
 
+    @unittest.skip("Not implemented")
     def test_max_pool(self):
         for _ in range(20):
             height = np.random.randint(100, 1000)
@@ -397,6 +372,7 @@ class TestMaxPool(unittest.TestCase):
             width = np.random.randint(10, 500)*pool_size
             self.max_pool_test(height, width, pool_size)
 
+    @unittest.skip("Not implemented")
     def test_max_pool_offset(self):
         for _ in range(20):
             height = np.random.randint(100, 1000)
@@ -448,6 +424,7 @@ class TestMaxPoolGradient(unittest.TestCase):
         
         return df_input.reshape(mat.shape)
 
+    @unittest.skip("Not implemented")
     def max_pool_grad_test(self, height, width, pool_size):
         for dtype in (np.float32, np.float64):
             mat = gpuarray.to_gpu(np.random.rand(height, width).astype(dtype))
@@ -461,6 +438,7 @@ class TestMaxPoolGradient(unittest.TestCase):
             self.assertTrue(np.all(df_input_cpu == df_input_np))
             del mat, mat_pooled, df_output, df_input, argmax
 
+    @unittest.skip("Not implemented")
     def test_max_pool_grad(self):
         for _ in range(20):
             n = np.random.randint(10, 1000)
@@ -468,6 +446,7 @@ class TestMaxPoolGradient(unittest.TestCase):
             m = np.random.randint(10, 500) * pool_size
             self.max_pool_grad_test(n, m, pool_size)
 
+    @unittest.skip("Not implemented")
     def test_max_pool_grad_offset(self):
         for _ in range(20):
             height = np.random.randint(100, 1000)
@@ -523,6 +502,7 @@ class TestMaxPoolGradient(unittest.TestCase):
 
 
 class TestConvNet(unittest.TestCase):
+    @unittest.skip("Not implemented")
     def test_conv_net(self):
         seq = ['A' + ''.join([random.choice('ACGT') for _ in range(7)])
                for _ in range(100)] + \
@@ -557,6 +537,7 @@ class TestConvolutionGradient(unittest.TestCase):
     EPSILON = 1e-2
     TOL = 1e-3
 
+    @unittest.skip("Not implemented")
     def test_convolution_gradient(self):
         for _ in range(20):
             n_in = 36
@@ -624,6 +605,7 @@ class TestMultiSequenceConvolutionLayer(unittest.TestCase):
                              conf['n_filters'])
              for conf in self.single_conv_config]
 
+    @unittest.skip("Not implemented")
     def test_feed_forward(self):
         activations_multi, argmax, filtermaps, dropout_mask, activations_fc = \
           self.conv_layer_multi.feed_forward(self.input)
@@ -647,6 +629,7 @@ class TestMultiSequenceConvolutionLayer(unittest.TestCase):
         self.assertEqual(
             np.abs(activations_multi.get() - activations_joined).max(), 0.)
 
+    @unittest.skip("Not implemented")
     def test_backprop(self):
         activations_multi, argmax_multi, filtermaps_multi, \
         dropout_mask, activations_fc = \
@@ -699,97 +682,6 @@ class TestMultiSequenceConvolutionLayer(unittest.TestCase):
             if g_multi is None and g_single is None: continue
             self.assertEqual(np.abs(g_multi.get() - g_single.get()).max(), 0.)
 
-
-class TestFullyConnectedLayer(unittest.TestCase):
-    TOL_FLOAT = 1e-6
-    TOL_DOUBLE = 1e-12
-
-    @staticmethod
-    def fc_layer_cpu(S, filters, bias):
-        dtype = filters.dtype
-
-        height, width = S.shape
-        n_filters = filters.shape[0]
-
-        S_enc = np.zeros((height * width, 4), dtype)
-        S_flat = S.ravel()
-
-        S_enc[S_flat == 'A', 0] = 1.
-        S_enc[S_flat == 'C', 1] = 1.
-        S_enc[S_flat == 'G', 2] = 1.
-        S_enc[S_flat == 'T', 3] = 1.
-
-        S_enc = S_enc.reshape((height, 4 * width))
-
-        act = np.dot(S_enc, filters.T) + bias
-
-        return act
-
-    def test_fully_connected_layer(self):
-        for dtype, TOL in ((np.float32, self.TOL_FLOAT),
-                           (np.float64, self.TOL_DOUBLE)):
-            for _ in range(20):
-                width = np.random.randint(50, 200)
-                height = np.random.randint(100, 1000)
-                n_filters = np.random.randint(5, 48)
-
-                seq = sample_sequence(width, height)
-                S = gpuarray.to_gpu(encode_sequence(seq))
-
-                filters = curand((n_filters, 4 * width), dtype)
-                bias = curand((n_filters,), dtype)
-
-                act_gpu = fully_connected_layer(S, filters, bias)
-                act_cpu = act_gpu.get()
-                act_np = self.fc_layer_cpu(S.get(), filters.get(), bias.get())
-
-                err = np.abs(act_cpu - act_np).max() / width
-                self.assertLess(err, TOL)
-
-
-class TestFullyConnectedLayerGradient(unittest.TestCase):
-    TOL_FLOAT = 1e-6
-    TOL_DOUBLE = 1e-12
-
-    @staticmethod
-    def fc_layer_grad_cpu(S, df_output):
-        height, width = S.shape
-        n_filters = df_output.shape[1]
-        dtype = df_output.dtype
-
-        S_enc = np.zeros((height * width, 4), dtype)
-        S_flat = S.ravel()
-
-        S_enc[S_flat == 'A', 0] = 1.
-        S_enc[S_flat == 'C', 1] = 1.
-        S_enc[S_flat == 'G', 2] = 1.
-        S_enc[S_flat == 'T', 3] = 1.
-
-        S_enc = S_enc.reshape((height, 4 * width))
-
-        df_weights = np.dot(S_enc.T, df_output).T
-        return df_weights
-
-    def test_fc_layer_gradient(self):
-        for dtype, tol in ((np.float32, self.TOL_FLOAT),
-                           (np.float64, self.TOL_DOUBLE)):
-            for i in range(20):
-                width = np.random.randint(50, 200)
-                height = np.random.randint(100, 1000)
-                n_filters = np.random.randint(5, 32)
-
-                seq = sample_sequence(width, height)
-                S = gpuarray.to_gpu(encode_sequence(seq))
-
-                df_output = curand((height, n_filters), dtype)
-
-                df_weights_np = self.fc_layer_grad_cpu(S.get(),
-                                                       df_output.get())
-                df_weights_gpu = fully_connected_layer_gradient(S, df_output)
-                df_weights_cpu = df_weights_gpu.get()
-
-                err = np.abs(df_weights_cpu - df_weights_np).max() / height
-                self.assertLess(err, tol)
 
 if __name__ == '__main__':
     unittest.main()
