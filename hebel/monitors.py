@@ -28,7 +28,7 @@ from datetime import datetime
 class ProgressMonitor(object):
     def __init__(self, experiment_name=None, save_model_path=None,
                  save_interval=None, output_to_log=False, 
-                 model=None):
+                 model=None, make_subdir=True):
 
         self.experiment_name = experiment_name
         self.save_model_path = save_model_path
@@ -43,7 +43,7 @@ class ProgressMonitor(object):
 
         self.epochs = 0
 
-        self.makedir()
+        self.makedir(make_subdir)
 
     def print_(self, obj):
         if self.log is not None:
@@ -75,13 +75,16 @@ class ProgressMonitor(object):
         f = open(os.path.join(self.save_path, "test_error"), 'w')
         f.write('%.5f\n' % test_error)
 
-    def makedir(self):
-        experiment_dir_name = '_'.join((
-            self.experiment_name,
-            datetime.now().strftime('%Y-%m-%dT%H-%M-%S')))
+    def makedir(self, make_subdir=True):
+        if make_subdir:
+            experiment_dir_name = '_'.join((
+                self.experiment_name,
+                datetime.now().strftime('%Y-%m-%dT%H-%M-%S')))
 
-        path = os.path.join(self.save_model_path,
-                            experiment_dir_name)
+            path = os.path.join(self.save_model_path,
+                                experiment_dir_name)
+        else:
+            path = self.save_model_path
         if not os.path.exists(path):
             os.makedirs(path)
         self.save_path = path
@@ -125,7 +128,7 @@ class ProgressMonitor(object):
             report_str = 'Epoch %d, Validation error: %.5g, Train Loss: %.3f' % \
               (epoch, validation_error, train_error)
             if new_best is not None and new_best:
-                report_str += ' (*)'
+                report_str = '* ' + report_str
         else:
             report_str = 'Epoch %d, Train Loss: %.3f' % \
               (epoch, train_error)
@@ -185,7 +188,7 @@ class SimpleProgressMonitor(object):
             self.validation_error.append((epoch, validation_error))
 
         # Print logs
-        self.print_error(epoch, train_error, validation_error)
+        self.print_error(epoch, train_error, validation_error, new_best)
 
         if epoch_t is not None:
             self.avg_epoch_t = ((epoch - 1) * \
@@ -193,10 +196,13 @@ class SimpleProgressMonitor(object):
                                 if self.avg_epoch_t is not None else epoch_t
         sys.stdout.flush()
 
-    def print_error(self, epoch, train_error, validation_error=None):
+    def print_error(self, epoch, train_error, validation_error=None, new_best=None):
         if validation_error is not None:
-            print 'Epoch %d, Validation error: %.5g, Train Loss: %.3f' % \
+            report_str = 'Epoch %d, Validation error: %.5g, Train Loss: %.3f' % \
               (epoch, validation_error, train_error)
+            if new_best is not None and new_best:
+                report_str = '* ' + report_str
+            print report_str
         else:
             print 'Epoch %d, Train Loss: %.3f' % \
               (epoch, train_error)

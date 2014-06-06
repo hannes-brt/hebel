@@ -33,7 +33,6 @@ class EarlyStoppingModule(object):
 
     def update(self, epoch, validation_loss):
         if validation_loss < self.best_validation_loss:
-            print '* ',
             self.best_validation_loss = validation_loss
             self.best_params = [p.copy() for p in self.model.parameters]
             assert self.best_params[0] is not self.model.parameters[0]
