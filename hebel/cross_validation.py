@@ -47,9 +47,12 @@ class CrossValidation(object):
             'validate_idx': validate_idx
         })
 
-        dp_train = self.make_data_provider(train_idx, self.config['batch_size'])
-        dp_validate = self.make_data_provider(validate_idx, self.config['batch_size'])
-        dp_test = self.make_data_provider(test_idx, test_idx.shape[0])
+        dp_train = self.make_data_provider(train_idx,
+                                           self.config.get('batch_size_train'))
+        dp_validate = self.make_data_provider(validate_idx,
+                                              self.config.get('batch_size_validate'))
+        dp_test = self.make_data_provider(test_idx,
+                                          self.config.get('batch_size_test'))
 
         model = self.make_model()
         self.models_cv.append(model)
