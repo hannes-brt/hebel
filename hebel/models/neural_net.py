@@ -322,6 +322,8 @@ class NeuralNet(Model):
         loss, hidden_cache, logistic_cache = self.evaluate(
             input_data, targets, return_cache=True, prediction=False)
 
+        assert np.isfinite(loss)
+
         # Backpropagation
         if self.hidden_layers:
             hidden_activations = hidden_cache[-1][0]
