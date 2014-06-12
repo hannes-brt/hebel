@@ -20,6 +20,8 @@
 #define ROW(i, w) ((i)/(w))
 #define COLUMN(i, w) ((i)%(w))
 #define OUTPUT_TO_INPUT_IDX(idx, iw, ow) (ROW((idx), (ow)) * (iw) + COLUMN((idx), (ow)))
+#define PRINT_VAR(var, fmt) if (threadIdx.x == 0 & threadIdx.y == 0) \
+    printf("(%d, %d) " #var ": " #fmt "\n", blockIdx.x, blockIdx.y, (var))
 
 typedef char nucleotide_t;
 
