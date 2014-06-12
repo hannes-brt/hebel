@@ -72,39 +72,40 @@ __global__ void convolve_dna_sequence(const nucleotide_t *input,
    *      DIV_UP(input_shared_size, 4) * sizeof(nucleotide_t) + // input_shared
    *      blockDim.x * filter_width * N_LETTERS * sizeof(data_t) + // filter_shared
    *      blockDim.x * sizeof(data_t) // bias_shared
+   *
    */
   
   idx_t shared_idx, input_idx, row, col, output_idx, block_origin,
     block_origin_input, n_input_elements;
   nucleotide_t nt;
   data_t pvalue;
+  vec_t ff;
 
   const idx_t filters_per_block = blockDim.x;
   const idx_t N = input_width * input_height;
   const idx_t halo_width = filter_width - 1;
   const idx_t output_width = input_width - halo_width;
-  const idx_t n_filter_elements = N_LETTERS * filter_width * filters_per_block;
-  const idx_t filter_idx = threadIdx.x * filter_width * N_LETTERS; // First element of filter
+  const idx_t n_filter_elements = filter_width * filters_per_block;
+  const idx_t filter_idx = threadIdx.x * filter_width; // First element of filter
   const idx_t f = threadIdx.x + blockIdx.x * blockDim.x;
 
   // Setup shared memory
   extern __shared__ data_t sdata[];
-  const idx_t input_shared_size = CEIL_DIV(blockDim.y, output_width) * input_width + halo_width;
-  nucleotide_t *input_seq_shared = (nucleotide_t*) sdata; // Shared memory for input sequence
-  // Shared memory for filters
-  data_t *filter_shared = (data_t*) (input_seq_shared + DIV_UP(input_shared_size, 4)); 
-  data_t *bias_shared = filter_shared + n_filter_elements;
+  vec_t *filter_shared = (vec_t*) sdata; // Shared memory for filters
+  data_t *bias_shared = (data_t*) (filter_shared + n_filter_elements); // Biases 
+  nucleotide_t *input_seq_shared = (nucleotide_t*) (bias_shared + n_filters); // Input
   
   // Load filter elements into shared memory
   for (shared_idx = threadIdx.x + blockDim.x * threadIdx.y;
        shared_idx < n_filter_elements;
        shared_idx += blockDim.x * blockDim.y)
-    filter_shared[shared_idx] = 
-      filters[blockIdx.x*blockDim.x*N_LETTERS*filter_width+shared_idx];
+    ((vec_t*) filter_shared)[shared_idx] =
+      ((vec_t*) filters)[blockIdx.x*blockDim.x*filter_width+shared_idx];
 			    
   // Load biases into shared memory
   if (threadIdx.y == 0)
     bias_shared[threadIdx.x] = bias[f];
+  __syncthreads();
 
   // Outer loop
   for (output_idx = blockIdx.y * blockDim.y + threadIdx.y;
@@ -138,34 +139,35 @@ __global__ void convolve_dna_sequence(const nucleotide_t *input,
       pvalue = bias_shared[threadIdx.x];
       for (idx_t k=0; k < filter_width; k++) {
 	nt = input_seq_shared[shared_idx + k];
+	ff = filter_shared[filter_idx+k];
       
 	if (CHECK_NT(nt, DNA_A))
-	  pvalue += filter_shared[filter_idx+N_LETTERS*k];
+	  pvalue += ff.x;
         
 	if (CHECK_NT(nt, DNA_C))
-	  pvalue += filter_shared[filter_idx+N_LETTERS*k+1];
+	  pvalue += ff.y;
 
 	if (CHECK_NT(nt, DNA_G))
-	  pvalue += filter_shared[filter_idx+N_LETTERS*k+2];
+	  pvalue += ff.z;
 
 	if (CHECK_NT(nt, DNA_T))
-	  pvalue += filter_shared[filter_idx+N_LETTERS*k+3];
+	  pvalue += ff.w;
         
 	if (CHECK_NT(nt, DNA_R)) {
-	  pvalue += .5 * filter_shared[filter_idx+N_LETTERS*k];
-	  pvalue += .5 * filter_shared[filter_idx+N_LETTERS*k+2];
+	  pvalue += .5 * ff.x;
+	  pvalue += .5 * ff.z;
 	}
       
 	if (CHECK_NT(nt, DNA_Y)) {
-	  pvalue += .5 * filter_shared[filter_idx+N_LETTERS*k+1];
-	  pvalue += .5 * filter_shared[filter_idx+N_LETTERS*k+3];
+	  pvalue += .5 * ff.y;
+	  pvalue += .5 * ff.w;
 	}
       
 	if (CHECK_NT(nt, DNA_N)) {
-	  pvalue += .25 * filter_shared[filter_idx+N_LETTERS*k];
-	  pvalue += .25 * filter_shared[filter_idx+N_LETTERS*k+1];
-	  pvalue += .25 * filter_shared[filter_idx+N_LETTERS*k+2];
-	  pvalue += .25 * filter_shared[filter_idx+N_LETTERS*k+3];
+	  pvalue += .25 * ff.x;
+	  pvalue += .25 * ff.y;
+	  pvalue += .25 * ff.z;
+	  pvalue += .25 * ff.w;
 	}
       }
     
@@ -193,7 +195,7 @@ __global__ void convolve_dna_sequence_gradient(const nucleotide_t *input,
    *      The DNA sequence that was convolved in the forward pass.
    *    df_output (input_height, input_width - filter_width + 1) :
    *      Gradient that is backpropagated from next layer.
-   *    df_filters (gridDim.y, n_filters, filter_width, N_LETTERS) :
+   *    df_filters (gridDim.y, n_filters, filter_width, 4) :
    *      Empty array to store the computed gradients. If gridDim.y > 1, 
    *      this must be reduced along the leading dimension after running 
    *      this kernel.
@@ -218,7 +220,7 @@ __global__ void convolve_dna_sequence_gradient(const nucleotide_t *input,
    *      (input_height * (input_width - filter_width + 1))
    *      is allowed.
    *    shared : Shared memory requirements in bytes are
-   *      blockDim.x * filter_width * N_LETTERS * sizeof(data_t) + // df_filters_shared
+   *      blockDim.x * filter_width * 4 * sizeof(data_t) + // df_filters_shared
    *      blockDim.y * filter_width * sizeof(data_t) + // df_output_shared
    *      (n_input_elements + halo_width) * sizeof(nucleotide_t) // input_shared
    *
@@ -343,10 +345,12 @@ __global__ void convolve_dna_sequence_gradient(const nucleotide_t *input,
   }
   
   // Add to shared memory
+  {% if dtype == 'float' %}
   atomicAdd(&df_filters_shared[threadIdx.x].x, df_filter_thread.x);
   atomicAdd(&df_filters_shared[threadIdx.x].y, df_filter_thread.y);
   atomicAdd(&df_filters_shared[threadIdx.x].z, df_filter_thread.z);
   atomicAdd(&df_filters_shared[threadIdx.x].w, df_filter_thread.w);
+  {% endif %}
   __syncthreads();
 
   // Write to global memory

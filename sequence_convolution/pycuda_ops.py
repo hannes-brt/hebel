@@ -81,10 +81,10 @@ def convolve_sequence(input_seq, conv_filter, bias,
     block = (4, 8, 1)
     grid = (ceil_div(n_filters, block[0]), 128, 1)
     n_input_elements = ceil_div(block[1], output_width) * width + halo_width
-    shared = div_up(n_input_elements, 4) * np.dtype('|S1').itemsize + \
-             block[0] * filter_width * 4  * np.dtype(dtype).itemsize + \
-             block[0] * np.dtype(dtype).itemsize
-
+    shared = block[0] * filter_width * 4  * np.dtype(dtype).itemsize + \
+             block[0] * np.dtype(dtype).itemsize + \
+             div_up(n_input_elements, 4) * np.dtype('|S1').itemsize
+        
     assert np.product(block) < MAX_THREADS_PER_BLOCK
     assert shared < MAX_SHARED_MEMORY_PER_BLOCK
 
