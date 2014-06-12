@@ -99,7 +99,7 @@ __global__ void convolve_dna_sequence(const nucleotide_t *input,
   for (shared_idx = threadIdx.x + blockDim.x * threadIdx.y;
        shared_idx < n_filter_elements;
        shared_idx += blockDim.x * blockDim.y)
-    ((vec_t*) filter_shared)[shared_idx] =
+    filter_shared[shared_idx] =
       ((vec_t*) filters)[blockIdx.x*blockDim.x*filter_width+shared_idx];
 			    
   // Load biases into shared memory
