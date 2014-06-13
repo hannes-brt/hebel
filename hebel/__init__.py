@@ -20,6 +20,9 @@
 """
 
 import numpy as np
+import pycuda.driver as cuda
+cuda.init()
+from pycuda.tools import make_default_context
 
 import os as _os
 neural_nets_root = _os.path.split(
@@ -54,7 +57,7 @@ class _Context(object):
 
     def init_context(self, device_id=None):
         if device_id is None:
-            from pycuda.autoinit import context
+            context = make_default_context()
             self._context = context
         else:
             self._context = driver.Device(device_id).make_context()
@@ -114,3 +117,14 @@ def init(device_id=None, random_seed=None):
     # Initialize pycuda_ops
     from hebel import pycuda_ops
     pycuda_ops.init()
+
+def _finish_up():
+    global context
+    context.pop()
+    context = None
+
+    from pycuda.tools import clear_context_caches
+    clear_context_caches()
+
+import atexit
+atexit.register(_finish_up)
