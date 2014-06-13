@@ -75,13 +75,14 @@ __global__ void convolve_dna_sequence(const nucleotide_t *input,
    *
    */
   
-  idx_t shared_idx, input_idx, row, col, output_idx, block_origin,
+  idx_t shared_idx, idx, row, col, output_idx, block_origin,
     block_origin_input, n_input_elements;
   nucleotide_t nt;
   data_t pvalue;
   vec_t ff;
 
-  const idx_t filters_per_block = blockDim.x;
+  const idx_t filters_per_block = min(n_filters, (blockIdx.x + 1) * blockDim.x) -
+    blockIdx.x * blockDim.x;
   const idx_t N = input_width * input_height;
   const idx_t halo_width = filter_width - 1;
   const idx_t output_width = input_width - halo_width;
@@ -93,17 +94,19 @@ __global__ void convolve_dna_sequence(const nucleotide_t *input,
   extern __shared__ data_t sdata[];
   vec_t *filter_shared = (vec_t*) sdata; // Shared memory for filters
   data_t *bias_shared = (data_t*) (filter_shared + n_filter_elements); // Biases 
-  nucleotide_t *input_seq_shared = (nucleotide_t*) (bias_shared + n_filters); // Input
+  nucleotide_t *input_seq_shared = (nucleotide_t*) (bias_shared + filters_per_block); // Input
   
   // Load filter elements into shared memory
   for (shared_idx = threadIdx.x + blockDim.x * threadIdx.y;
        shared_idx < n_filter_elements;
-       shared_idx += blockDim.x * blockDim.y)
-    filter_shared[shared_idx] =
-      ((vec_t*) filters)[blockIdx.x*blockDim.x*filter_width+shared_idx];
+       shared_idx += blockDim.x * blockDim.y) {
+    idx = blockIdx.x*blockDim.x*filter_width+shared_idx;
+    assert(idx < (n_filters*filter_width));
+    filter_shared[shared_idx] = ((vec_t*) filters)[idx];
+  }
 			    
   // Load biases into shared memory
-  if (threadIdx.y == 0)
+  if (threadIdx.y == 0 & f < n_filters)
     bias_shared[threadIdx.x] = bias[f];
   __syncthreads();
 
@@ -127,12 +130,13 @@ __global__ void convolve_dna_sequence(const nucleotide_t *input,
     for (shared_idx = threadIdx.x + blockDim.x * threadIdx.y;
 	 shared_idx < n_input_elements + halo_width;
 	 shared_idx += blockDim.x * blockDim.y) {
-      input_idx = block_origin_input + shared_idx;
-      input_seq_shared[shared_idx] = (input_idx < N) ? input[input_idx] : ' ';
+      idx = block_origin_input + shared_idx;
+      input_seq_shared[shared_idx] = (idx < N) ? input[idx] : ' ';
     }
     __syncthreads();
 
     shared_idx = OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) - block_origin_input;
+    assert(shared_idx < (CEIL_DIV(blockDim.y, output_width) * input_width + halo_width));
 
     // Perform convolution
     if (row < input_height & f < n_filters) {
@@ -172,7 +176,9 @@ __global__ void convolve_dna_sequence(const nucleotide_t *input,
       }
     
       // Write output
-      output[n_filters * output_width * row + n_filters * col + f] = pvalue;
+      idx = n_filters * output_width * row + n_filters * col + f;
+      assert(idx < (input_height * output_width * n_filters));
+      output[idx] = pvalue;
     }
     __syncthreads();
   }
