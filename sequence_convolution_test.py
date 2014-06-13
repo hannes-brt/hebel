@@ -7,9 +7,9 @@
 import unittest
 import random
 import numpy as np
-
 import hebel
-hebel.init()
+if not hebel.is_initialized:
+    hebel.init()
 
 from pycuda import driver
 from sequence_convolution.pycuda_ops import convolve_sequence, \
@@ -166,55 +166,62 @@ class TestConvolution(unittest.TestCase):
             n_filters = np.random.randint(2, 5)
             self.conv1d_test_setup(n, m, w, n_filters)
 
+
 class TestConvolutionGradWeights(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-3
     DOUBLE_ERR_TOL = 1e-12
 
     @staticmethod
     def grad_weights_cpu(input_data, df_output, n_filters, filter_width):
-        df_output = df_output.reshape((input_data.shape[0],
-                                       n_filters, input_data.shape[1]))
         height, width = input_data.shape
-        df_w = np.zeros((n_filters, 4 * filter_width))
-        input_padded = np.concatenate((input_data,
-                                       np.zeros((input_data.shape[0],
-                                                 filter_width - 1),
-                                                 dtype='|S1')), 1)
+        output_width = width - filter_width + 1
+        df_output = df_output.reshape((input_data.shape[0],
+                                       output_width,
+                                       n_filters))
+        df_w = np.zeros((n_filters, filter_width, 4))
+
         for n in range(n_filters):
             for i in range(filter_width):
+                df_w[n, i, 0] += df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'A')].sum() + \
+                    .5 * df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'R')].sum() + \
+                    .25 * df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'N')].sum()
 
-                df_w[n, 4 * i] += df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] == 'A')].sum() + \
-                    .5 * df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] == 'R')].sum()
+                df_w[n, i, 1] += df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'C')].sum() + \
+                    .5 * df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'Y')].sum() + \
+                    .25 * df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'N')].sum()
 
-                df_w[n, 4 * i + 1] += df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] == 'C')].sum() + \
-                    .5 * df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] == 'Y')].sum()
+                df_w[n, i, 2] += df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'G')].sum() + \
+                    .5 * df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'R')].sum() + \
+                    .25 * df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'N')].sum()
 
-                df_w[n, 4 * i + 2] += df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] == 'G')].sum() + \
-                    .5 * df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] == 'R')].sum()
+                df_w[n, i, 3] += df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'T')].sum() + \
+                    .5 * df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'Y')].sum() + \
+                    .25 * df_output[:, :, n][
+                    np.bool_(input_data[:, i:i+output_width] == 'N')].sum()
 
-                df_w[n, 4 * i + 3] += df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] == 'T')].sum() + \
-                    .5 * df_output[:, n, :][
-                    np.bool_(input_padded[:, i:i + width] == 'Y')].sum()
-
+        df_w = df_w.reshape((df_w.shape[0], df_w.shape[1] * df_w.shape[2]))
         return df_w
 
-    @unittest.skip("Not implemented")
     def grad_weights_test(self, height, width, n_filters, filter_width):
-        for dtype, err_tol in ((np.float64, self.DOUBLE_ERR_TOL),
-                               (np.float32, self.FLOAT_ERR_TOL)):
+        for dtype, err_tol in (# (np.float64, self.DOUBLE_ERR_TOL),
+                               (np.float32, self.FLOAT_ERR_TOL),):
 
-            seq = [''.join((random.choice('ACGT') for i in range(width)))
-                   for _ in range(height)]
+            output_width = width - filter_width + 1
             eps = np.finfo(dtype).eps
-            x = gpuarray.to_gpu(encode_sequence(seq))
-            df_output = curand((height, n_filters * width), dtype)
+            x = gpuarray.to_gpu(encode_sequence(sample_sequence(width, height)))
+            df_output = gpuarray.to_gpu(
+                np.random.rand(height, output_width, n_filters).astype(dtype))
 
             df_w = convolve_sequence_gradient(x, df_output, filter_width,
                                               n_filters)
@@ -227,113 +234,21 @@ class TestConvolutionGradWeights(unittest.TestCase):
             self.assertLess(np.abs((df_w_cpu - df_w_np) /
                                    (df_w_cpu + eps)).max(), err_tol)
 
-    @unittest.skip("Not implemented")            
-    def test_grad_weights_filter_12(self):
-        for _ in range(20):
-            n = np.random.randint(5, 300)
-            filter_width = 12
-            m = np.random.randint(filter_width, 100)
-            n_filters = np.random.randint(2, 50)
-            self.grad_weights_test(n, m, n_filters, filter_width)
-
-    @unittest.skip("Not implemented")
-    def test_grad_weights_filter_16(self):
-        for _ in range(20):
-            n = np.random.randint(5, 300)
-            filter_width = 16
-            m = np.random.randint(filter_width, 100)
-            n_filters = np.random.randint(2, 50)
-            self.grad_weights_test(n, m, n_filters, filter_width)
-
-    @unittest.skip("Not implemented")
-    def test_grad_weights_filter_24(self):
-        for _ in range(20):
-            n = np.random.randint(5, 300)
-            filter_width = 24
-            m = np.random.randint(filter_width, 100)
-            n_filters = np.random.randint(2, 50)
-            self.grad_weights_test(n, m, n_filters, filter_width)
-
-    @unittest.skip("Not implemented")
-    def test_grad_weights_filter_8(self):
-        for _ in range(20):
-            n = np.random.randint(5, 300)
-            filter_width = 8
-            m = np.random.randint(filter_width, 100)
-            n_filters = np.random.randint(2, 50)
-            self.grad_weights_test(n, m, n_filters, filter_width)
-
-    @unittest.skip("Not implemented")
-    def test_grad_weights_filter_4(self):
-        for _ in range(20):
-            n = np.random.randint(5, 300)
-            filter_width = 4
-            m = np.random.randint(filter_width, 200)
-            n_filters = np.random.randint(2, 100)
-            self.grad_weights_test(n, m, n_filters, filter_width)
-
-    @unittest.skip("Not implemented")
     def test_grad_weights(self):
         for _ in range(20):
-            n = np.random.randint(5, 300)
-            filter_width = np.random.randint(2, 36)
-            m = np.random.randint(filter_width, 500)
-            n_filters = np.random.randint(2, 50)
+            n = np.random.randint(20, 200)
+            filter_width = np.random.randint(8, 32)
+            m = np.random.randint(filter_width, 200)
+            n_filters = np.random.randint(2, 12)
             self.grad_weights_test(n, m, n_filters, filter_width)
 
-    @unittest.skip("Not implemented")
-    def test_grad_weights_1_block(self):
+    def test_grad_weights_small(self):
         for _ in range(20):
-            n = 10
-            m = 16
-            filter_width = 1
-            n_filters = 5
+            n = np.random.randint(20, 100)
+            filter_width = np.random.randint(4, 16)
+            m = np.random.randint(filter_width, 32)
+            n_filters = np.random.randint(2, 12)
             self.grad_weights_test(n, m, n_filters, filter_width)
-
-    @unittest.skip("Not implemented")
-    def test_grad_input_offset(self):
-        for _ in range(20):
-            height = np.random.randint(10, 100)
-            width = np.random.randint(10, 300)
-            total_width = np.random.randint(width + 1, width + 100)
-            input_offset = np.random.randint(0, total_width - width)
-            filter_width = np.random.randint(2, 24)
-            n_filters = np.random.randint(2, 10)
-            df_output_width = n_filters * width
-            total_df_output_width = np.random.randint(df_output_width + 1,
-                                                      df_output_width+1000)
-            df_output_offset = np.random.randint(0,
-                                                 total_df_output_width - df_output_width)
-
-            for dtype, err_tol in ((np.float64, self.DOUBLE_ERR_TOL),
-                                   (np.float32, self.FLOAT_ERR_TOL)):
-
-                seq = [''.join((random.choice('ACGT') for i in range(width)))
-                       for _ in range(height)]
-                eps = np.finfo(dtype).eps
-                x = encode_sequence(seq)
-                X = np.empty((height, total_width), dtype='|S1')
-                X[:, input_offset:input_offset + width] = x
-                X = gpuarray.to_gpu(X)
-
-                df_output = curand((height, total_df_output_width), dtype)
-
-                df_w = convolve_sequence_gradient(X, df_output,
-                                                  filter_width, n_filters,
-                                                  input_offset,
-                                                  df_output_offset,
-                                                  width)
-                df_w_cpu = df_w.get()
-                df_output_cpu = \
-                    df_output.get()[:,
-                        df_output_offset:df_output_offset + df_output_width]
-                df_w_np = self.grad_weights_cpu(x,
-                                                df_output_cpu,
-                                                n_filters, filter_width)
-
-                self.assertLess(np.abs((df_w_cpu - df_w_np) /
-                                       (df_w_cpu + eps)).max(), err_tol)
-
 
 class TestMaxPool(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-20

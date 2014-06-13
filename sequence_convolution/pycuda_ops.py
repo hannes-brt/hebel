@@ -29,6 +29,9 @@ MAX_THREADS_PER_BLOCK = context.get_device()\
     .get_attribute(driver.device_attribute.MAX_THREADS_PER_BLOCK)
 MAX_SHARED_MEMORY_PER_BLOCK = context.get_device()\
     .get_attribute(driver.device_attribute.MAX_SHARED_MEMORY_PER_BLOCK)
+MULTIPROCESSOR_COUNT = context.get_device()\
+    .get_attribute(driver.device_attribute.MULTIPROCESSOR_COUNT)
+N_LETTERS = 4
 
 _src_dir = os.path.join(sequence_conv_root, 'src')
 _code = Template(open(os.path.join(_src_dir, 'convolution_kernels.cu')).read())
@@ -37,7 +40,8 @@ _code = Template(open(os.path.join(_src_dir, 'convolution_kernels.cu')).read())
 _source_modules = {dtype: SourceModule(_code.render(dtype=dtype, dtype_idx=dtype_idx),
                                        include_dirs=[_src_dir])
                    for dtype, dtype_idx in (('float', 'unsigned int'),
-                                            ('double', 'unsigned long'))}
+                                            # ('double', 'unsigned long'))}
+                                            )}
 
 _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
                     for f_name in ('convolve_dna_sequence',
@@ -61,7 +65,7 @@ def convolve_sequence(input_seq, conv_filter, bias,
     assert bias.flags.c_contiguous
 
     dtype = conv_filter.dtype
-    assert dtype in (np.float32, np.float64)
+    assert dtype in (np.float32, ) # np.float64)
 
     if dtype == np.float32:
         dtype_idx = np.uint32
@@ -73,7 +77,7 @@ def convolve_sequence(input_seq, conv_filter, bias,
     height, width = input_seq.shape
 
     n_filters = conv_filter.shape[0]
-    filter_width = conv_filter.shape[1] // 4
+    filter_width = conv_filter.shape[1] // N_LETTERS
 
     halo_width = filter_width - 1
     output_width = width - halo_width
@@ -81,7 +85,7 @@ def convolve_sequence(input_seq, conv_filter, bias,
     block = (4, 8, 1)
     grid = (ceil_div(n_filters, block[0]), 128, 1)
     n_input_elements = ceil_div(block[1], output_width) * width + halo_width
-    shared = block[0] * filter_width * 4  * np.dtype(dtype).itemsize + \
+    shared = block[0] * filter_width * N_LETTERS  * np.dtype(dtype).itemsize + \
              block[0] * np.dtype(dtype).itemsize + \
              div_up(n_input_elements, 4) * np.dtype('|S1').itemsize
         
@@ -116,81 +120,75 @@ def convolve_sequence(input_seq, conv_filter, bias,
 def convolve_sequence_gradient_wrapper():
     target_tmp_cache = []
     
-    def f(mat, df_output, filter_width, n_filters, input_offset=0,
-          df_output_offset=0, width=None,target=None, stream=None,
-          block_size=128):
+    def f(mat, df_output, filter_width, n_filters,
+          target=None, stream=None):
 
         assert mat.flags.c_contiguous
         assert df_output.flags.c_contiguous
 
-        stride = 4
         dtype = df_output.dtype
-        assert dtype in (np.float32, np.float64)
+        assert dtype in (np.float32,) # np.float64)
 
-        height, total_width = mat.shape
+        height, width = mat.shape
+        halo_width = filter_width - 1
+        output_width = width - halo_width
+        df_output_width = df_output.shape[1]
 
-        if input_offset > 0:
-            assert width is not None
-            assert input_offset + width <= total_width
-
-        total_df_output_width = df_output.shape[1]
-
-        if df_output_offset > 0:
-            assert width is not None
-            assert df_output_offset + n_filters * width <= total_df_output_width
-
-        if width is None:
-            width = total_width
         n_elements = height*width        
 
-        # block_y = int(2 ** int(np.ceil(np.log2(filter_width))))
-        # block_size = int(2 ** int(np.ceil(np.log2(block_size))))
-        block_y = filter_width
-        block = (block_size, 1, 1)
-        grid = ((n_elements + block_size - 1) / block_size, filter_width, n_filters )
-        shared = (filter_width - 1 + block_size +     # df_output_share
-                  stride * block_size                 # df_weights_reduce
-                  ) * np.dtype(dtype).itemsize
+        block = (filter_width, MULTIPROCESSOR_COUNT, 1)
+        grid = (n_filters,
+                min(div_up(output_width*height, block[1]), 192 / 2), 1)
+        n_input_elements = ceil_div(block[1], output_width) * width + halo_width
+        get_shared = lambda block, grid: block[0] * filter_width * N_LETTERS * \
+                     np.dtype(dtype).itemsize + \
+                     block[1] * filter_width * np.dtype(dtype).itemsize + \
+                     (n_input_elements + halo_width) * np.dtype('|S1').itemsize
+        shared = get_shared(block, grid)
+        while np.prod(block) > MAX_THREADS_PER_BLOCK or \
+              shared > MAX_SHARED_MEMORY_PER_BLOCK:
+            block = (block[0], block[1] / 2, 1)
+            shared = get_shared(block, grid)
+        
+        if target is None:
+            target = gpuarray.empty((n_filters, N_LETTERS * filter_width), dtype)
 
         target_tmp = None
-        for x in target_tmp_cache:
-            if x.shape == (n_filters, stride*filter_width, grid[0]) and \
-               x.dtype == dtype:
-                target_tmp = x
-        if target_tmp is None:
-            target_tmp = gpuarray.empty((n_filters, stride*filter_width,
-                                         grid[0]), dtype=dtype)
-            target_tmp_cache.append(target_tmp)
+        if grid[1]:
+            for x in target_tmp_cache:
+                if x.shape == (grid[1], n_filters, filter_width, N_LETTERS) and \
+                   x.dtype == dtype:
+                    target_tmp = x
+            if target_tmp is None:
+                target_tmp = gpuarray.empty(
+                    (grid[1], n_filters, filter_width, N_LETTERS), dtype=dtype)
+                target_tmp_cache.append(target_tmp)
+        else:
+            target_tmp = target
 
         dname = _dtype_name[dtype]
-        _kernels[dname]['convolve_sequence_gradient_kernel'](
+        _kernels[dname]['convolve_dna_sequence_gradient_kernel'](
             mat,
             df_output,
             target_tmp,
-            np.uint32(input_offset),
-            np.uint32(df_output_offset),
-            np.uint32(total_width),
-            np.uint32(total_df_output_width),
             np.uint32(width),
             np.uint32(height),
             np.uint32(filter_width),
             np.uint32(n_filters),
-            block=block, grid=grid, shared=shared, stream=stream)
+            block=block, grid=grid, shared=shared,
+            stream=stream)
 
-        if target is None:
-            target = gpuarray.empty((n_filters, stride*filter_width), dtype)
-        block_sum = (min((max((1, 2**int(np.ceil(np.log2(grid[0])-1)))), 1024)), 1, 1)
-        grid_sum = (n_filters, stride*filter_width, 1)
-        shared = block_sum[0] * np.dtype(dtype).itemsize
+        if grid[1]:
+            block_sum = (MULTIPROCESSOR_COUNT * 2, 1, 1)
+            grid_sum = (100, 1, 1)
 
-        _kernels[dname]['gradient_reduce_kernel'](
-            target_tmp,
-            target,
-            np.uint32(n_filters),
-            np.uint32(filter_width),
-            np.uint32(grid[0]),
-            block=block_sum, grid=grid_sum,
-            shared=shared, stream=stream)
+            _kernels[dname]['gradient_reduce_kernel'](
+                target_tmp,
+                target,
+                np.uint32(target.size),
+                np.uint32(grid[1]),
+                block=block_sum, grid=grid_sum,
+                stream=stream)
 
         return target
     return f
