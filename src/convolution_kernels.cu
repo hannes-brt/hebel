@@ -19,11 +19,15 @@
 #include <stdio.h>
 #include <assert.h>
 #include <vector_types.h>
+#include <curand_kernel.h>
 #include "convolution_kernels.h"
 
 typedef {{ dtype }} data_t;
 typedef {{ dtype }}4 vec_t;
 typedef {{ dtype_idx }} idx_t;
+
+extern "C"
+{
 
 __global__ void convolve_dna_sequence(const nucleotide_t *input,
                                       data_t *output,
@@ -414,10 +418,89 @@ __global__ void gradient_reduce(const data_t* df_filters,
   }
 }
 
-__global__ void max_pool() {}
+__global__ void max_pool(const data_t *input,
+			 data_t *output,
+			 idx_t *argmax,
+			 const idx_t height,
+			 const idx_t input_width,
+			 const idx_t n_filters,
+			 const idx_t pooling_size,
+			 curandState_t *rand_state) {
+  idx_t output_idx, idx, input_origin, argmax_val, i;
+  data_t comp_val, output_val, p;
+
+  const idx_t output_width = input_width / pooling_size;
+  const idx_t N_output = height * output_width;
+  const idx_t N_input = height * input_width;
+  const idx_t filter_idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+  if (filter_idx < n_filters) {
+    for (output_idx = threadIdx.y + blockIdx.y * blockDim.y;
+	 output_idx < N_output;
+	 output_idx += blockDim.y * gridDim.y) {
+      input_origin = output_idx * pooling_size;
+
+      output_val = -FLT_MAX;
+
+      for (i = 0; i < pooling_size; i++) {
+	idx = (input_origin + i) * n_filters + filter_idx;
+	assert(idx < (N_input * n_filters));
+	comp_val = input[idx];
+	
+	if (comp_val > output_val) {
+	  output_val = comp_val;
+	  argmax_val = i;
+	} else if (comp_val == output_val) {
+	  p = curand_uniform(rand_state);
+	  if (p > .5) {
+	    output_val = comp_val;
+	    argmax_val = i;
+	  }
+	}
+      }
+ 
+      idx = output_idx * n_filters + filter_idx;
+      output[idx] = output_val;
+      argmax[idx] = argmax_val;
+    }
+  }
+}
 
 __global__ void max_pool_gradient() {}
 
-__global__ void sum_pool() {}
+__global__ void sum_pool(const data_t *input,
+			 data_t *output,
+			 const idx_t height,
+			 const idx_t input_width,
+			 const idx_t n_filters,
+			 const idx_t pooling_size) {
+  idx_t output_idx, idx, input_origin, i;
+  data_t output_val;
+
+  const idx_t output_width = input_width / pooling_size;
+  const idx_t N_output = height * output_width;
+  const idx_t N_input = height * input_width;
+  const idx_t filter_idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+  if (filter_idx < n_filters) {
+    for (output_idx = threadIdx.y + blockIdx.y * blockDim.y;
+	 output_idx < N_output;
+	 output_idx += blockDim.y * gridDim.y) {
+      input_origin = output_idx * pooling_size;
+
+      output_val = 0;
+
+      for (i = 0; i < pooling_size; i++) {
+	idx = (input_origin + i) * n_filters + filter_idx;
+	assert(idx < (N_input * n_filters));
+	output_val += input[idx];
+      }
+ 
+      idx = output_idx * n_filters + filter_idx;
+      output[idx] = output_val;
+    }
+  }
+}
 
 __global__ void sum_pool_gradient() {}
+}

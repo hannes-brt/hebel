@@ -255,72 +255,44 @@ class TestMaxPool(unittest.TestCase):
     DOUBLE_ERR_TOL = 1e-20
 
     @staticmethod
-    def max_pool_cpu(mat, pool_size):
-        assert not mat.shape[1] % pool_size
-        width_pooled = mat.shape[1] // pool_size
+    def max_pool_cpu(x, pooling_size, n_filters):
+        height = x.shape[0]
+        input_width = x.shape[1] / n_filters
+        output_width = input_width // pooling_size
+        y = x.reshape((height, output_width, pooling_size, n_filters))\
+             .max(2)\
+             .reshape((height, n_filters * output_width))
+        return y
+    # def max_pool_cpu(mat, pool_size):
+    #     assert not mat.shape[1] % pool_size
+    #     width_pooled = mat.shape[1] // pool_size
 
-        output = mat.reshape((mat.shape[0]*width_pooled, pool_size))\
-                    .max(1).reshape((mat.shape[0], width_pooled))
+    #     output = mat.reshape((mat.shape[0]*width_pooled, pool_size))\
+    #                 .max(1).reshape((mat.shape[0], width_pooled))
 
-        return output
+    #     return output
 
-    @unittest.skip("Not implemented")
-    def max_pool_test(self, height, width, pool_size):
-        for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
-                               (np.float64, self.DOUBLE_ERR_TOL)):
+    def max_pool_test(self, height, width, pool_size, n_filters):
+        for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),):
+                               # (np.float64, self.DOUBLE_ERR_TOL)):
 
-            mat = gpuarray.to_gpu(np.random.rand(height, width)
+            mat = gpuarray.to_gpu(np.random.rand(height, width * n_filters)
                                   .astype(dtype))
-            target, argmax = max_pool(mat, pool_size)
+            target, argmax = max_pool(mat, pool_size, n_filters)
             target_cpu = target.get()
-            target_np = self.max_pool_cpu(mat.get(), pool_size)
+            target_np = self.max_pool_cpu(mat.get(), pool_size, n_filters)
             self.assertLess(np.linalg.norm(
                 (target_cpu - target_np) / target_cpu, np.inf),
                 err_tol)
             del mat, target, argmax
 
-    @unittest.skip("Not implemented")
     def test_max_pool(self):
         for _ in range(20):
             height = np.random.randint(100, 1000)
             pool_size = np.random.randint(2, 64)
-            width = np.random.randint(10, 500)*pool_size
-            self.max_pool_test(height, width, pool_size)
-
-    @unittest.skip("Not implemented")
-    def test_max_pool_offset(self):
-        for _ in range(20):
-            height = np.random.randint(100, 1000)
-            pool_size = np.random.randint(2, 64)
-            width = np.random.randint(20, 500)*pool_size
-            total_width = np.random.randint(width + 1,
-                                            width + 300)
-            pooled_width = width // pool_size
-            input_offset = np.random.randint(
-                0, total_width - width)
-            total_width_pooled = np.random.randint(
-                pooled_width + 1, pooled_width + 100)
-            pooled_offset = np.random.randint(
-                0, total_width_pooled - pooled_width)
-
-            for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),
-                                   (np.float64, self.DOUBLE_ERR_TOL)):
-
-                mat = gpuarray.to_gpu(np.random.rand(height, total_width).astype(dtype))
-                target = gpuarray.empty((height, total_width_pooled), dtype)
-                argmax = gpuarray.empty(target.shape, np.uint32)
-                target, argmax = max_pool(mat, pool_size, width,
-                                          input_offset, pooled_offset,
-                                          target, argmax)
-                target_cpu = \
-                    target.get()[:, pooled_offset:pooled_offset + pooled_width]
-                target_np = self.max_pool_cpu(
-                    mat.get()[:,input_offset:input_offset + width],
-                    pool_size)
-                self.assertLess(np.linalg.norm(
-                    (target_cpu - target_np) / target_cpu, np.inf),
-                    err_tol)
-                del target, argmax, mat
+            width = pool_size * np.random.randint(20, 300)
+            n_filters = np.random.randint(2, 64)
+            self.max_pool_test(height, width, pool_size, n_filters)
 
 
 class TestMaxPoolGradient(unittest.TestCase):

@@ -23,6 +23,7 @@ from jinja2 import Template
 from . import sequence_conv_root
 from hebel.pycuda_ops.reductions import matrix_sum_out_axis
 from hebel.utils.math import ceil_div, div_up
+from hebel import sampler
 
 from hebel import context
 MAX_THREADS_PER_BLOCK = context.get_device()\
@@ -38,7 +39,7 @@ _code = Template(open(os.path.join(_src_dir, 'convolution_kernels.cu')).read())
 
 
 _source_modules = {dtype: SourceModule(_code.render(dtype=dtype, dtype_idx=dtype_idx),
-                                       include_dirs=[_src_dir])
+                                       include_dirs=[_src_dir], no_extern_c=True)
                    for dtype, dtype_idx in (('float', 'unsigned int'),
                                             # ('double', 'unsigned long'))}
                                             )}
@@ -195,48 +196,42 @@ def convolve_sequence_gradient_wrapper():
 convolve_sequence_gradient = convolve_sequence_gradient_wrapper()
 
 
-def max_pool(mat, pool_size, width=None,
-             input_offset=0, pooled_offset=0,
-             target=None, argmax=None, stream=None):
+def max_pool(mat, pool_size, n_filters,
+             target=None, argmax=None, stream=None,
+             time_kernel=False):
     assert mat.flags.c_contiguous
     assert len(mat.shape) == 2
 
     dtype = mat.dtype
-    assert dtype in (np.float32, np.float64)
+    assert dtype in (np.float32, ) # np.float64)
     assert pool_size <= mat.shape[1]
 
-    height, total_width = mat.shape
-
-    if width is None:
-        assert input_offset == 0
-        width = total_width
+    height, width = mat.shape
+    assert not width % n_filters
+    width /= n_filters
 
     assert not width % pool_size
     pooled_width = width // pool_size
 
-    block = (min(MAX_THREADS_PER_BLOCK - (MAX_THREADS_PER_BLOCK % pool_size),
-                 width * height / pool_size ), 1, 1)
-    grid = (ceil_div(height*pooled_width, block[0]), 1, 1)
-    shared = block[0]*pool_size*np.dtype(dtype).itemsize
+    block = (n_filters, 2 * MULTIPROCESSOR_COUNT, 1)
+    grid = (ceil_div(n_filters, block[0]),
+            min(ceil_div(pooled_width, block[1]), 192 / 8), 1)
 
-    while shared > MAX_SHARED_MEMORY_PER_BLOCK:
-        new_block_size = block[0] // 2
-        new_block_size -= new_block_size % pool_size
-        block = (new_block_size, 1, 1)
-        try:
-            grid = (ceil_div(height*pooled_width, block[0]), 1, 1)
-        except ZeroDivisionError:
-            raise ValueError("Not sufficient shared memory for pooling size: %d" % pool_size)
-        shared = block[0]*pool_size*np.dtype(dtype).itemsize
+    while np.prod(block) > MAX_THREADS_PER_BLOCK:
+        if block[0] > 1:
+            block = (block[0] / 2, block[1], 1)
+        else:
+            block = (1, block[1] / 2, 1)
+        grid = (ceil_div(n_filters, block[0]),
+                min(ceil_div(pooled_width, block[1]), 192 / 4), 1)
     
     if target is not None:
         assert target.dtype == dtype
         assert target.flags.c_contiguous
-        total_width_pooled = target.shape[1]
+        assert target.shape == (height, pooled_width * n_filters)
     else:
-        total_width_pooled = pooled_width
         target = gpuarray.empty(
-            (height, total_width_pooled),
+            (height, pooled_width * n_filters),
             dtype)
 
     if argmax is not None:
@@ -248,20 +243,21 @@ def max_pool(mat, pool_size, width=None,
 
     dname = _dtype_name[dtype]
 
-    _kernels[dname]['max_pool_kernel'](
+    t = _kernels[dname]['max_pool_kernel'](
         mat,
         target,
         argmax,
-        np.uint32(input_offset),
         np.uint32(height),
-        np.uint32(total_width),
         np.uint32(width),
-        np.uint32(pooled_offset),
-        np.uint32(total_width_pooled),
+        np.uint32(n_filters),
         np.uint32(pool_size),
-        block=block, grid=grid, shared=int(shared), stream=stream)
+        sampler.state,
+        block=block, grid=grid, stream=stream, time_kernel=time_kernel)
 
-    return target, argmax
+    if time_kernel:
+        return target, argmax, t
+    else:
+        return target, argmax
 
 
 def max_pool_gradient(mat, argmax,
