@@ -379,27 +379,27 @@ __global__ void gradient_reduce(const data_t* df_filters,
 				const idx_t df_filters_size,
 				const idx_t reduction_size) {
 
-  /*
-   * Sum out the leading dimension of df_filters to complete the
-   * gradient computation.
-   *
-   * Arguments (shape):
-   *   df_filters (reduction_size, df_filters_size) :
-   *     Output of convolve_dna_sequence_gradient.
-   *   df_filters_reduced (df_filters_size) :
-   *     Empty array to store the result.
-   *   df_filters_size :
-   *     Total size of df_filters_reduced (product of all dimensions).
-   *   reduction_size :
-   *     Leading dimension of df_filters. This will be equal to
-   *     gridDim.y from convolve_dna_sequence_gradient.
-   *
-   * Launch instructions:
-   *   This kernel uses one thread for every element of df_filters_reduced.
-   *
-   *   blockDim.x : May be any value and (blockDim.x * gridDim.x) <
-   *   df_filters_size is allowed.
-   *
+  /* 
+   *  Sum out the leading dimension of df_filters to complete the
+   *  gradient computation.
+   * 
+   *  Arguments (shape):
+   *    df_filters (reduction_size, df_filters_size) :
+   *      Output of convolve_dna_sequence_gradient.
+   *    df_filters_reduced (df_filters_size) :
+   *      Empty array to store the result.
+   *    df_filters_size :
+   *      Total size of df_filters_reduced (product of all dimensions).
+   *    reduction_size :
+   *      Leading dimension of df_filters. This will be equal to
+   *      gridDim.y from convolve_dna_sequence_gradient.
+   * 
+   *  Launch instructions:
+   *    This kernel uses one thread for every element of df_filters_reduced.
+   * 
+   *    blockDim.x : May be any value and (blockDim.x * gridDim.x) <
+   *    df_filters_size is allowed.
+   * 
    */
 
   idx_t element_idx;
@@ -425,7 +425,43 @@ __global__ void max_pool(const data_t *input,
 			 const idx_t input_width,
 			 const idx_t n_filters,
 			 const idx_t pooling_size,
-			 curandState_t *rand_state) {
+			 const curandState_t *rand_state) {
+  
+  /*
+   *  Perfom the max-pooling operation. The max-pooling operation
+   *  implemented here is non-overlapping and restricted to sizes of
+   *  the pooling region that are divisors of the width of the input.
+   *  
+   *  Arguments (shape) :
+   *    input (height, input_width, n_filters) :
+   *      Input to the max-pooling layer
+   *    output (height, input_width / pooling_size, n_filters) :
+   *      Pooled output
+   *    argmax (height, input_width / pooling_size, n_filters) : The
+   *      index of the maximum value in each pooling region. The argmax
+   *      is taken with respect to the pooling region, not with respect
+   *      to the entire array. When ties occur, they are broken
+   *      randomly.
+   *    height : 
+   *      First dimension of input
+   *    input_width :
+   *      Second dimension of input
+   *    n_filters :
+   *      Third dimension of input
+   *    pooling_size :
+   *      Size of the pooling regions. Must evenly divide input_width.
+   *    rand_state :
+   *      Random number generator state. This is used to randomly brake
+   *      ties.
+   *
+   *  Launch instructions :
+   *    blockDim.x : The number of filters per block; requires
+   *    (blockDim.x * gridDim.x) <= n_filters.
+   *    blockDim.y : The number of positions per block. Can be any
+   *    value and (blockDim.y * gridDim.y) < input_width is allowed.
+   *  
+   */
+
   idx_t output_idx, idx, input_origin, argmax_val, i;
   data_t comp_val, output_val, p;
 
