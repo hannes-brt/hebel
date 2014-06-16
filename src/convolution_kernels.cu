@@ -456,7 +456,7 @@ __global__ void max_pool(const data_t *input,
    *
    *  Launch instructions :
    *    blockDim.x : The number of filters per block; requires
-   *    (blockDim.x * gridDim.x) <= n_filters.
+   *    (blockDim.x * gridDim.x) >= n_filters.
    *    blockDim.y : The number of positions per block. Can be any
    *    value and (blockDim.y * gridDim.y) < input_width is allowed.
    *  
