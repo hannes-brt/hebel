@@ -260,44 +260,43 @@ def max_pool(mat, pool_size, n_filters,
         return target, argmax
 
 
-def max_pool_gradient(mat, argmax,
-                      df_output, pool_size,
-                      width=None,
-                      width_pooled=None,
-                      input_offset=0, pooled_offset=0,
-                      target=None, stream=None):
+def max_pool_gradient(mat, argmax, df_output, n_filters,
+                      target=None, stream=None, time_kernel=False):
     dtype = mat.dtype
     assert mat.flags.c_contiguous
     assert argmax.flags.c_contiguous
     assert df_output.flags.c_contiguous
-    assert dtype in (np.float32, np.float64)
+    assert dtype in (np.float32, ) # np.float64)
 
-    height, total_width = mat.shape
+    height, width = mat.shape
+    assert not width % n_filters
+    width /= n_filters
 
-    if width is None:
-        assert input_offset == 0
-        # assert pooled_offset == 0
-        width = total_width
-
-    total_pooled_width = df_output.shape[1]
-
-    if width_pooled is None:
-        width_pooled = total_pooled_width
-        assert pooled_offset == 0
-
-    assert total_pooled_width >= width_pooled
-
+    width_pooled = df_output.shape[1]
+    assert not width_pooled % n_filters
+    width_pooled /= n_filters
+    
     assert not width % width_pooled
     pool_size = width // width_pooled
     
-    block_size = MAX_THREADS_PER_BLOCK - (MAX_THREADS_PER_BLOCK % pool_size)
-    block = (block_size, 1, 1)
-    grid = (ceil_div(mat.size, block_size), 1, 1)
-    shared = (block[0] / pool_size) * \
+    block = (min(8, n_filters),
+             min(div_up(n_filters, MULTIPROCESSOR_COUNT) / n_filters, width_pooled) * pool_size, 1)
+    grid_func = lambda block: (ceil_div(n_filters, block[0]),
+                               min(ceil_div(height * width, block[1]), 192 / 4), 1)
+    grid = grid_func(block)
+    shared_func = lambda block: block[0] * block[1] / pool_size * \
              (np.dtype(dtype).itemsize + np.dtype(np.uint32).itemsize)
+    shared = shared_func(block)
 
-    if shared > MAX_SHARED_MEMORY_PER_BLOCK:
-        raise ValueError('Calculated shared memory exceeds MAX_SHARED_MEMORY_PER_BLOCK')
+    while np.prod(block) > MAX_THREADS_PER_BLOCK or \
+          shared > MAX_SHARED_MEMORY_PER_BLOCK:
+        if block[1] > 1:
+            block = (block[0], block[1] / 2, 1)
+        else:
+            block = (block[0] / 2, block[1], 1)
+            
+        grid = grid_func(block)
+        shared = shared_func(block)
 
     if target is not None:
         assert target.dtype == dtype
@@ -307,26 +306,21 @@ def max_pool_gradient(mat, argmax,
         target = gpuarray.empty_like(mat)
 
     dname = _dtype_name[dtype]
-    _kernels[dname]['max_pool_gradient_kernel'](
+    t = _kernels[dname]['max_pool_gradient_kernel'](
         argmax,
         df_output,
         target,
-        np.uint32(input_offset),
         np.uint32(height),
-        np.uint32(total_width),
         np.uint32(width),
-        np.uint32(pooled_offset),
-        np.uint32(total_pooled_width),
         np.uint32(width_pooled),
+        np.uint32(n_filters),
         block=block, grid=grid,
-        shared=shared, stream=stream)
+        shared=shared, stream=stream, time_kernel=time_kernel)
 
-    # try:
-    #     foo = target.get()
-    # except driver.LogicError:
-    #     import pudb; pudb.set_trace()
-
-    return target
+    if time_kernel:
+        return target, t
+    else:
+        return target
 
 
 def sum_delta(delta, n_filters, cache_one_vector=True,

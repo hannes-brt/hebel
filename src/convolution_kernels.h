@@ -37,3 +37,12 @@ typedef enum {
 
 // Check if nucleotide nt is letter l
 #define CHECK_NT(nt, l) (nt == (nucleotide_t) l)
+
+#define TX threadIdx.x
+#define TY threadIdx.y
+#define BX blockIdx.x
+#define BY blockIdx.y
+#define BDX blockDim.x
+#define BDY blockDim.y
+#define GDX gridDim.x
+#define GDY gridDim.y

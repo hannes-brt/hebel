@@ -27,7 +27,7 @@ from hebel.schedulers import constant_scheduler
 from hebel.parameter_updaters import SimpleSGDUpdate
 from hebel.monitors import SimpleProgressMonitor
 from copy import copy, deepcopy
-from itertools import izip
+from itertools import izip, product
 
 def checkgrad_model(layer, input_data, epsilon=1e-4, **kwargs):
     cache = layer.feed_forward(input_data)
@@ -263,14 +263,6 @@ class TestMaxPool(unittest.TestCase):
              .max(2)\
              .reshape((height, n_filters * output_width))
         return y
-    # def max_pool_cpu(mat, pool_size):
-    #     assert not mat.shape[1] % pool_size
-    #     width_pooled = mat.shape[1] // pool_size
-
-    #     output = mat.reshape((mat.shape[0]*width_pooled, pool_size))\
-    #                 .max(1).reshape((mat.shape[0], width_pooled))
-
-    #     return output
 
     def max_pool_test(self, height, width, pool_size, n_filters):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),):
@@ -301,91 +293,50 @@ class TestMaxPoolGradient(unittest.TestCase):
 
     @staticmethod
     def max_pool_grad_cpu(mat, mat_pooled, argmax,
-                          df_output, pool_size):
+                          df_output, pool_size, n_filters):
         height = mat.shape[0]
-        width = mat.shape[1]
-        width_pooled = mat_pooled.shape[1]
+        width = mat.shape[1] / n_filters
+        width_pooled = mat_pooled.shape[1] / n_filters
 
-        df_input = np.zeros_like(mat).reshape((height*width_pooled, pool_size))
-        df_input[np.arange(argmax.size), argmax.ravel()] = df_output.ravel()
-        
+        df_input = np.zeros_like(mat).reshape((height, width_pooled, pool_size, n_filters))
+        idx = np.c_[list(product(range(height), range(width_pooled), range(n_filters))), argmax.ravel()]
+        idx = np.c_[idx[:, :2], idx[:, 3], idx[:, 2]]
+        df_input[zip(*idx)] = df_output.ravel()
+
         return df_input.reshape(mat.shape)
+    # def max_pool_grad_cpu(mat, mat_pooled, argmax,
+    #                       df_output, pool_size, n_filters):
+    #     height = mat.shape[0]
+    #     width = mat.shape[1] / n_filters
+    #     width_pooled = mat_pooled.shape[1] / n_filters
 
-    @unittest.skip("Not implemented")
-    def max_pool_grad_test(self, height, width, pool_size):
-        for dtype in (np.float32, np.float64):
-            mat = gpuarray.to_gpu(np.random.rand(height, width).astype(dtype))
-            mat_pooled, argmax = max_pool(mat, pool_size)
+    #     df_input = np.zeros_like(mat).reshape((height, width_pooled, pool_size, n_filters))
+    #     import pudb; pudb.set_trace()
+    #     df_input[np.arange(height), np.arange(width_pooled),
+    #              argmax.ravel(), np.arange(n_filters)] = df_output.ravel()
+        
+    #     return df_input.reshape(mat.shape)
+
+    def max_pool_grad_test(self, height, width, pool_size, n_filters):
+        for dtype in (np.float32, ): # np.float64):
+            mat = gpuarray.to_gpu(np.random.rand(height, width * n_filters).astype(dtype))
+            mat_pooled, argmax = max_pool(mat, pool_size, n_filters)
             df_output = gpuarray.to_gpu(np.random.rand(*mat_pooled.shape).astype(dtype))
-            df_input = max_pool_gradient(mat, argmax, df_output, pool_size)
+            df_input = max_pool_gradient(mat, argmax, df_output, n_filters)
             df_input_cpu = df_input.get()
             df_input_np = self.max_pool_grad_cpu(mat.get(), mat_pooled.get(),
                                                  argmax.get(),
-                                                 df_output.get(), pool_size)
+                                                 df_output.get(), pool_size, n_filters)
             self.assertTrue(np.all(df_input_cpu == df_input_np))
             del mat, mat_pooled, df_output, df_input, argmax
 
-    @unittest.skip("Not implemented")
     def test_max_pool_grad(self):
         for _ in range(20):
             n = np.random.randint(10, 1000)
             pool_size = np.random.randint(2, 64)
-            m = np.random.randint(10, 500) * pool_size
-            self.max_pool_grad_test(n, m, pool_size)
-
-    @unittest.skip("Not implemented")
-    def test_max_pool_grad_offset(self):
-        for _ in range(20):
-            height = np.random.randint(100, 1000)
-            pool_size = np.random.randint(2, 64)
-            width = np.random.randint(10, 500) * pool_size
-
-            total_width = np.random.randint(
-                width + 1, width + 300)
-            input_offset = np.random.randint(
-                0, total_width - width)
-
-            pooled_width = width // pool_size
-            total_width_pooled = np.random.randint(
-                pooled_width + 1,
-                pooled_width + 100)
-            pooled_offset = np.random.randint(
-                0, total_width_pooled - pooled_width)
-
-            for dtype in (np.float32, np.float64):
-                mat = gpuarray.to_gpu(np.random.rand(height, total_width)
-                                      .astype(dtype))
-                mat_pooled = gpuarray.empty(
-                    (height, total_width_pooled), dtype)
-                argmax = gpuarray.empty(mat_pooled.shape, np.uint32)
-                mat_pooled, argmax = max_pool(mat, pool_size,
-                                              width,
-                                              input_offset, pooled_offset,
-                                              mat_pooled, argmax)
-                df_output = gpuarray.to_gpu(np.random.rand(*mat_pooled.shape).astype(dtype))
-                df_input = gpuarray.empty_like(mat).fill(-99)
-                df_input = max_pool_gradient(mat, argmax, df_output, pool_size,
-                                             width, pooled_width,
-                                             input_offset, pooled_offset, target=df_input)
-                df_input_cpu = \
-                    df_input.get()[:,
-                        input_offset:input_offset + width]
-                mat_cpu = \
-                    mat.get()[:, input_offset:input_offset + width]
-                mat_pooled_cpu = \
-                    mat_pooled.get()[:,
-                        pooled_offset:pooled_offset + pooled_width]
-                argmax_cpu = argmax.get()[:,
-                    pooled_offset:pooled_offset + pooled_width]
-                df_output_cpu = df_output.get()[:,
-                    pooled_offset:pooled_offset + pooled_width]
-                df_input_np = self.max_pool_grad_cpu(mat_cpu, mat_pooled_cpu,
-                                                     argmax_cpu,
-                                                     df_output_cpu,
-                                                     pool_size)
-
-                self.assertTrue(np.all(df_input_cpu == df_input_np))
-                del mat, mat_pooled, df_output, df_input, argmax
+            m = np.random.randint(10, 200) * pool_size
+            n_filters = np.random.randint(2, 64)
+            self.max_pool_grad_test(n, m, pool_size, n_filters)
 
 
 class TestConvNet(unittest.TestCase):
