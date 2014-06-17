@@ -541,17 +541,20 @@ extern "C"
     const idx_t pooling_size = width / width_pooled;
     const idx_t filter_idx = TX + BX * BDX;
 
+    // Setup shared memory
     extern __shared__ data_t sdata[];
     data_t *bp_grad_shared = sdata;
     idx_t *argmax_shared = (idx_t*) (bp_grad_shared + (BDX * BDY) / pooling_size);
 
     if (filter_idx < n_filters) {
+      // Outer loop
       for (input_idx = TY + BY * BDY;
 	   input_idx < height * width;
 	   input_idx += (BDY * GDY)) {
 	
 	output_origin = (input_idx - TY) / pooling_size;
 
+	// Load shared memory
 	if (TY < (BDY / pooling_size)) {
 	  shared_idx = BDX * TY + TX;
 	  idx = n_filters * (output_origin + TY) + filter_idx;
@@ -564,6 +567,7 @@ extern "C"
 	}
 	__syncthreads();
 
+	// Write output
 	shared_idx = BDX * (TY / pooling_size) + TX;
 	argmax_val = argmax_shared[shared_idx];
 	gradient_val = ((TY % pooling_size) == argmax_val) ?
@@ -571,6 +575,7 @@ extern "C"
 
 	idx = n_filters * input_idx + filter_idx;
 	max_pool_gradient[idx] = gradient_val;
+	__syncthreads();
       }
     }
   }

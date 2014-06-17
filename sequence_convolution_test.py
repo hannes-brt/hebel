@@ -304,18 +304,6 @@ class TestMaxPoolGradient(unittest.TestCase):
         df_input[zip(*idx)] = df_output.ravel()
 
         return df_input.reshape(mat.shape)
-    # def max_pool_grad_cpu(mat, mat_pooled, argmax,
-    #                       df_output, pool_size, n_filters):
-    #     height = mat.shape[0]
-    #     width = mat.shape[1] / n_filters
-    #     width_pooled = mat_pooled.shape[1] / n_filters
-
-    #     df_input = np.zeros_like(mat).reshape((height, width_pooled, pool_size, n_filters))
-    #     import pudb; pudb.set_trace()
-    #     df_input[np.arange(height), np.arange(width_pooled),
-    #              argmax.ravel(), np.arange(n_filters)] = df_output.ravel()
-        
-    #     return df_input.reshape(mat.shape)
 
     def max_pool_grad_test(self, height, width, pool_size, n_filters):
         for dtype in (np.float32, ): # np.float64):
@@ -327,15 +315,17 @@ class TestMaxPoolGradient(unittest.TestCase):
             df_input_np = self.max_pool_grad_cpu(mat.get(), mat_pooled.get(),
                                                  argmax.get(),
                                                  df_output.get(), pool_size, n_filters)
+            if not np.all(df_input_cpu == df_input_np):
+                import pudb; pudb.set_trace()
             self.assertTrue(np.all(df_input_cpu == df_input_np))
             del mat, mat_pooled, df_output, df_input, argmax
 
     def test_max_pool_grad(self):
         for _ in range(20):
-            n = np.random.randint(10, 1000)
-            pool_size = np.random.randint(2, 64)
-            m = np.random.randint(10, 200) * pool_size
-            n_filters = np.random.randint(2, 64)
+            n = np.random.randint(10, 200)
+            pool_size = np.random.randint(64, 256)
+            m = np.random.randint(10, 20) * pool_size
+            n_filters = np.random.randint(64, 512)
             self.max_pool_grad_test(n, m, pool_size, n_filters)
 
 

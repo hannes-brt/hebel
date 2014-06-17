@@ -278,9 +278,8 @@ def max_pool_gradient(mat, argmax, df_output, n_filters,
     
     assert not width % width_pooled
     pool_size = width // width_pooled
-    
-    block = (min(8, n_filters),
-             min(div_up(n_filters, MULTIPROCESSOR_COUNT) / n_filters, width_pooled) * pool_size, 1)
+
+    block = (min(n_filters, MULTIPROCESSOR_COUNT), pool_size, 1)
     grid_func = lambda block: (ceil_div(n_filters, block[0]),
                                min(ceil_div(height * width, block[1]), 192 / 4), 1)
     grid = grid_func(block)
@@ -290,7 +289,7 @@ def max_pool_gradient(mat, argmax, df_output, n_filters,
 
     while np.prod(block) > MAX_THREADS_PER_BLOCK or \
           shared > MAX_SHARED_MEMORY_PER_BLOCK:
-        if block[1] > 1:
+        if block[1] > pool_size :
             block = (block[0], block[1] / 2, 1)
         else:
             block = (block[0] / 2, block[1], 1)
