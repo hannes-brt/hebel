@@ -13,7 +13,7 @@ if not hebel.is_initialized:
 
 from pycuda import driver
 from sequence_convolution.pycuda_ops import convolve_sequence, \
-     convolve_sequence_gradient, max_pool, max_pool_gradient
+     convolve_sequence_gradient, max_pool, max_pool_gradient, sum_pool
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from sequence_convolution.seq_array import encode_sequence, sample_sequence
@@ -285,6 +285,43 @@ class TestMaxPool(unittest.TestCase):
             width = pool_size * np.random.randint(20, 300)
             n_filters = np.random.randint(2, 64)
             self.max_pool_test(height, width, pool_size, n_filters)
+
+
+class TestSumPool(unittest.TestCase):
+    FLOAT_ERR_TOL = 1e-20
+    DOUBLE_ERR_TOL = 1e-20
+
+    @staticmethod
+    def sum_pool_cpu(x, pooling_size, n_filters):
+        height = x.shape[0]
+        input_width = x.shape[1] / n_filters
+        output_width = input_width // pooling_size
+        y = x.reshape((height, output_width, pooling_size, n_filters))\
+             .sum(2)\
+             .reshape((height, n_filters * output_width))
+        return y
+
+    def sum_pool_test(self, height, width, pool_size, n_filters):
+        for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),):
+                               # (np.float64, self.DOUBLE_ERR_TOL)):
+
+            mat = gpuarray.to_gpu(np.random.rand(height, width * n_filters)
+                                  .astype(dtype))
+            target = sum_pool(mat, pool_size, n_filters)
+            target_cpu = target.get()
+            target_np = self.sum_pool_cpu(mat.get(), pool_size, n_filters)
+            self.assertLess(np.linalg.norm(
+                (target_cpu - target_np) / target_cpu, np.inf),
+                err_tol)
+            del mat, target
+
+    def test_sum_pool(self):
+        for _ in range(20):
+            height = np.random.randint(100, 1000)
+            pool_size = np.random.randint(2, 64)
+            width = pool_size * np.random.randint(20, 300)
+            n_filters = np.random.randint(2, 64)
+            self.sum_pool_test(height, width, pool_size, n_filters)
 
 
 class TestMaxPoolGradient(unittest.TestCase):

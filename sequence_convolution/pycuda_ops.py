@@ -259,6 +259,59 @@ def max_pool(mat, pool_size, n_filters,
     else:
         return target, argmax
 
+def sum_pool(mat, pool_size, n_filters,
+             target=None, stream=None,
+             time_kernel=False):
+    assert mat.flags.c_contiguous
+    assert len(mat.shape) == 2
+
+    dtype = mat.dtype
+    assert dtype in (np.float32, ) # np.float64)
+    assert pool_size <= mat.shape[1]
+
+    height, width = mat.shape
+    assert not width % n_filters
+    width /= n_filters
+
+    assert not width % pool_size
+    pooled_width = width // pool_size
+
+    block = (n_filters, 2 * MULTIPROCESSOR_COUNT, 1)
+    grid = (ceil_div(n_filters, block[0]),
+            min(ceil_div(pooled_width, block[1]), 192 / 8), 1)
+
+    while np.prod(block) > MAX_THREADS_PER_BLOCK:
+        if block[0] > 1:
+            block = (block[0] / 2, block[1], 1)
+        else:
+            block = (1, block[1] / 2, 1)
+        grid = (ceil_div(n_filters, block[0]),
+                min(ceil_div(pooled_width, block[1]), 192 / 4), 1)
+    
+    if target is not None:
+        assert target.dtype == dtype
+        assert target.flags.c_contiguous
+        assert target.shape == (height, pooled_width * n_filters)
+    else:
+        target = gpuarray.empty(
+            (height, pooled_width * n_filters),
+            dtype)
+
+    dname = _dtype_name[dtype]
+
+    t = _kernels[dname]['sum_pool_kernel'](
+        mat,
+        target,
+        np.uint32(height),
+        np.uint32(width),
+        np.uint32(n_filters),
+        np.uint32(pool_size),
+        block=block, grid=grid, stream=stream, time_kernel=time_kernel)
+
+    if time_kernel:
+        return target, t
+    else:
+        return target
 
 def max_pool_gradient(mat, argmax, df_output, n_filters,
                       target=None, stream=None, time_kernel=False):

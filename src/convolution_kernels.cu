@@ -533,6 +533,7 @@ extern "C"
      *      blockDim.y * gridDim.y < height * width is allowed.
      *    shared : 
      *      blockDim.x * blockDim.y * (sizeof(unsigned int) + sizeof(float))
+     *
      */
   
     idx_t input_idx, output_origin, shared_idx, idx, argmax_val;
