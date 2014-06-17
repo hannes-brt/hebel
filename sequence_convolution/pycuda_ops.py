@@ -376,6 +376,66 @@ def max_pool_gradient(mat, argmax, df_output, n_filters,
     else:
         return target
 
+def sum_pool_gradient(mat, df_output, n_filters,
+                      target=None, stream=None, time_kernel=False):
+    dtype = mat.dtype
+    assert mat.flags.c_contiguous
+    assert df_output.flags.c_contiguous
+    assert dtype in (np.float32, ) # np.float64)
+
+    height, width = mat.shape
+    assert not width % n_filters
+    width /= n_filters
+
+    width_pooled = df_output.shape[1]
+    assert not width_pooled % n_filters
+    width_pooled /= n_filters
+    
+    assert not width % width_pooled
+    pool_size = width // width_pooled
+
+    block = (min(n_filters, MULTIPROCESSOR_COUNT), pool_size, 1)
+    grid_func = lambda block: (ceil_div(n_filters, block[0]),
+                               min(ceil_div(height * width, block[1]), 192 / 4), 1)
+    grid = grid_func(block)
+    shared_func = lambda block: block[0] * block[1] / pool_size * \
+             (np.dtype(dtype).itemsize + np.dtype(np.uint32).itemsize)
+    shared = shared_func(block)
+
+    while np.prod(block) > MAX_THREADS_PER_BLOCK or \
+          shared > MAX_SHARED_MEMORY_PER_BLOCK:
+        if block[1] > pool_size :
+            block = (block[0], block[1] / 2, 1)
+        else:
+            block = (block[0] / 2, block[1], 1)
+            
+        grid = grid_func(block)
+        shared = shared_func(block)
+
+    assert not block[1] % pool_size
+
+    if target is not None:
+        assert target.dtype == dtype
+        assert target.shape == mat.shape
+        assert target.flags.c_contiguous
+    else:
+        target = gpuarray.empty_like(mat)
+
+    dname = _dtype_name[dtype]
+    t = _kernels[dname]['sum_pool_gradient_kernel'](
+        df_output,
+        target,
+        np.uint32(height),
+        np.uint32(width),
+        np.uint32(width_pooled),
+        np.uint32(n_filters),
+        block=block, grid=grid,
+        shared=shared, stream=stream, time_kernel=time_kernel)
+
+    if time_kernel:
+        return target, t
+    else:
+        return target
 
 def sum_delta(delta, n_filters, cache_one_vector=True,
               target_tmp=None, target_sum=None):

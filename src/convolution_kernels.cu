@@ -643,5 +643,78 @@ extern "C"
     }
   }
 
-  __global__ void sum_pool_gradient() {}
+  __global__ void sum_pool_gradient(const data_t *backprop_gradient,
+				    data_t *max_pool_gradient,
+				    const idx_t height,
+				    const idx_t width,
+				    const idx_t width_pooled,
+				    const idx_t n_filters) {
+    
+    /*
+     *  The gradient for the sum-pooling operation.
+     *
+     *  Arguments (shape) :
+     *    backprop_gradient (height, width_pooled, n_filters) :
+     *      The backpropagated gradient from the layer above.
+     *    max_pool_gradient (height, width, n_filters) :
+     *      Array to store the computed max-pool gradient.
+     *    height :
+     *      First dimension of backprop_gradient.
+     *    width :
+     *      Second dimension of max_pool_gradient.
+     *    width_pooled :
+     *      Second dimension of backprop_gradient.
+     *    n_filters :
+     *      Third dimension of backprop_gradient.
+     *
+     *  Launch instructions :
+     *    blockDim.x : The number of filters per block. It is 
+     *      required that blockDim.x * gridDim.x >= n_filters.
+     *    blockDim.y : The number of input positions (height * width)
+     *      per block. Requires blockDim.y % pooling_size == 0, but
+     *      blockDim.y * gridDim.y < height * width is allowed.
+     *    shared : 
+     *      blockDim.x * blockDim.y * (sizeof(unsigned int) + sizeof(float))
+     *
+     */
+  
+    idx_t input_idx, output_origin, shared_idx, idx;
+    data_t gradient_val;
+
+    const idx_t pooling_size = width / width_pooled;
+    const idx_t filter_idx = TX + BX * BDX;
+
+    // Setup shared memory
+    extern __shared__ data_t sdata[];
+    data_t *bp_grad_shared = sdata;
+
+    if (filter_idx < n_filters) {
+      // Outer loop
+      for (input_idx = TY + BY * BDY;
+	   input_idx < height * width;
+	   input_idx += (BDY * GDY)) {
+	
+	output_origin = (input_idx - TY) / pooling_size;
+
+	// Load shared memory
+	if (TY < (BDY / pooling_size)) {
+	  shared_idx = BDX * TY + TX;
+	  idx = n_filters * (output_origin + TY) + filter_idx;
+	  if (idx < (height * width_pooled * n_filters)) {
+	    bp_grad_shared[shared_idx] =
+	      backprop_gradient[idx];
+	  }
+	}
+	__syncthreads();
+
+	// Write output
+	shared_idx = BDX * (TY / pooling_size) + TX;
+	gradient_val = bp_grad_shared[shared_idx];
+
+	idx = n_filters * input_idx + filter_idx;
+	max_pool_gradient[idx] = gradient_val;
+	__syncthreads();
+      }
+    }
+  }
 }

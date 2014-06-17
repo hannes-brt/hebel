@@ -13,7 +13,8 @@ if not hebel.is_initialized:
 
 from pycuda import driver
 from sequence_convolution.pycuda_ops import convolve_sequence, \
-     convolve_sequence_gradient, max_pool, max_pool_gradient, sum_pool
+     convolve_sequence_gradient, max_pool, max_pool_gradient, \
+     sum_pool, sum_pool_gradient
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from sequence_convolution.seq_array import encode_sequence, sample_sequence
@@ -352,8 +353,6 @@ class TestMaxPoolGradient(unittest.TestCase):
             df_input_np = self.max_pool_grad_cpu(mat.get(), mat_pooled.get(),
                                                  argmax.get(),
                                                  df_output.get(), pool_size, n_filters)
-            if not np.all(df_input_cpu == df_input_np):
-                import pudb; pudb.set_trace()
             self.assertTrue(np.all(df_input_cpu == df_input_np))
             del mat, mat_pooled, df_output, df_input, argmax
 
@@ -364,6 +363,42 @@ class TestMaxPoolGradient(unittest.TestCase):
             m = np.random.randint(10, 20) * pool_size
             n_filters = np.random.randint(64, 512)
             self.max_pool_grad_test(n, m, pool_size, n_filters)
+
+
+class TestSumPoolGradient(unittest.TestCase):
+    FLOAT_ERR_TOL = 1e-20
+    DOUBLE_ERR_TOL = 1e-20
+
+    @staticmethod
+    def sum_pool_grad_cpu(mat, df_output, pool_size, n_filters):
+        height = mat.shape[0]
+        width = mat.shape[1] / n_filters
+        width_pooled = width // pool_size
+
+        df_input = np.zeros_like(mat).reshape((height, width_pooled, pool_size, n_filters))
+        df_input[:] = df_output.reshape((height, width_pooled, n_filters))[:, :, np.newaxis, :]
+
+        return df_input.reshape(mat.shape)
+
+    def sum_pool_grad_test(self, height, width, pool_size, n_filters):
+        for dtype in (np.float32, ): # np.float64):
+            width_pooled = width // pool_size
+            mat = gpuarray.to_gpu(np.random.rand(height, width * n_filters).astype(dtype))
+            df_output = gpuarray.to_gpu(np.random.rand(height, width_pooled * n_filters).astype(dtype))
+            df_input = sum_pool_gradient(mat, df_output, n_filters)
+            df_input_cpu = df_input.get()
+            df_input_np = self.sum_pool_grad_cpu(mat.get(), df_output.get(),
+                                                 pool_size, n_filters)
+            self.assertTrue(np.all(df_input_cpu == df_input_np))
+            del mat, df_output, df_input
+
+    def test_sum_pool_grad(self):
+        for _ in range(20):
+            n = np.random.randint(10, 200)
+            pool_size = np.random.randint(64, 256)
+            m = np.random.randint(10, 20) * pool_size
+            n_filters = np.random.randint(64, 512)
+            self.sum_pool_grad_test(n, m, pool_size, n_filters)
 
 
 class TestConvNet(unittest.TestCase):
