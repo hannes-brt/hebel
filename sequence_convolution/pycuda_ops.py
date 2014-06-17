@@ -297,6 +297,8 @@ def max_pool_gradient(mat, argmax, df_output, n_filters,
         grid = grid_func(block)
         shared = shared_func(block)
 
+    assert not block[1] % pool_size
+
     if target is not None:
         assert target.dtype == dtype
         assert target.shape == mat.shape
