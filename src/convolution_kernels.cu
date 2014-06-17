@@ -587,6 +587,34 @@ extern "C"
 			   const idx_t input_width,
 			   const idx_t n_filters,
 			   const idx_t pooling_size) {
+
+    /*
+     *  Perfom the sum-pooling operation. The sum-pooling operation
+     *  implemented here is non-overlapping and restricted to sizes of
+     *  the pooling region that are divisors of the width of the input.
+     *  
+     *  Arguments (shape) :
+     *    input (height, input_width, n_filters) :
+     *      Input to the max-pooling layer
+     *    output (height, input_width / pooling_size, n_filters) :
+     *      Pooled output
+     *    height : 
+     *      First dimension of input
+     *    input_width :
+     *      Second dimension of input
+     *    n_filters :
+     *      Third dimension of input
+     *    pooling_size :
+     *      Size of the pooling regions. Must evenly divide input_width.
+     *
+     *  Launch instructions :
+     *    blockDim.x : The number of filters per block; requires
+     *    (blockDim.x * gridDim.x) >= n_filters.
+     *    blockDim.y : The number of positions per block. Can be any
+     *    value and (blockDim.y * gridDim.y) < input_width is allowed.
+     *  
+     */
+
     idx_t output_idx, idx, input_origin, i;
     data_t output_val;
 
