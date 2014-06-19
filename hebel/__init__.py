@@ -119,12 +119,14 @@ def init(device_id=None, random_seed=None):
     pycuda_ops.init()
 
 def _finish_up():
-    global context
-    context.pop()
-    context = None
+    global is_initialized
+    if is_initialized:
+        global context
+        context.pop()
+        context = None
 
-    from pycuda.tools import clear_context_caches
-    clear_context_caches()
+        from pycuda.tools import clear_context_caches
+        clear_context_caches()
 
 import atexit
 atexit.register(_finish_up)
