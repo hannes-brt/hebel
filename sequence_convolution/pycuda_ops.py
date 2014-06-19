@@ -47,6 +47,7 @@ _source_modules = {dtype: SourceModule(_code.render(dtype=dtype, dtype_idx=dtype
 _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
                     for f_name in ('convolve_dna_sequence',
                                    'convolve_dna_sequence_gradient',
+                                   'convolve_1d',
                                    'gradient_reduce',
                                    'max_pool',
                                    'max_pool_gradient',
@@ -58,7 +59,6 @@ _dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
 
 
 def convolve_sequence(input_seq, conv_filter, bias,
-                      width=None,
                       target=None, stream=None):
 
     assert input_seq.flags.c_contiguous
@@ -117,6 +117,75 @@ def convolve_sequence(input_seq, conv_filter, bias,
 
     return target
 
+def convolve_1d(mat, filters, bias, target=None, stream=None):
+    assert mat.flags.c_contiguous
+    assert filters.flags.c_contiguous
+    assert bias.flags.c_contiguous
+
+    dtype = filters.dtype
+    assert dtype in (np.float32, ) # np.float64)
+
+    if dtype == np.float32:
+        dtype_idx = np.uint32
+    else:
+        dtype_idx = np.uint64
+    
+    assert bias.shape[0] == filters.shape[0]
+
+    height, width, n_filters_in = mat.shape
+
+    n_filters_out, filter_width = filters.shape[:2]
+
+    halo_width = filter_width - 1
+    output_width = width - halo_width
+
+    grid_func = lambda block: (ceil_div(n_filters_out, block[0]),
+                               min(ceil_div(height * output_width, block[1]), 128), 1)
+    shared_func = lambda block: ((block[1] + 2 * halo_width) * n_filters_in + 
+                                 block[0] * filter_width * n_filters_in +
+                                 block[0]) * np.dtype(np.float32).itemsize
+    
+    block = (min(4, n_filters_out),
+             min(10 * MULTIPROCESSOR_COUNT, output_width), 1)
+    grid = grid_func(block)
+    shared = shared_func(block)
+
+    while np.product(block) > MAX_THREADS_PER_BLOCK or \
+          shared > MAX_SHARED_MEMORY_PER_BLOCK:
+        if block[0] > 1:
+            block = (block[0] - 1, block[1], 1)
+        else:
+            block = (block[0], block[1] / 2, 1)
+        grid = grid_func(block)
+        shared = shared_func(block)
+        
+    assert np.product(block) <= MAX_THREADS_PER_BLOCK
+    assert shared <= MAX_SHARED_MEMORY_PER_BLOCK
+
+    if target is None:
+        target = gpuarray.empty((height, output_width, n_filters_out),
+                                dtype=dtype)
+    assert target.dtype == dtype
+    assert target.flags.c_contiguous
+    assert target.shape == (height, output_width, n_filters_out)
+
+    dname = _dtype_name[dtype]
+    _kernels[dname]['convolve_1d_kernel'](
+        mat,
+        target,
+        filters,
+        bias,
+        dtype_idx(width),
+        dtype_idx(height),
+        dtype_idx(filter_width),
+        dtype_idx(n_filters_in),
+        dtype_idx(n_filters_out),
+        block=block,
+        grid=grid,
+        stream=stream,
+        shared=shared)
+
+    return target
 
 def convolve_sequence_gradient_wrapper():
     target_tmp_cache = []

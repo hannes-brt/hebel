@@ -12,7 +12,7 @@ if not hebel.is_initialized:
     hebel.init()
 
 from pycuda import driver
-from sequence_convolution.pycuda_ops import convolve_sequence, \
+from sequence_convolution.pycuda_ops import convolve_sequence, convolve_1d, \
      convolve_sequence_gradient, max_pool, max_pool_gradient, \
      sum_pool, sum_pool_gradient
 from pycuda import gpuarray
@@ -79,12 +79,12 @@ def checkgrad_model(layer, input_data, epsilon=1e-4, **kwargs):
     return loss
 
 
-class TestConvolution(unittest.TestCase):
+class TestSeqConvolution(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-4
     DOUBLE_ERR_TOL = 1e-13
 
     @staticmethod
-    def cpu_conv1d(x, w, b):
+    def cpu_conv_seq(x, w, b):
         height, width = x.shape
         n_filters = w.shape[0]
         filter_width = w.shape[1] // 4
@@ -109,66 +109,64 @@ class TestConvolution(unittest.TestCase):
         return y.reshape(height, n_filters * output_width)
 
     @staticmethod
-    def gpu_conv1d(x, w, b):
+    def gpu_conv_seq(x, w, b):
         y = convolve_sequence(x, w, b)
         return y
 
-    def conv1d_test_setup(self, height, width, filter_width, n_filters):
+    def conv_seq_test_setup(self, height, width, filter_width, n_filters):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),):
                                # (np.float64, self.DOUBLE_ERR_TOL)):
             seq = sample_sequence(width, height)
             x = gpuarray.to_gpu(encode_sequence(seq))
             w = gpuarray.to_gpu(np.random.rand(n_filters, 4 * filter_width).astype(dtype))
             b = gpuarray.to_gpu(np.random.rand(n_filters).astype(dtype))
-            y_np = self.cpu_conv1d(x.get(), w.get(), b.get())
-            y = self.gpu_conv1d(x, w, b)
+            y_np = self.cpu_conv_seq(x.get(), w.get(), b.get())
+            y = self.gpu_conv_seq(x, w, b)
             y_cpu = y.get()
 
-            if not y_cpu.shape == y_np.shape:
-                import pudb; pudb.set_trace()
             self.assertLess(np.max((y_cpu - y_np) / y_cpu), err_tol)
             del x, w, b, y
 
-    def test_conv1d_matrix_small(self):
+    def test_conv_seq_matrix_small(self):
         for _ in range(20):
             n = np.random.randint(10, 100)
             m = np.random.randint(100, 200)
             n_filters = np.random.randint(2, 50)
             filter_width = np.random.choice([4, 8, 16, 32])
 
-            self.conv1d_test_setup(n, m, filter_width, n_filters)
+            self.conv_seq_test_setup(n, m, filter_width, n_filters)
 
-    def test_conv1d_matrix_big_height(self):
+    def test_conv_seq_matrix_big_height(self):
         for _ in range(20):
             n = np.random.randint(200, 1000)
             m = np.random.randint(4, 9)
             n_filters = np.random.randint(2, 5)
-            self.conv1d_test_setup(n, m, 4, n_filters)
+            self.conv_seq_test_setup(n, m, 4, n_filters)
 
-    def test_conv1d_matrix_big_width(self):
+    def test_conv_seq_matrix_big_width(self):
         for _ in range(20):
             n = np.random.randint(4, 9)
             m = np.random.randint(200, 1000)
             n_filters = np.random.randint(2, 5)
-            self.conv1d_test_setup(n, m, 4, n_filters)
+            self.conv_seq_test_setup(n, m, 4, n_filters)
 
-    def test_conv1d_matrix_big(self):
+    def test_conv_seq_matrix_big(self):
         for _ in range(20):
             n = np.random.randint(200, 1000)
             m = np.random.randint(200, 1000)
             n_filters = np.random.randint(2, 5)
-            self.conv1d_test_setup(n, m, 4, n_filters)
+            self.conv_seq_test_setup(n, m, 4, n_filters)
 
-    def test_conv1d_matrix_big_filter(self):
+    def test_conv_seq_matrix_big_filter(self):
         for _ in range(20):
             n = np.random.randint(200, 1000)
             m = np.random.randint(200, 1000)
             w = 2 * np.random.randint(2, 5)
             n_filters = np.random.randint(2, 5)
-            self.conv1d_test_setup(n, m, w, n_filters)
+            self.conv_seq_test_setup(n, m, w, n_filters)
 
 
-class TestConvolutionGradWeights(unittest.TestCase):
+class TestSeqConvolutionGradWeights(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-3
     DOUBLE_ERR_TOL = 1e-12
 
@@ -250,6 +248,52 @@ class TestConvolutionGradWeights(unittest.TestCase):
             m = np.random.randint(filter_width, 32)
             n_filters = np.random.randint(2, 12)
             self.grad_weights_test(n, m, n_filters, filter_width)
+
+
+class TestConvolution1D(unittest.TestCase):
+    FLOAT_ERR_TOL = 1e-5
+
+    @staticmethod
+    def convolve_1d_cpu(input, filters, bias):
+        n_filters_out, filter_width, n_filters_in = filters.shape
+        height, width = input.shape[:2]
+        halo_width = filter_width - 1
+        output_width = width - halo_width
+        target = np.empty((height, output_width, n_filters_out))
+        input = input.reshape((input.shape[0], input.shape[1] * input.shape[2]))
+
+        for p in range(output_width):
+            for f in range(n_filters_out):
+                target[:, p, f] = np.dot(input[:, n_filters_in * p : n_filters_in * (p + filter_width)],
+                                         filters[f].reshape((filter_width * n_filters_in,))) + bias[f]
+        return target
+
+    def test_convolve_1d(self):
+        for _ in range(20):
+            height = np.random.randint(100, 500)
+            n_filters_in = np.random.randint(4, 48)
+            n_filters_out = np.random.randint(4, 48)
+            filter_width = np.random.randint(8, 32)
+            input_width = np.random.randint(100, 300)
+
+            halo_width = filter_width - 1
+            output_width = input_width - halo_width
+
+            input_data = gpuarray.to_gpu(np.random.rand(
+                height, input_width, n_filters_in).astype(np.float32))
+            filters = gpuarray.to_gpu(
+                np.random.rand(n_filters_out, filter_width, n_filters_in)
+                .astype(np.float32))
+            bias = gpuarray.to_gpu(
+                np.random.rand(n_filters_out).astype(np.float32))
+
+            target_gpu = convolve_1d(input_data, filters, bias)
+            target_cpu = self.convolve_1d_cpu(input_data.get(), filters.get(), bias.get())
+
+            self.assertLess(np.max((target_cpu - target_gpu.get()) / target_cpu),
+                            self.FLOAT_ERR_TOL)
+            del input_data, target_gpu, filters, bias
+    
 
 class TestMaxPool(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-20

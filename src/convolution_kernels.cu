@@ -374,6 +374,134 @@ extern "C"
     }
   }
 
+  __global__ void convolve_1d(const data_t *input,
+			      data_t *output,
+			      const data_t *filters,
+			      const data_t *bias,
+			      const idx_t input_width,
+			      const idx_t input_height,
+			      const idx_t filter_width,
+			      const idx_t n_filters_in,
+			      const idx_t n_filters_out) {
+
+    /*
+     *  Compute the convolution of a 1D sequence of floating point
+     *  numbers with a set of filters
+     * 
+     *  The convolution is performed without zero-padding on either side,
+     *  so the input sequences must be explicitely padded prior to
+     *  calling the kernel. 
+     * 
+     *  Arguments (shape):
+     *    input (input_height, input_width) : 
+     *      Array of the input sequence 
+     *    output (input_height, input_width - filter_width + 1) :
+     *      Empty array for the output
+     *    filters (n_filters, filter_width x 4) :
+     *      Array of convolution filters
+     *    bias (n_filters) :
+     *      Biases for convolution
+     *    input_width : 
+     *      Second dimension of input
+     *    input_height :
+     *      First dimension of input
+     *    filter_width :
+     *      Second dimension of filters
+     *    n_filters : 
+     *      First dimension of filters
+     *  
+     *  Launch instructions: 
+     *    This kernel uses one thread for each output element.
+     * 
+     *    blockDim.x : Number of filters per block
+     *      (blockDim.x * gridDim.x) >= n_filters is required.
+     *    blockDim.y : Number of output elements per block; can be any
+     *      size and (blockDim.y * gridDim.y) <
+     *      (output_width*input_height) is allowed.
+     *    shared : Size of shared memory in bytes
+     *      DIV_UP(input_shared_size, 4) * sizeof(nucleotide_t) + // input_shared
+     *      blockDim.x * filter_width * N_LETTERS * sizeof(data_t) + // filter_shared
+     *      blockDim.x * sizeof(data_t) // bias_shared
+     *
+     */
+  
+    idx_t shared_idx, idx, row, col, output_idx, block_origin,
+      block_origin_input, n_input_elements;
+    data_t pvalue;
+
+    const idx_t filters_per_block = min(n_filters_out, (BX + 1) * BDX) - BX * BDX;
+    const idx_t N = input_width * input_height * n_filters_in;
+    const idx_t halo_width = filter_width - 1;
+    const idx_t output_width = input_width - halo_width;
+    const idx_t n_filter_elements = filter_width * n_filters_in * filters_per_block;
+    const idx_t filter_idx = TX * n_filters_in * filter_width; // First element of filter
+    const idx_t f = TX + BX * BDX;
+
+    // Setup shared memory
+    extern __shared__ data_t sdata[];
+    data_t *filter_shared = sdata; // Shared memory for filters
+    data_t *bias_shared = filter_shared + n_filter_elements; // Biases 
+    data_t *input_shared = bias_shared + filters_per_block; // Input
+  
+    // Load filter elements into shared memory
+    for (shared_idx = TX + BDX * TY;
+	 shared_idx < n_filter_elements;
+	 shared_idx += BDX * BDY) {
+      idx = BX * BDX * filter_width * n_filters_in + shared_idx;
+      assert(idx < (n_filters_out * filter_width * n_filters_in));
+      filter_shared[shared_idx] = filters[idx];
+    }
+			    
+    // Load biases into shared memory
+    if (TY == 0 & f < n_filters_out)
+      bias_shared[TX] = bias[f];
+    __syncthreads();
+
+    // Outer loop
+    for (output_idx = BY * BDY + TY;
+	 output_idx < DIV_UP(output_width*input_height, BDY);
+	 output_idx += BDY * GDY) {
+    
+      block_origin = output_idx - TY;
+      row = ROW(output_idx, output_width);
+      col = COLUMN(output_idx, output_width);
+    
+      block_origin_input = OUTPUT_TO_INPUT_IDX(block_origin, 
+					       input_width, output_width);
+
+      n_input_elements = OUTPUT_TO_INPUT_IDX(block_origin + BDY, 
+					     input_width, output_width) -
+	block_origin_input;
+
+      // Load input into shared memory
+      for (shared_idx = TX + BDX * TY;
+	   shared_idx < (n_input_elements + halo_width) * n_filters_in;
+	   shared_idx += BDX * BDY) {
+	idx = block_origin_input * n_filters_in + shared_idx;
+	input_shared[shared_idx] = (idx < N) ? input[idx] : 0.;
+      }
+      __syncthreads();
+
+      shared_idx = (OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) - 
+		    block_origin_input) * n_filters_in;
+      assert(shared_idx < ((CEIL_DIV(BDY, output_width) * 
+			    input_width + halo_width) * n_filters_in));
+
+      // Perform convolution
+      if (row < input_height & f < n_filters_out) {
+	pvalue = bias_shared[TX];
+	for (idx_t k=0; k < filter_width * n_filters_in; k++)
+	  pvalue += input_shared[shared_idx + k] * filter_shared[filter_idx + k];
+
+	// Write output
+	idx = n_filters_out * output_width * row + n_filters_out * col + f;
+	assert(idx < (input_height * output_width * n_filters_out));
+	output[idx] = pvalue;
+      }
+      __syncthreads();
+    }
+  }
+
   __global__ void gradient_reduce(const data_t* df_filters,
 				  data_t* df_filters_reduced,
 				  const idx_t df_filters_size,
