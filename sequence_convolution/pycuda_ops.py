@@ -140,25 +140,29 @@ def convolve_1d(mat, filters, bias, target=None, stream=None):
     output_width = width - halo_width
 
     grid_func = lambda block: (ceil_div(n_filters_out, block[0]),
-                               min(ceil_div(height * output_width, block[1]), 128), 1)
-    shared_func = lambda block: ((block[1] + 2 * halo_width) * n_filters_in + 
-                                 block[0] * filter_width * n_filters_in +
-                                 block[0]) * np.dtype(np.float32).itemsize
+                               min(ceil_div(height * output_width, block[1]), 48), 1)
+    shared_func = lambda block, f_iter: \
+                  ((block[1] + 2 * halo_width) * f_iter + 
+                   block[0] * filter_width * f_iter +
+                   block[0]) * np.dtype(dtype).itemsize
     
     block = (min(4, n_filters_out),
              min(10 * MULTIPROCESSOR_COUNT, output_width), 1)
+    filters_per_iter = n_filters_in
     grid = grid_func(block)
-    shared = shared_func(block)
+    shared = shared_func(block, filters_per_iter)
 
-    while np.product(block) > MAX_THREADS_PER_BLOCK or \
-          shared > MAX_SHARED_MEMORY_PER_BLOCK:
-        if block[0] > 1:
-            block = (block[0] - 1, block[1], 1)
+    while shared > MAX_SHARED_MEMORY_PER_BLOCK:
+        if filters_per_iter > 4:
+            filters_per_iter /= 2
         else:
-            block = (block[0], block[1] / 2, 1)
+            if block[0] > 1:
+                block = (block[0] - 1, block[1], 1)
+            else:
+                block = (block[0], block[1] / 2, 1)
         grid = grid_func(block)
-        shared = shared_func(block)
-        
+        shared = shared_func(block, filters_per_iter)
+
     assert np.product(block) <= MAX_THREADS_PER_BLOCK
     assert shared <= MAX_SHARED_MEMORY_PER_BLOCK
 
@@ -180,6 +184,7 @@ def convolve_1d(mat, filters, bias, target=None, stream=None):
         dtype_idx(filter_width),
         dtype_idx(n_filters_in),
         dtype_idx(n_filters_out),
+        dtype_idx(filters_per_iter),
         block=block,
         grid=grid,
         stream=stream,
