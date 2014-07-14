@@ -126,7 +126,7 @@ def init():
                           }
                         """),
             'double':  ("double *mat, double *targets, char *dropout_mask, "
-                        "double *dropout_prob_array float dropout_probability",
+                        "double *dropout_prob_array, float dropout_probability",
                         """if (dropout_prob_array[i] <= dropout_probability) {
                             dropout_mask[i] = 0.;
                             target[i] = 0.;
