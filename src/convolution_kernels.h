@@ -40,9 +40,13 @@ typedef enum {
 
 #define TX threadIdx.x
 #define TY threadIdx.y
+#define TZ threadIdx.z
 #define BX blockIdx.x
 #define BY blockIdx.y
+#define BZ blockIdx.z
 #define BDX blockDim.x
 #define BDY blockDim.y
+#define BDZ blockDim.z
 #define GDX gridDim.x
 #define GDY gridDim.y
+#define GDZ gridDim.z

@@ -535,6 +535,157 @@ extern "C"
     }
   }
 
+
+  __global__ void convolve_1d_grad_filters(const data_t* input,
+					   const data_t* df_output,
+					   data_t* df_filters,
+					   const idx_t input_width,
+					   const idx_t input_height,
+					   const idx_t filter_width,
+					   const idx_t n_filters_in,
+					   const idx_t n_filters_out,
+					   const idx_t filters_in_per_block,
+					   const idx_t positions_per_block,
+					   const idx_t filters_out_per_block) {
+
+    assert(filters_in_per_block * positions_per_block * filters_out_per_block == BDX);
+    
+    idx_t filter_idx, block_origin_output, block_origin_input, row, col, shared_idx,
+      row_shared, col_shared, n_input_elements, n, m;
+
+    const idx_t lin_thread_idx = TY * BDX + TX;
+    const idx_t lin_block_idx = BY * GDX + BX;
+    const idx_t lin_block_dim = BDX * BDY;
+    const idx_t lin_grid_dim = GDX * GDY;
+
+    const idx_t halo_width = filter_width - 1;
+    const idx_t output_width = input_width - halo_width;
+
+    const idx_t elements_per_block = BDY; // Number of df_output elements per block
+
+    // Indexes wrt to block
+    const idx_t filter_in_b = TX % filters_in_per_block;
+    const idx_t pos_b = (TX / filters_in_per_block) % positions_per_block;
+    const idx_t filter_out_b = TX / (positions_per_block * filters_in_per_block);
+
+    // Number of blocks in each dimension
+    const idx_t gd_filters_in = n_filters_in / filters_in_per_block;
+    const idx_t gd_pos = filter_width / positions_per_block;
+    const idx_t gd_filters_out = n_filters_out / filters_out_per_block;
+
+    // filter_idx of first thread in block
+    const idx_t filter_in_origin = (BX % gd_filters_in) * filters_in_per_block;
+    const idx_t pos_origin = ((BX / gd_filters_in) % gd_pos) * positions_per_block;
+    const idx_t filter_out_origin = ((BX / (gd_filters_in * gd_pos)) % gd_filters_out) * 
+      filters_out_per_block;
+
+    // Global indexes
+    const idx_t filter_in_idx = filter_in_origin + filter_in_b;
+    const idx_t pos_idx = pos_origin + pos_b;
+    const idx_t filter_out_idx = filter_out_origin + filter_out_b;
+
+    // Setup shared memory
+    __shared__ extern data_t sdata[];
+    data_t* df_output_shared = sdata;
+    data_t* df_filters_shared = df_output_shared + 
+      elements_per_block * filters_out_per_block;
+    data_t* input_shared = df_filters_shared + BDX;
+
+    // Zero df_filters_shared
+    if (TY == 0)
+      df_filters_shared[TX] = 0;
+
+    data_t grad_val = 0; // Accumulate gradient in here
+
+    // Outer loop
+    for (idx_t output_idx = TY + BY * BDY;
+	 output_idx < DIV_UP(input_height * output_width, BDY);
+	 output_idx += BDY * GDY) {
+
+      block_origin_output = output_idx - TY;
+      block_origin_input =
+	OUTPUT_TO_INPUT_IDX(block_origin_output, input_width, output_width);
+      row = ROW(output_idx, output_width);
+      col = COLUMN(output_idx, output_width);
+      n_input_elements =
+	OUTPUT_TO_INPUT_IDX(block_origin_output + elements_per_block,
+			    input_width, output_width) -
+	block_origin_input;
+      
+      // Load df_output into shared memory
+      for (shared_idx = lin_thread_idx;
+	   shared_idx < elements_per_block * filters_out_per_block;
+	   shared_idx += lin_block_dim) {
+
+	row_shared = ROW(block_origin_output + 
+			 shared_idx / filters_out_per_block,
+			 output_width);
+	col_shared = COLUMN(block_origin_output +
+			    shared_idx / filters_out_per_block,
+			    output_width);
+	filter_idx = filter_out_origin + (shared_idx % filters_out_per_block);
+	
+	n = row_shared * output_width * n_filters_out +
+	  col_shared * n_filters_out + filter_idx;
+	// assert(n < input_height * output_width * n_filters_out);
+	df_output_shared[shared_idx] = n < input_height * output_width * n_filters_out ?
+	  df_output[n] : -1e16;
+      }
+
+      // Load input into shared memory
+      for (shared_idx = lin_thread_idx;
+	   shared_idx < (n_input_elements + halo_width) * 
+	     filters_in_per_block;
+	   shared_idx += lin_block_dim) {
+
+	row_shared = ROW(block_origin_input + 
+			 shared_idx / filters_in_per_block,
+			 input_width);
+	col_shared = COLUMN(block_origin_input +
+			    shared_idx / filters_in_per_block,
+			    input_width);
+	filter_idx = filter_in_origin + (shared_idx % filters_in_per_block);
+
+	m = row_shared * input_width * n_filters_in +
+	  col_shared * n_filters_in + filter_idx;
+	input_shared[shared_idx] = m < input_height * input_width * n_filters_in ? 
+	  input[m] : -1e16;
+      }
+      __syncthreads();
+      
+      // Increment gradient register
+      if (output_idx < input_height * output_width &&
+	  filter_in_idx < n_filters_in &&
+	  pos_idx < filter_width &&
+	  filter_out_idx < n_filters_out) {
+	n = (output_idx - block_origin_output) * 
+	  filters_out_per_block +
+	  filter_out_b;
+	m = (OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) + pos_idx -
+	     block_origin_input) * filters_in_per_block + filter_in_b;
+	grad_val += df_output_shared[n] * input_shared[m];
+      }
+      __syncthreads();
+    }
+
+    // Increment shared memory
+    {% if dtype == 'float' %}
+    atomicAdd(&df_filters_shared[filter_out_b * positions_per_block * filters_in_per_block +
+				 pos_b * filters_in_per_block + filter_in_b],
+	      grad_val);
+    __syncthreads();
+
+    // Increment global memory
+    if (TY == 0)
+      atomicAdd(&df_filters[filter_out_idx * filter_width * n_filters_in +
+			    pos_idx * n_filters_in + filter_in_idx],
+		df_filters_shared[filter_out_b * positions_per_block * filters_in_per_block +
+				  pos_b * filters_in_per_block + filter_in_b]);
+    {% else %}
+    assert(0); // Doubles are not supported
+    {% endif %}
+  }		   
+
   __global__ void gradient_reduce(const data_t* df_filters,
 				  data_t* df_filters_reduced,
 				  const idx_t df_filters_size,
