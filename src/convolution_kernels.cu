@@ -569,9 +569,9 @@ extern "C"
     const idx_t filter_out_b = TX / (positions_per_block * filters_in_per_block);
 
     // Number of blocks in each dimension
-    const idx_t gd_filters_in = n_filters_in / filters_in_per_block;
-    const idx_t gd_pos = filter_width / positions_per_block;
-    const idx_t gd_filters_out = n_filters_out / filters_out_per_block;
+    const idx_t gd_filters_in = CEIL_DIV(n_filters_in, filters_in_per_block);
+    const idx_t gd_pos = CEIL_DIV(filter_width, positions_per_block);
+    const idx_t gd_filters_out = CEIL_DIV(n_filters_out, filters_out_per_block);
 
     // filter_idx of first thread in block
     const idx_t filter_in_origin = (BX % gd_filters_in) * filters_in_per_block;
@@ -627,14 +627,13 @@ extern "C"
 	
 	n = row_shared * output_width * n_filters_out +
 	  col_shared * n_filters_out + filter_idx;
-	// assert(n < input_height * output_width * n_filters_out);
 	df_output_shared[shared_idx] = n < input_height * output_width * n_filters_out ?
-	  df_output[n] : -1e16;
+	  df_output[n] : -FLT_MAX;
       }
 
       // Load input into shared memory
       for (shared_idx = lin_thread_idx;
-	   shared_idx < (n_input_elements + halo_width) * 
+	   shared_idx < (n_input_elements + positions_per_block - 1) * 
 	     filters_in_per_block;
 	   shared_idx += lin_block_dim) {
 
@@ -643,13 +642,13 @@ extern "C"
 			 input_width);
 	col_shared = COLUMN(block_origin_input +
 			    shared_idx / filters_in_per_block,
-			    input_width);
+			    input_width) + pos_origin;
 	filter_idx = filter_in_origin + (shared_idx % filters_in_per_block);
 
 	m = row_shared * input_width * n_filters_in +
 	  col_shared * n_filters_in + filter_idx;
 	input_shared[shared_idx] = m < input_height * input_width * n_filters_in ? 
-	  input[m] : -1e16;
+	  input[m] : -FLT_MAX;
       }
       __syncthreads();
       
@@ -661,7 +660,7 @@ extern "C"
 	n = (output_idx - block_origin_output) * 
 	  filters_out_per_block +
 	  filter_out_b;
-	m = (OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) + pos_idx -
+	m = (OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) + pos_b -
 	     block_origin_input) * filters_in_per_block + filter_in_b;
 	grad_val += df_output_shared[n] * input_shared[m];
       }

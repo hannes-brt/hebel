@@ -318,9 +318,9 @@ class TestConvolution1DGradientFilters(unittest.TestCase):
     def test_convolve_1d_grad_filters(self):
         for _ in range(20):
             height = np.random.randint(100, 500)
-            n_filters_in = 4 * np.random.randint(1, 12)
-            n_filters_out = 4 * np.random.randint(1, 12)
-            filter_width = 4 * np.random.randint(1, 12)
+            n_filters_in = np.random.randint(1, 48)
+            n_filters_out = np.random.randint(1, 48)
+            filter_width = np.random.randint(1, 48)
             input_width = np.random.randint(100, 300)
 
             halo_width = filter_width - 1

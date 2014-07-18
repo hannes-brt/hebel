@@ -293,14 +293,10 @@ def convolve_1d_gradient_filters(input_data, df_output, filter_width, target=Non
     assert target.dtype == dtype
     assert target.shape == (n_filters_out, filter_width, n_filters_in)
 
-    filters_in_per_block = 4
-    positions_per_block = 2
-    filters_out_per_block = 4
+    filters_in_per_block = min(4, n_filters_in)
+    positions_per_block = min(1, filter_width)
+    filters_out_per_block = min(4, n_filters_out)
     elements_per_block = min(height * output_width, 8)
-
-    assert not n_filters_in % filters_in_per_block
-    assert not filter_width % positions_per_block
-    assert not n_filters_out % filters_out_per_block
 
     n_blocks = ceil_div(n_filters_in, filters_in_per_block) * \
                ceil_div(filter_width, positions_per_block) * \
