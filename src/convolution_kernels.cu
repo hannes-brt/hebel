@@ -548,6 +548,54 @@ extern "C"
 					   const idx_t positions_per_block,
 					   const idx_t filters_out_per_block) {
 
+    /*
+     * Compute the gradient of the 1D convolution layer with respect to the filters.
+     *
+     * Arguments (shape):
+     *   input (input_height, input_width, n_filters_in) :
+     *     Array of the input to the convolution layer
+     *   df_output (input_height, input_width - filter_width + 1, n_filters_out) :
+     *     Array of the gradient with respect to the output of the convolution
+     *     layer (backpropagated from the layer above).
+     *   df_filters (n_filters_out, filter_width, n_filters_in) :
+     *     Array for the computed gradients to be stored in. Must be initialized 
+     *     to zeros before calling this kernel.
+     *   input_width :
+     *     Second dimension of input
+     *   input_height :
+     *     First dimension of input
+     *   filter_width :
+     *     Second dimension of df_filters
+     *   n_filters_in :
+     *     Third dimension of input
+     *   n_filters_out :
+     *     Third dimension of df_output
+     *   filters_in_per_block :
+     *     Number of input filters to process per block
+     *   positions_per_block :
+     *     Number of filter positions to process per block
+     *   filters_out_per_block :
+     *     Number of output filters to process per block
+     *
+     * Launch instructions:
+     *   Each block processes a tile of df_filters for a subset of data points.
+     *
+     *   blockDim.x : Size of a tile of df_filters
+     *     It is strictly required that blockDim.x == filters_in_per_block * 
+     *	   positions_per_block * filters_out_per_block.
+     *   blockDim.y : Number of datapoints to process in parallel
+     *     This can be any positive integer.
+     *   gridDim.x : Number of tiles
+     *     gridDim.x >= 
+     *       CEIL_DIV(n_filters_in, filters_in_per_block) *
+     *       CEIL_DIV(filter_width, positions_per_block) *
+     *       CEIL_DIV(n_filters_out, filters_out_per_block)
+     *   shared : Size of shared memory in bytes
+     *     (blockDim.y * filters_out_per_block +
+     *      blockDim.x + blockDim.y + filter_width + 
+     *      positions_per_block - 2) * sizeof(data_t)
+     */
+
     assert(filters_in_per_block * positions_per_block * filters_out_per_block == BDX);
     
     idx_t filter_idx, block_origin_output, block_origin_input, row, col, shared_idx,
