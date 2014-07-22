@@ -259,7 +259,7 @@ class HiddenLayer(object):
         **Parameters:**
 
         input_data : ``GPUArray``
-            Inpute data to compute activations for.
+            Input data to compute activations for.
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
@@ -300,7 +300,7 @@ class HiddenLayer(object):
         **Parameters:**
 
         input_data : ``GPUArray``
-            Inpute data to compute activations for.
+            Input data to compute activations for.
 
         df_output : ``GPUArray``
             Gradients with respect to the activations of this layer
