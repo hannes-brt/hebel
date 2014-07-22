@@ -23,6 +23,11 @@
 #define PRINT_VAR(var, fmt) if (threadIdx.x == 0 & threadIdx.y == 0) \
     printf("(%d, %d) " #var ": " #fmt "\n", blockIdx.x, blockIdx.y, (var))
 
+// Convert a linear index to indices on a cube
+#define CUBE_IDX_1(idx, dim_1, dim_2) ((idx) % (dim_1))
+#define CUBE_IDX_2(idx, dim_1, dim_2) (((idx) / (dim_1)) % (dim_2))
+#define CUBE_IDX_3(idx, dim_1, dim_2) ((idx) / ((dim_1) * (dim_2)))
+
 typedef char nucleotide_t;
 
 typedef enum {
@@ -50,3 +55,9 @@ typedef enum {
 #define GDX gridDim.x
 #define GDY gridDim.y
 #define GDZ gridDim.z
+
+#define LIN_THREAD_IDX (TZ * BDY * BDX + TY * BDX + TX)
+#define LIN_BLOCK_IDX (BZ * GDY * GDX + BY * GDX + BX)
+#define LIN_BLOCK_DIM (BDZ * BDX * BDY)
+#define LIN_GRID_DIM (GDZ * GDY * GDX)
+

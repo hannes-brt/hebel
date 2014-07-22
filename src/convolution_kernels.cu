@@ -598,13 +598,8 @@ extern "C"
 
     assert(filters_in_per_block * positions_per_block * filters_out_per_block == BDX);
     
-    idx_t filter_idx, block_origin_output, block_origin_input, row, col, shared_idx,
-      row_shared, col_shared, n_input_elements, n, m;
-
-    const idx_t lin_thread_idx = TY * BDX + TX;
-    const idx_t lin_block_idx = BY * GDX + BX;
-    const idx_t lin_block_dim = BDX * BDY;
-    const idx_t lin_grid_dim = GDX * GDY;
+    idx_t filter_idx, block_origin_output, block_origin_input, shared_idx,
+      row, col, n_input_elements, n, m;
 
     const idx_t halo_width = filter_width - 1;
     const idx_t output_width = input_width - halo_width;
@@ -612,9 +607,9 @@ extern "C"
     const idx_t elements_per_block = BDY; // Number of df_output elements per block
 
     // Indexes wrt to block
-    const idx_t filter_in_b = TX % filters_in_per_block;
-    const idx_t pos_b = (TX / filters_in_per_block) % positions_per_block;
-    const idx_t filter_out_b = TX / (positions_per_block * filters_in_per_block);
+    const idx_t filter_in_b = CUBE_IDX_1(TX, filters_in_per_block, positions_per_block);
+    const idx_t pos_b = CUBE_IDX_2(TX, filters_in_per_block, positions_per_block);
+    const idx_t filter_out_b = CUBE_IDX_3(TX, filters_in_per_block, positions_per_block);
 
     // Number of blocks in each dimension
     const idx_t gd_filters_in = CEIL_DIV(n_filters_in, filters_in_per_block);
@@ -622,9 +617,9 @@ extern "C"
     const idx_t gd_filters_out = CEIL_DIV(n_filters_out, filters_out_per_block);
 
     // filter_idx of first thread in block
-    const idx_t filter_in_origin = (BX % gd_filters_in) * filters_in_per_block;
-    const idx_t pos_origin = ((BX / gd_filters_in) % gd_pos) * positions_per_block;
-    const idx_t filter_out_origin = ((BX / (gd_filters_in * gd_pos)) % gd_filters_out) * 
+    const idx_t filter_in_origin = CUBE_IDX_1(BX, gd_filters_in, gd_pos) * filters_in_per_block;
+    const idx_t pos_origin = CUBE_IDX_2(BX, gd_filters_in, gd_pos) * positions_per_block;
+    const idx_t filter_out_origin = (CUBE_IDX_3(BX, gd_filters_in, gd_pos) % gd_filters_out) *
       filters_out_per_block;
 
     // Global indexes
@@ -653,48 +648,46 @@ extern "C"
       block_origin_output = output_idx - TY;
       block_origin_input =
 	OUTPUT_TO_INPUT_IDX(block_origin_output, input_width, output_width);
-      row = ROW(output_idx, output_width);
-      col = COLUMN(output_idx, output_width);
       n_input_elements =
 	OUTPUT_TO_INPUT_IDX(block_origin_output + elements_per_block,
 			    input_width, output_width) -
 	block_origin_input;
       
       // Load df_output into shared memory
-      for (shared_idx = lin_thread_idx;
+      for (shared_idx = LIN_THREAD_IDX;
 	   shared_idx < elements_per_block * filters_out_per_block;
-	   shared_idx += lin_block_dim) {
+	   shared_idx += LIN_BLOCK_DIM) {
 
-	row_shared = ROW(block_origin_output + 
+	row = ROW(block_origin_output + 
 			 shared_idx / filters_out_per_block,
 			 output_width);
-	col_shared = COLUMN(block_origin_output +
+	col = COLUMN(block_origin_output +
 			    shared_idx / filters_out_per_block,
 			    output_width);
 	filter_idx = filter_out_origin + (shared_idx % filters_out_per_block);
 	
-	n = row_shared * output_width * n_filters_out +
-	  col_shared * n_filters_out + filter_idx;
+	n = row * output_width * n_filters_out +
+	  col * n_filters_out + filter_idx;
 	df_output_shared[shared_idx] = n < input_height * output_width * n_filters_out ?
 	  df_output[n] : -FLT_MAX;
       }
 
       // Load input into shared memory
-      for (shared_idx = lin_thread_idx;
+      for (shared_idx = LIN_THREAD_IDX;
 	   shared_idx < (n_input_elements + positions_per_block - 1) * 
 	     filters_in_per_block;
-	   shared_idx += lin_block_dim) {
+	   shared_idx += LIN_BLOCK_DIM) {
 
-	row_shared = ROW(block_origin_input + 
+	row = ROW(block_origin_input + 
 			 shared_idx / filters_in_per_block,
 			 input_width);
-	col_shared = COLUMN(block_origin_input +
+	col = COLUMN(block_origin_input +
 			    shared_idx / filters_in_per_block,
 			    input_width) + pos_origin;
 	filter_idx = filter_in_origin + (shared_idx % filters_in_per_block);
 
-	m = row_shared * input_width * n_filters_in +
-	  col_shared * n_filters_in + filter_idx;
+	m = row * input_width * n_filters_in +
+	  col * n_filters_in + filter_idx;
 	input_shared[shared_idx] = m < input_height * input_width * n_filters_in ? 
 	  input[m] : -FLT_MAX;
       }
@@ -732,6 +725,20 @@ extern "C"
     assert(0); // Doubles are not supported
     {% endif %}
   }		   
+
+  __global__ void conv_1d_grad_input(const data_t* df_output,
+				     const data_t* filters,
+				     data_t* df_input,
+				     const idx_t input_width,
+				     const idx_t input_height,
+				     const idx_t filter_width,
+				     const idx_t n_filters_in,
+				     const idx_t n_filters_out,
+				     const idx_t filters_in_per_block,
+				     const idx_t filters_out_per_block) {
+    
+    
+  }
 
   __global__ void gradient_reduce(const data_t* df_filters,
 				  data_t* df_filters_reduced,
