@@ -726,18 +726,189 @@ extern "C"
     {% endif %}
   }		   
 
-  __global__ void conv_1d_grad_input(const data_t* df_output,
-				     const data_t* filters,
-				     data_t* df_input,
-				     const idx_t input_width,
-				     const idx_t input_height,
-				     const idx_t filter_width,
-				     const idx_t n_filters_in,
-				     const idx_t n_filters_out,
-				     const idx_t filters_in_per_block,
-				     const idx_t filters_out_per_block) {
+  __global__ void convolve_1d_grad_input(const data_t* df_output,
+					 const data_t* filters,
+					 data_t* df_input,
+					 const idx_t input_width,
+					 const idx_t input_height,
+					 const idx_t filter_width,
+					 const idx_t n_filters_in,
+					 const idx_t n_filters_out,
+					 const idx_t filters_in_per_block,
+					 const idx_t positions_per_block,
+					 const idx_t filters_out_per_block) {
+
+    /*
+     * Compute the gradient of the 1D convolution layer with respect to the input.
+     *
+     * Arguments (shape):
+     *   df_output (input_height, input_width - filter_width + 1, n_filters_out) :
+     *     Array of the gradient with respect to the output of the convolution
+     *     layer (backpropagated from the layer above).
+     *   filters (n_filters_out, filter_width, n_filters_in) :
+     *     Array containing the filters.
+     *   df_input (input_height, input_width, n_filters_in) :
+     *     Array for the computed gradients to be stored in. Must be initialized 
+     *     to zeros before calling this kernel.
+     *   input_width :
+     *     Second dimension of input
+     *   input_height :
+     *     First dimension of input
+     *   filter_width :
+     *     Second dimension of df_filters
+     *   n_filters_in :
+     *     Third dimension of input
+     *   n_filters_out :
+     *     Third dimension of df_output
+     *   filters_in_per_block :
+     *     Number of input filters to process per block
+     *   positions_per_block :
+     *     Number of filter positions to process per block
+     *   filters_out_per_block :
+     *     Number of output filters to process per block
+     *
+     * Launch instructions:
+     *   Each block processes a tile of df_filters for a subset of data points.
+     *
+     *   blockDim.x : Size of a tile of df_filters
+     *     It is strictly required that blockDim.x == filters_in_per_block * 
+     *	   positions_per_block * filters_out_per_block.
+     *   blockDim.y : Number of datapoints to process in parallel
+     *     This can be any positive integer.
+     *   gridDim.x : Number of tiles
+     *     gridDim.x >= 
+     *       CEIL_DIV(n_filters_in, filters_in_per_block) *
+     *       CEIL_DIV(filter_width, positions_per_block) *
+     *       CEIL_DIV(n_filters_out, filters_out_per_block)
+     *   shared : Size of shared memory in bytes
+     *     (blockDim.y * filters_out_per_block +
+     *      blockDim.x + blockDim.y + filter_width + 
+     *      positions_per_block - 2) * sizeof(data_t)
+     */
     
-    
+    idx_t filter_idx, block_origin_output, block_origin_input, shared_idx,
+      row_shared, col_shared, n_input_elements, n, m, input_idx;
+    data_t grad_val, filter_element;
+
+    const idx_t output_width = input_width - filter_width + 1;
+
+    const idx_t elements_per_block = BDY; // Number of df_output elements per block
+
+    // Indexes wrt to block
+    const idx_t filter_in_b = CUBE_IDX_1(TX, filters_in_per_block, positions_per_block);
+    const idx_t pos_b = CUBE_IDX_2(TX, filters_in_per_block, positions_per_block);
+    const idx_t filter_out_b = CUBE_IDX_3(TX, filters_in_per_block, positions_per_block);
+
+    // Number of blocks in each dimension
+    const idx_t gd_filters_in = CEIL_DIV(n_filters_in, filters_in_per_block);
+    const idx_t gd_pos = CEIL_DIV(filter_width, positions_per_block);
+    const idx_t gd_filters_out = CEIL_DIV(n_filters_out, filters_out_per_block);
+
+    // filter_idx of first thread in block
+    const idx_t filter_in_origin = CUBE_IDX_1(BX, gd_filters_in, gd_pos) * filters_in_per_block;
+    const idx_t pos_origin = CUBE_IDX_2(BX, gd_filters_in, gd_pos) * positions_per_block;
+    const idx_t filter_out_origin = (CUBE_IDX_3(BX, gd_filters_in, gd_pos) % gd_filters_out) *
+      filters_out_per_block;
+
+    // Global indexes
+    const idx_t filter_in_idx = filter_in_origin + filter_in_b;
+    const idx_t pos_idx = pos_origin + pos_b;
+    const idx_t filter_out_idx = filter_out_origin + filter_out_b;
+
+    // Setup shared memory
+    __shared__ extern data_t df_output_shared[];
+    data_t* filters_shared = df_output_shared + elements_per_block * 
+      filters_out_per_block;
+    data_t* df_input_shared = filters_shared + BDX;
+
+    // Load filters into shared memory
+    if (TY == 0 &&
+	filter_out_idx < n_filters_out &&
+	pos_idx < filter_width &&
+	filter_in_idx < n_filters_in)
+      filters_shared[TX] = filters[filter_out_idx * filter_width * n_filters_in +
+				   pos_idx * n_filters_in + filter_in_idx];
+    __syncthreads();
+
+    filter_element = 
+      filters_shared[filter_out_b * positions_per_block * filters_in_per_block +
+		     pos_b * filters_in_per_block + filter_in_b];
+
+    // Outer loop over input positions
+    for (idx_t output_idx = TY + BY * BDY;
+	 output_idx < DIV_UP(input_height * input_width, BDY);
+	 output_idx += BDY * GDY) {
+
+      block_origin_output = output_idx - TY;
+      block_origin_input = 
+	OUTPUT_TO_INPUT_IDX(block_origin_output, input_width, output_width);
+      n_input_elements =
+	OUTPUT_TO_INPUT_IDX(block_origin_output + elements_per_block,
+			    input_width, output_width) - 
+	block_origin_input;
+
+      // Zero df_input_shared
+      for (shared_idx = LIN_THREAD_IDX;
+	   shared_idx < (n_input_elements + positions_per_block - 1) *
+	     filters_in_per_block;
+	   shared_idx += LIN_BLOCK_DIM)
+	df_input_shared[shared_idx] = 0;
+      
+      // Load df_output into shared memory
+      for (shared_idx = LIN_THREAD_IDX;
+	   shared_idx < elements_per_block * filters_out_per_block;
+	   shared_idx += LIN_BLOCK_DIM) {
+	
+	row_shared = ROW(block_origin_output + 
+			 shared_idx / filters_out_per_block,
+			 output_width);
+	col_shared = COLUMN(block_origin_output +
+			    shared_idx / filters_out_per_block,
+			    output_width);
+	filter_idx = filter_out_origin + (shared_idx % filters_out_per_block);
+	
+	n = row_shared * output_width * n_filters_out +
+	  col_shared * n_filters_out + filter_idx;
+	df_output_shared[shared_idx] = n < input_height * output_width * n_filters_out ?
+	  df_output[n] : -FLT_MAX;
+      }
+      __syncthreads();
+
+      // Compute gradient
+      if (output_idx < input_height * output_width &&
+	  filter_in_idx < n_filters_in &&
+	  pos_idx < filter_width &&
+	  filter_out_idx < n_filters_out) {
+
+	n = (output_idx - block_origin_output) * 
+	  filters_out_per_block + filter_out_b;
+	
+	grad_val = df_output_shared[n] * filter_element;
+
+	m = (OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) -
+	     block_origin_input + pos_b) * filters_in_per_block + filter_in_b;
+
+	atomicAdd(df_input_shared + m, grad_val);
+      }
+      __syncthreads();
+
+      // Add block to global memory
+      for (shared_idx = LIN_THREAD_IDX;
+	   shared_idx < (n_input_elements + positions_per_block - 1) * 
+	     filters_in_per_block;
+	   shared_idx += LIN_BLOCK_DIM) {
+
+	n = shared_idx / filters_in_per_block;
+	m = shared_idx % filters_in_per_block;
+	
+	input_idx = (block_origin_input + pos_origin + n) * n_filters_in +
+	  filter_in_origin + m;
+	
+	if (input_idx < input_height * input_width * n_filters_in)
+	  atomicAdd(df_input + input_idx, df_input_shared[shared_idx]);
+      }
+      __syncthreads();
+    }
   }
 
   __global__ void gradient_reduce(const data_t* df_filters,

@@ -49,6 +49,7 @@ _kernels = {dtype: {f_name + '_kernel': sm.get_function(f_name)
                                    'convolve_dna_sequence_gradient',
                                    'convolve_1d',
                                    'convolve_1d_grad_filters',
+                                   'convolve_1d_grad_input',
                                    'gradient_reduce',
                                    'max_pool',
                                    'max_pool_gradient',
@@ -329,6 +330,69 @@ def convolve_1d_gradient_filters(input_data, df_output, filter_width, target=Non
     )
 
     return target
+
+def convolve_1d_gradient_input(df_output, filters, target=None):
+    dtype = np.dtype(np.float32)
+
+    assert df_output.flags.c_contiguous
+    assert filters.flags.c_contiguous
+    assert df_output.dtype == dtype
+    assert filters.dtype == dtype
+
+    n_filters_out, filter_width, n_filters_in = filters.shape
+    height, output_width = df_output.shape[:2]
+
+    halo_width = filter_width - 1
+    input_width = output_width + halo_width
+
+    if target is None:
+        target = gpuarray.zeros((height, input_width, n_filters_in), dtype)
+    else:
+        target.fill(0.)
+
+    assert target.flags.c_contiguous
+    assert target.dtype == dtype
+    assert target.shape == (height, input_width, n_filters_in)
+
+    filters_in_per_block = min(4, n_filters_in)
+    positions_per_block = min(2, filter_width)
+    filters_out_per_block = min(4, n_filters_out)
+    elements_per_block = min(height * output_width, 4)
+
+    n_blocks = ceil_div(n_filters_in, filters_in_per_block) * \
+               ceil_div(filter_width, positions_per_block) * \
+               ceil_div(n_filters_out, filters_out_per_block)
+
+    block = (filters_in_per_block * positions_per_block * filters_out_per_block,
+             elements_per_block, 1)
+    grid = (n_blocks, min(ceil_div(height * output_width, elements_per_block), 8), 1)
+    
+    n_input_elements = block[1] + halo_width + positions_per_block - 1
+
+    shared = (
+        block[1] * filters_out_per_block +
+        block[0] +
+        n_input_elements * filters_in_per_block
+    ) * dtype.itemsize
+
+    dname = _dtype_name[dtype]
+    _kernels[dname]['convolve_1d_grad_input_kernel'](
+        df_output,
+        filters,
+        target,
+        np.uint32(input_width),
+        np.uint32(height),
+        np.uint32(filter_width),
+        np.uint32(n_filters_in),
+        np.uint32(n_filters_out),
+        np.uint32(filters_in_per_block),
+        np.uint32(positions_per_block),
+        np.uint32(filters_out_per_block),
+        block=block, grid=grid, shared=shared,
+    )
+
+    return target
+
 
 def max_pool(mat, pool_size, n_filters,
              target=None, argmax=None, stream=None,

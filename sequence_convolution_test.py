@@ -15,7 +15,7 @@ from pycuda import driver
 from sequence_convolution.pycuda_ops import convolve_sequence, convolve_1d, \
      convolve_sequence_gradient, convolve_1d_gradient_filters, \
      max_pool, max_pool_gradient, \
-     sum_pool, sum_pool_gradient
+     sum_pool, sum_pool_gradient, convolve_1d_gradient_input
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
 from sequence_convolution.seq_array import encode_sequence, sample_sequence
@@ -341,6 +341,53 @@ class TestConvolution1DGradientFilters(unittest.TestCase):
             self.assertLess(rel_err, self.FLOAT_ERR_TOL)
             del input_data, df_output, df_filters_gpu
     
+
+class TestConvolution1DGradientInput(unittest.TestCase):
+    FLOAT_ERR_TOL = 1e-4
+
+    @staticmethod
+    def conv_1d_grad_input_cpu(filters, df_output):
+        n_filters_out, filter_width, n_filters_in = filters.shape
+        height, output_width = df_output.shape[:2]
+
+        halo_width = filter_width - 1
+        input_width = output_width + halo_width
+
+        df_input = np.zeros((height, input_width, n_filters_in), np.float32)
+
+        for p in range(filter_width):
+            for c in range(n_filters_in):
+                df_input[:, p:p+output_width, c] += np.sum(
+                    df_output * filters[:, p, c][np.newaxis, np.newaxis, :], 2)
+
+        return df_input
+
+    def test_convolve_1d_grad_input(self):
+        for _ in range(20):
+            height = np.random.randint(100, 500)
+            n_filters_in = np.random.randint(1, 48)
+            n_filters_out = np.random.randint(1, 48)
+            filter_width = np.random.randint(1, 48)
+            input_width = np.random.randint(100, 300)
+
+            halo_width = filter_width - 1
+            output_width = input_width - halo_width
+
+            filters = gpuarray.to_gpu(np.random.rand(
+                n_filters_out, filter_width, n_filters_in).astype(np.float32))
+            df_output = gpuarray.to_gpu(np.random.rand(
+                height, output_width, n_filters_out).astype(np.float32))
+
+            df_input_gpu = convolve_1d_gradient_input(
+                df_output, filters)
+            df_input_cpu = self.conv_1d_grad_input_cpu(
+                filters.get(), df_output.get())
+
+            rel_err = np.max(np.abs(df_input_cpu - df_input_gpu.get()) / df_input_cpu)
+            # if not rel_err < self.FLOAT_ERR_TOL: import pudb; pudb.set_trace()
+            self.assertLess(rel_err, self.FLOAT_ERR_TOL)
+            del filters, df_output, df_input_gpu
+
 
 class TestMaxPool(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-20
