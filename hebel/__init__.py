@@ -22,7 +22,7 @@
 import numpy as np
 import pycuda.driver as cuda
 cuda.init()
-from pycuda.tools import make_default_context
+from pycuda.tools import make_default_context, DeviceMemoryPool
 
 import os as _os
 neural_nets_root = _os.path.split(
@@ -42,7 +42,8 @@ class _Sampler(object):
             from pycuda import curandom, gpuarray
             seed_func = curandom.seed_getter_uniform if self.seed is None \
               else lambda N: gpuarray.to_gpu(
-                      np.array(N * [self.seed], dtype=np.int32))
+                      np.array(N * [self.seed], dtype=np.int32),
+                      allocator=memory_pool.allocate)
             sampler = curandom.XORWOWRandomNumberGenerator(seed_func)
             self._sampler = sampler
         return sampler.__getattribute__(name)
@@ -73,6 +74,24 @@ class _Context(object):
         return object.__getattribute__(self, '_context').__getattribute__(name)
 
 context = _Context()
+
+
+class _MemoryPool(object):
+    _memory_pool = None
+
+    def init(self):
+        self._memory_pool = DeviceMemoryPool()
+
+    def __getattribute__(self, name):
+        if name == 'init':
+            return object.__getattribute__(self, name)
+        
+        if object.__getattribute__(self, '_memory_pool') is None:
+            raise RuntimeError("Memory Pool hasn't been initialized yet")
+
+        return object.__getattribute__(self, '_memory_pool').__getattribute__(name)
+memory_pool = _MemoryPool()
+        
 
 def init(device_id=None, random_seed=None):
     """Initialize Hebel.
@@ -110,6 +129,10 @@ def init(device_id=None, random_seed=None):
     context.init_context(device_id)
 
     from pycuda import gpuarray, driver, curandom
+
+    # Initialize memory pool
+    global memory_pool
+    memory_pool.init()
 
     # Initialize PRG
     sampler.set_seed(random_seed)

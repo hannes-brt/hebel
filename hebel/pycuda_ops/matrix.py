@@ -14,6 +14,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+from .. import memory_pool
 import numpy as np
 from pycuda import driver as drv
 from pycuda import gpuarray
@@ -153,7 +154,7 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False,
     if inplace:
         target = mat
     elif target is None:
-            target = gpuarray.empty_like(mat)
+        target = gpuarray.empty_like(mat)
 
     if axis == 0:
         assert vec.shape[0] == mat.shape[0]
@@ -191,7 +192,7 @@ def extract_columns(mat, start=0, stop=None, target=None):
         stop <= M and stop > start
 
     if target is None:
-        target = gpuarray.empty((N, m), dtype)
+        target = gpuarray.empty((N, m), dtype, allocator=memory_pool.allocate)
 
     copy = drv.Memcpy2D()
     copy.set_src_device(mat.gpudata)

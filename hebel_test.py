@@ -167,8 +167,10 @@ class TestNeuralNetRegression(unittest.TestCase):
             b_lstsq = W_lstsq[0]
             W_lstsq = W_lstsq[1:]
 
-            data_provider = BatchDataProvider(gpuarray.to_gpu(X.astype(np.float32)),
-                                              gpuarray.to_gpu(Y.astype(np.float32)))
+            data_provider = BatchDataProvider(gpuarray.to_gpu(X.astype(np.float32),
+                                                              allocator=memory_pool.allocate),
+                                              gpuarray.to_gpu(Y.astype(np.float32),
+                                                              allocator=memory_pool.allocate))
 
             model = NeuralNetRegression([], n_in=D, n_out=P)
             optimizer = SGD(model, SimpleSGDUpdate, 

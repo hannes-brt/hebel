@@ -18,6 +18,7 @@ import numpy as np
 import cPickle
 from pycuda import gpuarray
 from .dummy_layer import DummyLayer
+from .. import memory_pool
 from ..pycuda_ops.elementwise import sample_dropout_mask, \
     apply_dropout_mask
 from ..pycuda_ops.matrix import add_vec_to_mat
@@ -55,12 +56,6 @@ class InputDropout(DummyLayer):
         self.dropout_probability = dropout_probability
         self.compute_input_gradients = compute_input_gradients
 
-        self.persistent_temp_objects_config = (
-            ('dropout_input', ('batch_size', self.n_units), np.float32),
-            ('dropout_prob_array', ('batch_size', self.n_units), np.float32),
-            ('dropout_mask', ('batch_size', self.n_units), np.int8)
-        )
-
     def feed_forward(self, input_data, prediction=False):
         """Propagate forward through the layer
 
@@ -82,15 +77,10 @@ class InputDropout(DummyLayer):
         assert input_data.shape[1] == self.n_in
 
         if not prediction:
-            dropout_input = self.get_temp_object('dropout_input',
-                input_data.shape, input_data.dtype)
-            dropout_prob_array = self.get_temp_object('dropout_prob_array',
-                input_data.shape, input_data.dtype)
-            dropout_mask = self.get_temp_object('dropout_mask',
-                input_data.shape, np.int8)
-            sample_dropout_mask(input_data,
-                self.dropout_probability, target=dropout_input,
-                dropout_prob_array=dropout_prob_array, dropout_mask=dropout_mask)
+            dropout_input = gpuarray.empty_like(input_data)
+            dropout_mask = sample_dropout_mask(input_data,
+                                               self.dropout_probability, target=dropout_input
+                                           )
             return dropout_input, dropout_mask
         else:
             return (input_data * (1 - self.dropout_probability),)

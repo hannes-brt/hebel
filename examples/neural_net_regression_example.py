@@ -24,6 +24,7 @@ def main():
     import pycuda.autoinit
     from pycuda import gpuarray
     from skdata import toy
+    from hebel import memory_pool
     from hebel.data_providers import BatchDataProvider
     from hebel.models import NeuralNetRegression
     from hebel.optimizers import SGD
@@ -33,8 +34,8 @@ def main():
 
     # Get data
     data_cpu, targets_cpu = toy.Boston().regression_task()
-    data = gpuarray.to_gpu(data_cpu.astype(np.float32))
-    targets = gpuarray.to_gpu(targets_cpu.astype(np.float32))
+    data = gpuarray.to_gpu(data_cpu.astype(np.float32), allocator=memory_pool.allocate)
+    targets = gpuarray.to_gpu(targets_cpu.astype(np.float32), allocator=memory_pool.allocate)
     data_provider = BatchDataProvider(data, targets)
 
     # Create model object

@@ -17,7 +17,7 @@
 import numpy as np
 from pycuda import gpuarray
 from pycuda.elementwise import ElementwiseKernel
-from .. import sampler
+from .. import sampler, memory_pool
 from .matrix import extract_columns, insert_columns
 
 class Kernel(object):
@@ -48,14 +48,10 @@ class Kernel(object):
             raise ValueError("Unknown datatype, must be np.float32 or np.float64")
 
 all_kernels = None
-exp_func = None
-log_func = None
 def init():
     from pycuda import elementwise
     
     global all_kernels
-    global exp_func
-    global log_func
 
     all_kernels_code = {
         'sign': {
@@ -174,13 +170,10 @@ def init():
         for name, val in all_kernels_code.iteritems()
     }
 
-    exp_func = elementwise.get_unary_func_kernel('expf', np.float32)
-    log_func = elementwise.get_unary_func_kernel('logf', np.float32)
-
 def sign(x, target=None):
     assert x.flags.c_contiguous
     if target is None:
-        target = gpuarray.GPUArray(x.shape, dtype=x.dtype)
+        target = gpuarray.GPUArray(x.shape, dtype=x.dtype, allocator=memory_pool.allocate)
     assert target.shape == x.shape
     assert target.dtype == x.dtype
     assert target.flags.c_contiguous
@@ -240,11 +233,11 @@ def sample_dropout_mask(x, dropout_probability=.5, columns=None, stream=None, ta
     shape = x.shape
 
     if dropout_prob_array is None:
-        dropout_prob_array = gpuarray.empty(shape, x.dtype)
+        dropout_prob_array = gpuarray.empty(shape, x.dtype, allocator=memory_pool.allocate)
     sampler.fill_uniform(dropout_prob_array, stream)
 
     if dropout_mask is None:
-        dropout_mask = gpuarray.empty(shape, np.int8)
+        dropout_mask = gpuarray.empty(shape, np.int8, allocator=memory_pool.allocate)
 
     if target is None: target = x
     

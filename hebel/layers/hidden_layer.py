@@ -20,7 +20,7 @@ from itertools import izip
 from pycuda import gpuarray
 from pycuda.gpuarray import GPUArray
 from math import sqrt
-from .. import sampler
+from .. import sampler, memory_pool
 from ..pycuda_ops import eps
 from ..pycuda_ops import linalg
 from ..pycuda_ops.elementwise import sigmoid, df_sigmoid, \
@@ -125,12 +125,13 @@ class HiddenLayer(object):
             else:
                 self.W, self.b = parameters
         else:
-            self.W = self.weights_scale * \
-                     sampler.gen_uniform((n_in, n_units),
-                                         dtype=np.float32) \
-              - .5 * self.weights_scale
+            self.W = gpuarray.empty((n_in, n_units), dtype=np.float32,
+                                    allocator=memory_pool.allocate)
+            sampler.fill_uniform(self.W)
+            self.W = self.weights_scale * (self.W -.5)
 
-            self.b = gpuarray.zeros((n_units,), dtype=np.float32)
+            self.b = gpuarray.zeros((n_units,), dtype=np.float32,
+                                    allocator=memory_pool.allocate)
 
         assert self.W.shape == (n_in, n_units)
         assert self.b.shape == (n_units,)
@@ -145,41 +146,6 @@ class HiddenLayer(object):
         self.l2_penalty_weight = l2_penalty_weight
 
         self.dropout = dropout
-
-        self.persistent_temp_objects_config = (
-            ('activations', ('batch_size', self.n_units), np.float32),
-            ('dropout_prob_array', ('batch_size', self.n_units), np.float32),
-            ('dropout_mask', ('batch_size', self.n_units), np.int8),
-            ('df_W', self.W.shape, self.W.dtype),
-            ('df_b', self.b.shape, self.b.dtype),
-            ('df_input', ('batch_size', self.n_in), np.float32),
-            ('df_activations', ('batch_size', self.n_units), np.float32),
-            ('delta', ('batch_size', self.n_units), np.float32)
-        )
-
-    def preallocate_temp_objects(self, batch_size):
-        from ..data_providers import DataProvider
-
-        if isinstance(batch_size, DataProvider):
-            batch_size = batch_size.batch_size
-        self._batch_size = batch_size
-
-        if hasattr(self, 'persistent_temp_objects_config'):
-            self.persistent_temp_objects = {}
-            for tmp_obj_name, tmp_obj_shape, tmp_obj_dtype \
-              in self.persistent_temp_objects_config:
-                tmp_obj_shape = tuple(s if not s == 'batch_size' else batch_size
-                                      for s in tmp_obj_shape)
-                tmp_obj = gpuarray.empty(tmp_obj_shape, tmp_obj_dtype)
-                self.persistent_temp_objects[tmp_obj_name] = tmp_obj
-
-    def get_temp_object(self, name, shape, dtype):
-        if hasattr(self, "persistent_temp_objects") and \
-          name in self.persistent_temp_objects:
-            tmp_obj = self.persistent_temp_objects[name]
-            if tmp_obj.shape == shape and tmp_obj.dtype == dtype:
-                return tmp_obj
-        return gpuarray.empty(shape, dtype)
 
     @property
     def parameters(self):
@@ -272,9 +238,7 @@ class HiddenLayer(object):
             The activations of the hidden units.
         """
 
-        activations = self.get_temp_object('activations',
-            (input_data.shape[0], self.n_units), input_data.dtype)
-        linalg.dot(input_data, self.W, target=activations)
+        activations = linalg.dot(input_data, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         self.f(activations)
@@ -283,13 +247,7 @@ class HiddenLayer(object):
             activations *= .5
 
         if self.dropout and not prediction:
-            dropout_mask = self.get_temp_object('dropout_mask', activations.shape,
-                                                np.int8)
-            dropout_prob_array = self.get_temp_object('dropout_prob_array',
-                                                      activations.shape,
-                                                      activations.dtype)
-            sample_dropout_mask(activations, dropout_mask=dropout_mask,
-                                dropout_prob_array=dropout_prob_array)
+            dropout_mask = sample_dropout_mask(activations)
             return activations, dropout_mask
 
         return (activations,)
@@ -334,27 +292,16 @@ class HiddenLayer(object):
         if self.dropout and dropout_mask is not None:
             apply_dropout_mask(df_output, dropout_mask)
 
-        # Get temporary objects
-        df_W = self.get_temp_object('df_W', self.W.shape, self.W.dtype)
-        df_b = self.get_temp_object('df_b', self.b.shape, self.b.dtype)
-        df_input = self.get_temp_object('df_input',
-                input_data.shape, input_data.dtype)
-        df_activations = self.get_temp_object('df_activations',
-                activations.shape, activations.dtype)
-        delta = self.get_temp_object('delta',
-                activations.shape, activations.dtype)
-        
-
         # Get gradient wrt activation function
-        self.df(activations, df_activations)
-        mult_matrix(df_activations, df_output, delta)
+        df_activations = self.df(activations)
+        delta = mult_matrix(df_activations, df_output)
 
         # Gradient wrt weights
-        linalg.dot(input_data, delta, transa='T', target=df_W)
+        df_W = linalg.dot(input_data, delta, transa='T')
         # Gradient wrt bias
-        matrix_sum_out_axis(delta, 0, target=df_b)
+        df_b = matrix_sum_out_axis(delta, 0)
         # Gradient wrt inputs
-        linalg.dot(delta, self.W, transb='T', target=df_input)
+        df_input = linalg.dot(delta, self.W, transb='T')
 
         # L1 weight decay
         if self.l1_penalty_weight:

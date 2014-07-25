@@ -17,6 +17,7 @@
 import numpy as np
 from pycuda import gpuarray
 from . import linalg
+from .. import memory_pool
 
 max_column = None
 max_row = None
@@ -128,11 +129,12 @@ def _matrix_sum_out_axis_wrapper():
             try:
                 ones = one_vector_cache[vec_shape]
             except KeyError:
-                ones = gpuarray.empty(vec_shape, dtype=mat.dtype).fill(1.)
+                ones = gpuarray.empty(vec_shape, dtype=mat.dtype,
+                                      allocator=memory_pool.allocate).fill(1.)
                 if cache_one_vector: one_vector_cache[vec_shape] = ones
 
             if target is None:
-                target = gpuarray.empty((M,), mat.dtype)
+                target = gpuarray.empty((M,), mat.dtype, allocator=memory_pool.allocate)
 
             # if len(target.shape) == 1:
                 # target = target.reshape((target.shape[0], 1))
@@ -144,11 +146,12 @@ def _matrix_sum_out_axis_wrapper():
             try:
                 ones = one_vector_cache[vec_shape]
             except KeyError:
-                ones = gpuarray.empty((M, 1), dtype=mat.dtype).fill(1.)
+                ones = gpuarray.empty((M, 1), dtype=mat.dtype,
+                                      allocator=memory_pool.allocate).fill(1.)
                 if cache_one_vector: one_vector_cache[vec_shape] = ones
 
             if target is None:
-                target = gpuarray.empty((N,), mat.dtype)
+                target = gpuarray.empty((N,), mat.dtype, allocator=memory_pool.allocate)
 
             # if len(target.shape) == 1:
             #     target = target.reshape((target.shape[0], 1))

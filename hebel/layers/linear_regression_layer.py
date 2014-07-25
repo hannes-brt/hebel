@@ -17,7 +17,7 @@
 import numpy as np
 from pycuda import gpuarray, cumath
 from math import sqrt
-from .. import sampler
+from .. import sampler, memory_pool
 from .softmax_layer import SoftmaxLayer
 from ..pycuda_ops.elementwise import sign, nan_to_zeros
 from ..pycuda_ops.reductions import matrix_sum_out_axis
@@ -93,11 +93,13 @@ class LinearRegressionLayer(SoftmaxLayer):
         if parameters is not None:
             self.W, self.b = parameters
         else:
-            self.W = self.weights_scale * \
-                     sampler.gen_uniform((n_in, n_out), dtype=np.float32) \
-                     - .5 * self.weights_scale
+            self.W = gpuarray.empty((n_in, n_out), dtype=np.float32,
+                                    allocator=memory_pool.allocate)
+            sampler.fill_uniform(self.W)
+            self.W = weights_scale * (self.W -.5)
 
-            self.b = gpuarray.zeros((n_out,), dtype=np.float32)
+            self.b = gpuarray.zeros((n_out,), dtype=np.float32,
+                                    allocator=memory_pool.allocate)
 
         self.n_in = n_in
         self.n_out = n_out
@@ -107,14 +109,6 @@ class LinearRegressionLayer(SoftmaxLayer):
 
         self.lr_multiplier = 2 * [1. / np.sqrt(n_in, dtype=np.float32)] \
           if lr_multiplier is None else lr_multiplier
-
-        self.persistent_temp_objects_config = (
-            ('activations', ('batch_size', self.n_out), np.float32),
-            ('df_W', self.W.shape, self.W.dtype),
-            ('df_b', self.b.shape, self.b.dtype),
-            ('df_input', ('batch_size', self.n_in), np.float32),
-            ('delta', ('batch_size', self.n_out), np.float32)
-        )
 
     def feed_forward(self, input_data, prediction=False):
         """Propagate forward through the layer.
@@ -135,10 +129,7 @@ class LinearRegressionLayer(SoftmaxLayer):
             The activations of the output units.
         """
 
-        activations = self.get_temp_object('activations',
-            (input_data.shape[0], self.n_out), input_data.dtype)
-        
-        linalg.dot(input_data, self.W, target=activations)
+        activations = linalg.dot(input_data, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         return activations

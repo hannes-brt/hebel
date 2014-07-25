@@ -31,6 +31,7 @@ a minimum the special methods ``__iter__`` and ``next``.
 """
 
 import numpy as np
+from . import memory_pool
 from pycuda import gpuarray
 
 class DataProvider(object):
@@ -115,10 +116,10 @@ class MiniBatchDataProvider(DataProvider):
         self.i += 1
 
         if not isinstance(minibatch_data, gpuarray.GPUArray):
-            minibatch_data = gpuarray.to_gpu(minibatch_data)
+            minibatch_data = gpuarray.to_gpu(minibatch_data, allocator=memory_pool.allocate)
 
         if not isinstance(minibatch_targets, gpuarray.GPUArray):
-            minibatch_targets = gpuarray.to_gpu(minibatch_targets)
+            minibatch_targets = gpuarray.to_gpu(minibatch_targets, allocator=memory_pool.allocate)
 
         return minibatch_data, minibatch_targets
 
@@ -149,7 +150,7 @@ class MultiTaskDataProvider(DataProvider):
         self.data = data
 
         if not isinstance(targets, gpuarray.GPUArray):
-            targets = gpuarray.to_gpu(targets)
+            targets = gpuarray.to_gpu(targets, allocator=memory_pool.allocate)
         self.targets = targets
 
         try:
@@ -280,27 +281,30 @@ class MNISTDataProvider(MiniBatchDataProvider):
 
         if array == 'train':
             self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.train_idx]
-                                   .astype(np.float32) / 255.)
+                                   .astype(np.float32) / 255.,
+                                        allocator=memory_pool.allocate)
             targets = self.mnist.all_labels[self.train_idx]
             labels_soft = np.zeros((self.N_train, 10), dtype=np.float32)
             labels_soft[range(self.N_train), targets] = 1.
-            self.targets = gpuarray.to_gpu(labels_soft)
+            self.targets = gpuarray.to_gpu(labels_soft, allocator=memory_pool.allocate)
             self.N = self.N_train
         elif array == 'val':
             self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.val_idx]
-                                   .astype(np.float32) / 255.)
+                                   .astype(np.float32) / 255.,
+                                        allocator=memory_pool.allocate)
             self.N = self.N_val
             targets = self.mnist.all_labels[self.val_idx]
             labels_soft = np.zeros((self.N_train, 10), dtype=np.float32)
             labels_soft[range(self.N_val), targets] = 1.
-            self.targets = gpuarray.to_gpu(labels_soft)
+            self.targets = gpuarray.to_gpu(labels_soft, allocator=memory_pool.allocate)
         elif array == 'test':
             self.data = gpuarray.to_gpu(self.mnist.all_vectors[self.test_idx]
-                                   .astype(np.float32) / 255.)
+                                   .astype(np.float32) / 255.,
+                                        allocator=memory_pool.allocate)
             targets = self.mnist.all_labels[self.test_idx]
             labels_soft = np.zeros((self.N_test, 10), dtype=np.float32)
             labels_soft[range(self.N_test), targets] = 1.
-            self.targets = gpuarray.to_gpu(labels_soft)
+            self.targets = gpuarray.to_gpu(labels_soft, allocator=memory_pool.allocate)
             self.N = self.N_test
         else:
             raise ValueError('Unknown partition "%s"' % array)

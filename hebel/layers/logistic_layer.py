@@ -19,7 +19,7 @@ import cPickle
 from pycuda import gpuarray
 from pycuda import cumath
 from math import sqrt
-from .. import sampler
+from .. import sampler, memory_pool
 from .top_layer import TopLayer
 from ..pycuda_ops import eps, linalg
 from ..pycuda_ops.elementwise import sign, nan_to_zeros, substract_matrix, sigmoid
@@ -112,11 +112,13 @@ class LogisticLayer(TopLayer):
         if parameters is not None:
             self.W, self.b = parameters
         else:
-            self.W = self.weights_scale * \
-                     sampler.gen_uniform((n_in, 1), dtype=np.float32) \
-                     - .5 * self.weights_scale
+            self.W = gpuarray.empty((n_in, 1), dtype=np.float32,
+                                    allocator=memory_pool.allocate)
+            sampler.fill_uniform(self.W)
+            self.W = self.weights_scale * (self.df_W - .5)
 
-            self.b = gpuarray.zeros((1,), dtype=np.float32)
+            self.b = gpuarray.zeros((1,), dtype=np.float32,
+                                    allocator=memory_pool.allocate)
 
         self.n_in = n_in
 
@@ -127,14 +129,6 @@ class LogisticLayer(TopLayer):
 
         self.lr_multiplier = 2 * [1. / np.sqrt(n_in, dtype=np.float32)] \
           if lr_multiplier is None else lr_multiplier
-
-        self.persistent_temp_objects_config = (
-            ('activations', ('batch_size', 1), np.float32),
-            ('df_W', self.W.shape, np.float32),
-            ('df_b', self.b.shape, np.float32),
-            ('df_input', ('batch_size', self.n_in), np.float32),
-            ('delta', ('batch_size', 1), np.float32)
-        )
 
     @property
     def architecture(self):
@@ -161,9 +155,7 @@ class LogisticLayer(TopLayer):
             The activations of the output units.
         """
 
-        activations = self.get_temp_object('activations',
-            (input_data.shape[0], 1), input_data.dtype)
-        linalg.dot(input_data, self.W, target=activations)
+        activations = linalg.dot(input_data, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         sigmoid(activations)
@@ -201,24 +193,16 @@ class LogisticLayer(TopLayer):
         else:
             activations = self.feed_forward(input_data, prediction=False)
 
-        # Get temporary objects
-        df_W = self.get_temp_object('df_W', self.W.shape, self.W.dtype)
-        df_b = self.get_temp_object('df_b', self.b.shape, self.b.dtype)
-        df_input = self.get_temp_object('df_input',
-                input_data.shape, input_data.dtype)
-        delta = self.get_temp_object('delta',
-                activations.shape, activations.dtype)
-
-        substract_matrix(activations, targets, delta)
+        delta = substract_matrix(activations, targets)
         nan_to_zeros(delta, delta)
 
         # Gradient wrt weights
-        linalg.dot(input_data, delta, transa='T', target=df_W)
+        df_W = linalg.dot(input_data, delta, transa='T')
         # Gradient wrt bias
-        matrix_sum_out_axis(delta, 0, target=df_b)
+        df_b = matrix_sum_out_axis(delta, 0)
 
         # Gradient wrt input
-        linalg.dot(delta, self.W, transb='T', target=df_input)
+        df_input = linalg.dot(delta, self.W, transb='T')
 
         # L1 penalty
         if self.l1_penalty_weight:

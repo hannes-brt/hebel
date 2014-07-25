@@ -27,5 +27,5 @@ def init():
     elementwise.init()
     matrix.init()
     reductions.init()
-    softmax.init()
+    # softmax.init()
     linalg.init()
