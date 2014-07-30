@@ -3,7 +3,7 @@ from pycuda import gpuarray
 from itertools import izip
 from .. import pycuda_ops
 from . import MaxPoolingLayer
-from hebel import sampler
+from hebel import sampler, memory_pool
 from hebel.layers import HiddenLayer
 from hebel.pycuda_ops.elementwise import sign, sample_dropout_mask, \
      apply_dropout_mask, mult_matrix
@@ -18,7 +18,7 @@ class SubregionLayer(HiddenLayer):
     def __init__(self, n_in, n_filters, filter_width, pool_size,
                  activation_function, l1_penalty_weight=0.,
                  l2_penalty_weight=0., lr_multiplier=1.,
-                 parameters=None, weight_scale=.01, param_idx=None,
+                 parameters=None, weights_scale=.01, param_idx=None,
                  output_offset=0):
 
         self.n_in = n_in
@@ -36,10 +36,12 @@ class SubregionLayer(HiddenLayer):
             raise ValueError("Pool size must be an even divider of n_in")
 
         if parameters is None:
-            self.W = weight_scale * (sampler.gen_uniform(
-                (self.n_filters, 4 * self.filter_width), np.float32
-            ) - .5)
-            self.b = gpuarray.zeros((n_filters,), np.float32)
+            self.W = gpuarray.empty((n_filters, 4*filter_width), dtype=np.float32,
+                                    allocator=memory_pool.allocate)
+            sampler.fill_uniform(self.W)
+            self.W = weights_scale * (self.W - .5)
+            self.b = gpuarray.zeros((n_filters,), np.float32,
+                                    allocator=memory_pool.allocate)
         else:
             self.W, self.b = parameters
 
@@ -50,67 +52,38 @@ class SubregionLayer(HiddenLayer):
         self.n_units = MaxPoolingLayer._compute_n_units(self.n_in,
             self.pool_size, self.n_filters)
 
-        self.persistent_temp_objects_config = (
-            ('filtermap', ('batch_size', self.n_in * self.n_filters), np.float32),
-            ('df_W', self.W.shape, np.float32),
-            ('df_b', self.b.shape, np.float32),
-            ('df_filtermap', ('batch_size', self.n_in * self.n_filters), np.float32),
-            ('df_conv', ('batch_size', self.n_in * self.n_filters), np.float32),
-            ('delta', ('batch_size', self.n_in * self.n_filters), np.float32),
-            ('df_b_tmp', (self.n_in * self.n_filters,), np.float32),
-            ('W_sign', self.W.shape, np.float32)
-        )
-
     def feed_forward(self, input_data, prediction=False,
                      target_activations=None, target_argmax=None):
-        filtermap = self.get_temp_object('filtermap',
-            (input_data.shape[0], self.n_in * self.n_filters), np.float32)
 
         if target_activations is None:
             target_activations = gpuarray.empty((input_data.shape[0], self.n_units),
-                                                input_data.dtype)
-            target_argmax = gpuarray.empty(target_activations.shape, np.uint32)
+                                                input_data.dtype, allocator=memory_pool.allocate)
+            target_argmax = gpuarray.empty(target_activations.shape, np.uint32,
+                                           allocator=memory_pool.allocate)
             target_offset = 0
             
-        pycuda_ops.convolve_sequence(input_data, self.W, self.b, target=filtermap)
+        filtermap = pycuda_ops.convolve_sequence(input_data, self.W, self.b)
         self.f(filtermap)
         if self.pool_size is None or self.pool_size == 1:
             insert_columns(filtermap, target_activations, self.output_offset)
         else:
-            pycuda_ops.max_pool(filtermap, self.pool_size,
-                                width=self.n_in*self.n_filters,
-                                pooled_offset=self.output_offset,
-                                target=target_activations, argmax=target_argmax)
+            target_activations, target_argmax = \
+                pycuda_ops.max_pool(filtermap, self.pool_size,
+                                    width=self.n_in*self.n_filters,
+                                    pooled_offset=self.output_offset,
+                                    target=target_activations, argmax=target_argmax)
         return filtermap
 
     def backprop(self, input_data, df_output, filtermap, argmax):
-        df_W = self.get_temp_object('df_W', self.W.shape, np.float32)
-        df_b = self.get_temp_object('df_b', self.b.shape, np.float32)
-        df_filtermap = self.get_temp_object('df_filtermap',
-                                            (input_data.shape[0],
-                                             self.n_in*self.n_filters),
-                                            np.float32)
-        df_conv = self.get_temp_object('df_conv',
-                                       (input_data.shape[0],
-                                        self.n_in*self.n_filters),
-                                       np.float32)
-        delta = self.get_temp_object('delta',
-                                     (input_data.shape[0],
-                                      self.n_in*self.n_filters),
-                                     np.float32)
-        df_b_tmp = self.get_temp_object('df_b_tmp',
-                                        (self.n_in * self.n_filters, ),
-                                        np.float32)
-
-        pycuda_ops.max_pool_gradient(filtermap, argmax, df_output,
-                                     self.pool_size,
-                                     width_pooled=self.n_units,
-                                     pooled_offset=self.output_offset, target=df_filtermap)
-        self.df(filtermap, target=df_conv)
-        mult_matrix(df_conv, df_filtermap, delta)
-        pycuda_ops.sum_delta(delta, self.n_filters, target_tmp=df_b_tmp, target_sum=df_b)
-        pycuda_ops.convolve_sequence_gradient(input_data, delta,
-                                              self.filter_width, self.n_filters, target=df_W)
+        df_filtermap = pycuda_ops.max_pool_gradient(filtermap, argmax, df_output,
+                                                    self.pool_size,
+                                                    width_pooled=self.n_units,
+                                                    pooled_offset=self.output_offset)
+        df_conv = self.df(filtermap)
+        delta = mult_matrix(df_conv, df_filtermap)
+        df_b = pycuda_ops.sum_delta(delta, self.n_filters)
+        df_W = pycuda_ops.convolve_sequence_gradient(input_data, delta,
+                                                     self.filter_width, self.n_filters)
 
         if self.l1_penalty_weight:
             W_sign = self.get_temp_object('W_sign', self.W.shape, self.W.dtype)
@@ -145,13 +118,3 @@ class SlavedSubregionLayer(SubregionLayer):
         self.f = master_layer.f
         self.df = master_layer.df
         self.n_units = master_layer.n_units
-
-        self.persistent_temp_objects_config = (
-            ('filtermap', ('batch_size', self.n_in * self.n_filters), np.float32),
-            ('df_W', self.W.shape, np.float32),
-            ('df_b', self.b.shape, np.float32),
-            ('df_filtermap', ('batch_size', self.n_in * self.n_filters), np.float32),
-            ('df_conv', ('batch_size', self.n_in * self.n_filters), np.float32),
-            ('delta', ('batch_size', self.n_in * self.n_filters), np.float32),
-            ('df_b_tmp', (self.n_in * self.n_filters,), np.float32)
-        )

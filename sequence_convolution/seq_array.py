@@ -19,6 +19,7 @@ import numpy as np
 import string
 from pycuda import gpuarray
 import random
+from hebel import memory_pool
 from hebel.data_providers import MultiTaskDataProvider
 
 
@@ -61,12 +62,12 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
     @gpu.setter
     def gpu(self, val):
         if val and not self._gpu:
-            self.data = [gpuarray.to_gpu(x) for x in self.data]
+            self.data = [gpuarray.to_gpu(x, allocator=memory_pool.allocate) for x in self.data]
 
             if not isinstance(self.targets, (list, tuple)):
-                self.targets = gpuarray.to_gpu(self.targets)
+                self.targets = gpuarray.to_gpu(self.targets, allocator=memory_pool.allocate)
             else:
-                self.targets = [gpuarray.to_gpu(t) for t in self.targets]
+                self.targets = [gpuarray.to_gpu(t, allocator=memory_pool.allocate) for t in self.targets]
 
         if not val and self._gpu:
             self.data = [x.get() for x in self.data]
@@ -89,11 +90,11 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
         if not isinstance(seq[0], (list, tuple)):
             enc_seq = encode_sequence(seq)
             if self.gpu:
-                enc_seq = gpuarray.to_gpu(enc_seq)
+                enc_seq = gpuarray.to_gpu(enc_seq, allocator=memory_pool.allocate)
         else:
             enc_seq = [encode_sequence(s) for s in seq]
             if self.gpu:
-                enc_seq = [gpuarray.to_gpu(x) for x in enc_seq]
+                enc_seq = [gpuarray.to_gpu(x, allocator=memory_pool.allocate) for x in enc_seq]
 
         self.enc_seq = enc_seq
 
@@ -146,8 +147,9 @@ class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
                        '|S1', np.ascontiguousarray(data['seq']).data)
         if self.trim:
             self.sequences_next = np.copy(self.sequences_next[:, self.trim[0]:-self.trim[1]])
-        self.sequences_next = gpuarray.to_gpu_async(self.sequences_next)
-        self.targets_next = gpuarray.to_gpu_async(np.ascontiguousarray(data['label'], np.float32)
+        self.sequences_next = gpuarray.to_gpu_async(self.sequences_next, allocator=memory_pool.allocate)
+        self.targets_next = gpuarray.to_gpu_async(np.ascontiguousarray(data['label'], np.float32,
+                                                                       allocator=memory_pool.allocate)
             .reshape((self.batch_size, 1)))
 
 

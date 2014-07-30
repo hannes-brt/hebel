@@ -18,7 +18,7 @@
 import numpy as np
 from pycuda import gpuarray
 from .. import pycuda_ops
-from hebel import sampler
+from hebel import sampler, memory_pool
 from hebel.layers import HiddenLayer
 from hebel.pycuda_ops.elementwise import sign
 
@@ -30,14 +30,15 @@ class SequenceConvolutionLayer(HiddenLayer):
                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  dtype=np.float32):
         if W is None:
-            self.W = weights_scale * \
-              sampler.gen_uniform((n_filters, 4*filter_width), dtype=dtype) \
-              -.5 * weights_scale
+            self.W = gpuarray.empty((n_filters, 4*filter_width), dtype=dtype,
+                                    allocator=memory_pool.allocate)
+            sampler.fill_uniform(self.W)
+            self.W = weights_scale * (self.W -.5)
         else:
             self.W = W
 
         if b is None:
-            self.b = gpuarray.zeros((n_filters,), dtype)
+            self.b = gpuarray.zeros((n_filters,), dtype, allocator=memory_pool.allocate)
         else:
             self.b = b
 
@@ -55,14 +56,8 @@ class SequenceConvolutionLayer(HiddenLayer):
 
         self.lr_multiplier = [1., 1.]
 
-        self.persistent_temp_objects_config = (
-            ('activations', ('batch_size', self.n_filters*self.n_in), np.float32)
-        )
-
     def feed_forward(self, input_data, prediction=False):
-        activations = self.get_temp_object('activations',
-            (input_data.shape[0], self.n_filters*self.n_in), input_data.dtype)
-        pycuda_ops.convolve_sequence(input, self.W, self.b, target=activations)
+        activations = pycuda_ops.convolve_sequence(input, self.W, self.b)
 
         self.f(activations)
         return (activations,)

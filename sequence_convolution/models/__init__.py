@@ -19,4 +19,4 @@ from subregion_layers import SubregionLayer, SlavedSubregionLayer
 from sequence_convolution_layer import SequenceConvolutionLayer
 from multi_sequence_convolution_layer import MultiSequenceConvolutionLayer
 from sequence_convolution_net import SequenceConvolutionNet
-from sequence_fully_connected_layer import SequenceFullyConnectedLayer
+# from sequence_fully_connected_layer import SequenceFullyConnectedLayer

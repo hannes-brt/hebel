@@ -21,6 +21,7 @@ import numpy as np
 import os, ctypes
 from jinja2 import Template
 from . import sequence_conv_root
+from hebel import memory_pool
 from hebel.pycuda_ops.reductions import matrix_sum_out_axis
 from hebel.utils.math import ceil_div, div_up
 from hebel import sampler
@@ -97,7 +98,7 @@ def convolve_sequence(input_seq, conv_filter, bias,
 
     if target is None:
         target = gpuarray.empty((height, output_width * n_filters),
-                                dtype=dtype)
+                                dtype=dtype, allocator=memory_pool.allocate)
     assert target.dtype == dtype
     assert target.flags.c_contiguous
     assert target.shape == (height, output_width * n_filters)
@@ -170,7 +171,7 @@ def convolve_1d(mat, filters, bias, target=None, stream=None):
 
     if target is None:
         target = gpuarray.empty((height, output_width, n_filters_out),
-                                dtype=dtype)
+                                dtype=dtype, allocator=memory_pool.allocate)
     assert target.dtype == dtype
     assert target.flags.c_contiguous
     assert target.shape == (height, output_width, n_filters_out)
@@ -194,82 +195,74 @@ def convolve_1d(mat, filters, bias, target=None, stream=None):
 
     return target
 
-def convolve_sequence_gradient_wrapper():
-    target_tmp_cache = []
-    
-    def f(mat, df_output, filter_width, n_filters,
-          target=None, stream=None):
+def convolve_sequence_gradient_wrapper(mat, df_output,
+                                       filter_width, n_filters,
+                                       target=None, stream=None):
 
-        assert mat.flags.c_contiguous
-        assert df_output.flags.c_contiguous
+    assert mat.flags.c_contiguous
+    assert df_output.flags.c_contiguous
 
-        dtype = df_output.dtype
-        assert dtype in (np.float32,) # np.float64)
+    dtype = df_output.dtype
+    assert dtype in (np.float32,) # np.float64)
 
-        height, width = mat.shape
-        halo_width = filter_width - 1
-        output_width = width - halo_width
-        df_output_width = df_output.shape[1]
+    height, width = mat.shape
+    halo_width = filter_width - 1
+    output_width = width - halo_width
+    df_output_width = df_output.shape[1]
 
-        n_elements = height*width        
+    n_elements = height*width        
 
-        block = (filter_width, MULTIPROCESSOR_COUNT, 1)
-        grid = (n_filters,
-                min(div_up(output_width*height, block[1]), 192 / 2), 1)
-        n_input_elements = ceil_div(block[1], output_width) * width + halo_width
-        get_shared = lambda block, grid: block[0] * filter_width * N_LETTERS * \
-                     np.dtype(dtype).itemsize + \
-                     block[1] * filter_width * np.dtype(dtype).itemsize + \
-                     (n_input_elements + halo_width) * np.dtype('|S1').itemsize
+    block = (filter_width, MULTIPROCESSOR_COUNT, 1)
+    grid = (n_filters,
+            min(div_up(output_width*height, block[1]), 192 / 2), 1)
+    n_input_elements = ceil_div(block[1], output_width) * width + halo_width
+    get_shared = lambda block, grid: block[0] * filter_width * N_LETTERS * \
+                 np.dtype(dtype).itemsize + \
+                 block[1] * filter_width * np.dtype(dtype).itemsize + \
+                 (n_input_elements + halo_width) * np.dtype('|S1').itemsize
+    shared = get_shared(block, grid)
+    while np.prod(block) > MAX_THREADS_PER_BLOCK or \
+          shared > MAX_SHARED_MEMORY_PER_BLOCK:
+        block = (block[0], block[1] / 2, 1)
         shared = get_shared(block, grid)
-        while np.prod(block) > MAX_THREADS_PER_BLOCK or \
-              shared > MAX_SHARED_MEMORY_PER_BLOCK:
-            block = (block[0], block[1] / 2, 1)
-            shared = get_shared(block, grid)
-        
-        if target is None:
-            target = gpuarray.empty((n_filters, N_LETTERS * filter_width), dtype)
 
-        target_tmp = None
-        if grid[1]:
-            for x in target_tmp_cache:
-                if x.shape == (grid[1], n_filters, filter_width, N_LETTERS) and \
-                   x.dtype == dtype:
-                    target_tmp = x
-            if target_tmp is None:
-                target_tmp = gpuarray.empty(
-                    (grid[1], n_filters, filter_width, N_LETTERS), dtype=dtype)
-                target_tmp_cache.append(target_tmp)
-        else:
-            target_tmp = target
+    if target is None:
+        target = gpuarray.empty((n_filters, N_LETTERS * filter_width), dtype,
+                                allocator=memory_pool.allocate)
 
-        dname = _dtype_name[dtype]
-        _kernels[dname]['convolve_dna_sequence_gradient_kernel'](
-            mat,
-            df_output,
+    target_tmp = None
+    if grid[1]:
+        target_tmp = gpuarray.empty(
+            (grid[1], n_filters, filter_width, N_LETTERS), dtype=dtype,
+            allocator=memory_pool.allocate)
+    else:
+        target_tmp = target
+
+    dname = _dtype_name[dtype]
+    _kernels[dname]['convolve_dna_sequence_gradient_kernel'](
+        mat,
+        df_output,
+        target_tmp,
+        np.uint32(width),
+        np.uint32(height),
+        np.uint32(filter_width),
+        np.uint32(n_filters),
+        block=block, grid=grid, shared=shared,
+        stream=stream)
+
+    if grid[1]:
+        block_sum = (MULTIPROCESSOR_COUNT * 2, 1, 1)
+        grid_sum = (100, 1, 1)
+
+        _kernels[dname]['gradient_reduce_kernel'](
             target_tmp,
-            np.uint32(width),
-            np.uint32(height),
-            np.uint32(filter_width),
-            np.uint32(n_filters),
-            block=block, grid=grid, shared=shared,
+            target,
+            np.uint32(target.size),
+            np.uint32(grid[1]),
+            block=block_sum, grid=grid_sum,
             stream=stream)
 
-        if grid[1]:
-            block_sum = (MULTIPROCESSOR_COUNT * 2, 1, 1)
-            grid_sum = (100, 1, 1)
-
-            _kernels[dname]['gradient_reduce_kernel'](
-                target_tmp,
-                target,
-                np.uint32(target.size),
-                np.uint32(grid[1]),
-                block=block_sum, grid=grid_sum,
-                stream=stream)
-
-        return target
-    return f
-convolve_sequence_gradient = convolve_sequence_gradient_wrapper()
+    return target
 
 def convolve_1d_gradient_filters(input_data, df_output, filter_width, target=None):
     dtype = np.dtype(np.float32)
@@ -286,7 +279,8 @@ def convolve_1d_gradient_filters(input_data, df_output, filter_width, target=Non
     assert output_width == input_width - halo_width
 
     if target is None:
-        target = gpuarray.zeros((n_filters_out, filter_width, n_filters_in), dtype)
+        target = gpuarray.zeros((n_filters_out, filter_width, n_filters_in), dtype,
+                                allocator=memory_pool.allocate)
     else:
         target.fill(0.)
         
@@ -346,7 +340,8 @@ def convolve_1d_gradient_input(df_output, filters, target=None):
     input_width = output_width + halo_width
 
     if target is None:
-        target = gpuarray.zeros((height, input_width, n_filters_in), dtype)
+        target = gpuarray.zeros((height, input_width, n_filters_in), dtype,
+                                allocator=memory_pool.allocate)
     else:
         target.fill(0.)
 
@@ -430,14 +425,14 @@ def max_pool(mat, pool_size, n_filters,
     else:
         target = gpuarray.empty(
             (height, pooled_width * n_filters),
-            dtype)
+            dtype, allocator=memory_pool.allocate)
 
     if argmax is not None:
         assert argmax.dtype == np.uint32
         assert argmax.shape == target.shape
         assert argmax.flags.c_contiguous
     else:
-        argmax = gpuarray.empty(target.shape, np.uint32)
+        argmax = gpuarray.empty(target.shape, np.uint32, allocator=memory_pool.allocate)
 
     dname = _dtype_name[dtype]
 
@@ -493,7 +488,7 @@ def sum_pool(mat, pool_size, n_filters,
     else:
         target = gpuarray.empty(
             (height, pooled_width * n_filters),
-            dtype)
+            dtype, allocator=memory_pool.allocate)
 
     dname = _dtype_name[dtype]
 
@@ -635,20 +630,13 @@ def sum_pool_gradient(mat, df_output, n_filters,
     else:
         return target
 
-def sum_delta(delta, n_filters, cache_one_vector=True,
-              target_tmp=None, target_sum=None):
+def sum_delta(delta, n_filters, cache_one_vector=True):
     assert delta.flags.c_contiguous
     assert not delta.shape[1] % n_filters
     width = delta.shape[1] / n_filters
-    if target_tmp is None:
-        target_tmp = gpuarray.empty(delta.shape[1:], delta.dtype)
-    target_tmp = matrix_sum_out_axis(delta, 0, cache_one_vector,
-                                      target=target_tmp)
+    target_tmp = matrix_sum_out_axis(delta, 0, cache_one_vector)
     delta_r = target_tmp.reshape((n_filters, width))
-    if target_sum is None:
-        target_sum = gpuarray.empty(delta_r.shape[:1], delta_r.dtype)
-    target_sum = matrix_sum_out_axis(delta_r, 1, cache_one_vector,
-                                      target=target_sum).ravel()
+    target_sum = matrix_sum_out_axis(delta_r, 1, cache_one_vector).ravel()
     return target_sum
 
 

@@ -19,7 +19,7 @@ from pycuda import gpuarray
 from itertools import izip
 from .. import pycuda_ops
 from . import MaxPoolingLayer, SubregionLayer, SlavedSubregionLayer
-from hebel import sampler
+from hebel import sampler, memory_pool
 from hebel.layers import HiddenLayer
 from hebel.pycuda_ops.elementwise import sign, sample_dropout_mask, \
      apply_dropout_mask
@@ -39,7 +39,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                  l1_penalty_weight=0.,
                  l2_penalty_weight=0.,
                  dtype=np.float32,
-                 weight_scale=.01):
+                 weights_scale=.01):
 
         self.subregion_layers = subregion_layers
         self.dtype = dtype
@@ -66,7 +66,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
             layer['output_offset'] = output_offset
 
             if not layer.has_key('weight_share'):
-                _weight_scale = layer.get('weight_scale', weight_scale)
+                _weights_scale = layer.get('weights_scale', weights_scale)
                 subregion_layers[i] = SubregionLayer(layer['n_in'],
                                                      layer['n_filters'],
                                                      layer['filter_width'],
@@ -75,7 +75,7 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                                                      layer['l1_penalty_weight'],
                                                      layer['l2_penalty_weight'],
                                                      layer['lr_multiplier'],
-                                                     weight_scale=weight_scale,
+                                                     weights_scale=weights_scale,
                                                      param_idx=param_idx,
                                                      output_offset=output_offset)
                 param_idx += 1
@@ -116,20 +116,6 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
                                       for l in self.master_layers))
         self.l2_penalty_weight = any((l.l2_penalty_weight > 0.
                                       for l in self.master_layers))
-
-        self.persistent_temp_objects_config = (
-            ('activations_pooled', ('batch_size', self.n_units), np.float32),
-            ('argmax', ('batch_size', self.n_units), np.uint32)
-        )
-
-    def preallocate_temp_objects(self, batch_size):
-        super(MultiSequenceConvolutionLayer, self).preallocate_temp_objects(batch_size)
-        
-        for layer in self.subregion_layers:
-            layer.preallocate_temp_objects(batch_size)
-        if self.fully_connected_layers:
-            for layer in self.fully_connected_layers:
-                layer.preallocate_temp_objects(batch_size)
 
     @property
     def W(self):
@@ -239,12 +225,10 @@ class MultiSequenceConvolutionLayer(HiddenLayer):
         assert all((input_data[0].shape[0] == i.shape[0] for i in input_data[1:]))
 
         N = input_data[0].shape[0]
-        activations_pooled = self.get_temp_object('activations_pooled',
-                                                  (N, self.n_units),
-                                                  self.dtype)
-        argmax = self.get_temp_object('argmax',
-                                      activations_pooled.shape,
-                                      np.uint32)
+        activations_pooled = gpuarray.empty((N, self.n_units), self.dtype,
+                                            allocator=memory_pool.allocate)
+        argmax = gpuarray.empty(activations_pooled.shape, np.uint32,
+                                allocator=memory_pool.allocate)
 
         filtermaps = []
 
