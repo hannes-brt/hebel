@@ -115,7 +115,7 @@ class LogisticLayer(TopLayer):
             self.W = gpuarray.empty((n_in, 1), dtype=np.float32,
                                     allocator=memory_pool.allocate)
             sampler.fill_uniform(self.W)
-            self.W = self.weights_scale * (self.df_W - .5)
+            self.W = self.weights_scale * (self.W - .5)
 
             self.b = gpuarray.zeros((1,), dtype=np.float32,
                                     allocator=memory_pool.allocate)
