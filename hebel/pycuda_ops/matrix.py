@@ -224,3 +224,36 @@ def insert_columns(src, dst, offset):
     copy.dst_pitch = w_dst * itemsize
     copy.height = h_src
     copy(aligned=True)
+
+def pad_array(mat, left=0, right=0, val=0., new_shape=None):
+    assert mat.flags.c_contiguous
+    
+    if len(mat.shape) == 2:
+        height, width = mat.shape
+    elif len(mat.shape) > 2:
+        height = mat.shape[0]
+        width = np.prod(mat.shape[1:])
+        mat = mat.reshape((height, width))
+    else:
+        raise ValueError('Array must be at least two-dimensional.')
+
+    padded_width = width + left + right
+
+    padded_mat = gpuarray.empty((height, padded_width), dtype=mat.dtype,
+                                allocator=memory_pool.allocate).fill(val)
+
+    itemsize = np.dtype(padded_mat.dtype).itemsize
+    copy = drv.Memcpy2D()
+    copy.set_src_device(mat.gpudata)
+    copy.set_dst_device(padded_mat.gpudata)
+    copy.dst_x_in_bytes = left * itemsize
+    copy.src_pitch = copy.width_in_bytes = width * itemsize
+    copy.dst_pitch = padded_width * itemsize
+    copy.height = height
+    copy(aligned=True)
+
+    if new_shape is not None:
+        padded_mat = padded_mat.reshape(new_shape)
+    return padded_mat
+    
+
