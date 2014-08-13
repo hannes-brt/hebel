@@ -88,7 +88,7 @@ class TestSeqConvolution(unittest.TestCase):
     def cpu_conv_seq(x, w, b):
         height, width = x.shape
         n_filters = w.shape[0]
-        filter_width = w.shape[1] // 4
+        filter_width = w.shape[1]
         output_width = width - filter_width + 1
 
         y = np.empty((height, n_filters, output_width), dtype=w.dtype)
@@ -98,16 +98,16 @@ class TestSeqConvolution(unittest.TestCase):
                 y[:, f, j] = b[f]
                 for k in range(filter_width):
                     nt = x[:, j + k]
-                    y[np.bool_(nt == 'A'), f, j] += w[f, 4 * k]
-                    y[np.bool_(nt == 'C'), f, j] += w[f, 4 * k + 1]
-                    y[np.bool_(nt == 'G'), f, j] += w[f, 4 * k + 2]
-                    y[np.bool_(nt == 'T'), f, j] += w[f, 4 * k + 3]
+                    y[np.bool_(nt == 'A'), f, j] += w[f, k, 0]
+                    y[np.bool_(nt == 'C'), f, j] += w[f, k, 1]
+                    y[np.bool_(nt == 'G'), f, j] += w[f, k, 2]
+                    y[np.bool_(nt == 'T'), f, j] += w[f, k,  3]
                     y[np.bool_(nt == 'R'), f, j] += \
-                        .5 * w[f, 4 * k] + .5 * w[f, 4 * k + 2]
+                        .5 * w[f, k, 0] + .5 * w[f, k, 2]
                     y[np.bool_(nt == 'Y'), f, j] += \
-                        .5 * w[f, 4 * k + 1] + .5 * w[f, 4 * k + 3]
+                        .5 * w[f, k, 1] + .5 * w[f, k, 3]
         y = np.rollaxis(y, 1, 3)
-        return y.reshape(height, n_filters * output_width)
+        return y
 
     @staticmethod
     def gpu_conv_seq(x, w, b):
@@ -119,13 +119,13 @@ class TestSeqConvolution(unittest.TestCase):
                                # (np.float64, self.DOUBLE_ERR_TOL)):
             seq = sample_sequence(width, height)
             x = gpuarray.to_gpu(encode_sequence(seq))
-            w = gpuarray.to_gpu(np.random.rand(n_filters, 4 * filter_width).astype(dtype))
+            w = gpuarray.to_gpu(np.random.rand(n_filters, filter_width, 4).astype(dtype))
             b = gpuarray.to_gpu(np.random.rand(n_filters).astype(dtype))
             y_np = self.cpu_conv_seq(x.get(), w.get(), b.get())
             y = self.gpu_conv_seq(x, w, b)
             y_cpu = y.get()
 
-            self.assertLess(np.max((y_cpu - y_np) / y_cpu), err_tol)
+            self.assertLess(np.max(np.abs((y_cpu - y_np) / y_cpu)), err_tol)
             del x, w, b, y
 
     def test_conv_seq_matrix_small(self):
@@ -166,6 +166,14 @@ class TestSeqConvolution(unittest.TestCase):
             n_filters = np.random.randint(2, 5)
             self.conv_seq_test_setup(n, m, w, n_filters)
 
+    def test_fixed_size(self):
+        for _ in range(20):
+            n = 100
+            m = 200
+            w = 12
+            n_filters = 8
+            self.conv_seq_test_setup(n, m, w, n_filters)
+
 
 class TestSeqConvolutionGradWeights(unittest.TestCase):
     FLOAT_ERR_TOL = 1e-3
@@ -175,9 +183,6 @@ class TestSeqConvolutionGradWeights(unittest.TestCase):
     def grad_weights_cpu(input_data, df_output, n_filters, filter_width):
         height, width = input_data.shape
         output_width = width - filter_width + 1
-        df_output = df_output.reshape((input_data.shape[0],
-                                       output_width,
-                                       n_filters))
         df_w = np.zeros((n_filters, filter_width, 4))
 
         for n in range(n_filters):
@@ -210,7 +215,6 @@ class TestSeqConvolutionGradWeights(unittest.TestCase):
                     .25 * df_output[:, :, n][
                     np.bool_(input_data[:, i:i+output_width] == 'N')].sum()
 
-        df_w = df_w.reshape((df_w.shape[0], df_w.shape[1] * df_w.shape[2]))
         return df_w
 
     def grad_weights_test(self, height, width, n_filters, filter_width):
@@ -394,26 +398,24 @@ class TestMaxPool(unittest.TestCase):
     DOUBLE_ERR_TOL = 1e-20
 
     @staticmethod
-    def max_pool_cpu(x, pooling_size, n_filters):
-        height = x.shape[0]
-        input_width = x.shape[1] / n_filters
+    def max_pool_cpu(x, pooling_size):
+        height, input_width, n_filters = x.shape
         output_width = input_width // pooling_size
         y = x.reshape((height, output_width, pooling_size, n_filters))\
-             .max(2)\
-             .reshape((height, n_filters * output_width))
+             .max(2)
         return y
 
     def max_pool_test(self, height, width, pool_size, n_filters):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),):
                                # (np.float64, self.DOUBLE_ERR_TOL)):
 
-            mat = gpuarray.to_gpu(np.random.rand(height, width * n_filters)
+            mat = gpuarray.to_gpu(np.random.rand(height, width, n_filters)
                                   .astype(dtype))
-            target, argmax = max_pool(mat, pool_size, n_filters)
+            target, argmax = max_pool(mat, pool_size)
             target_cpu = target.get()
-            target_np = self.max_pool_cpu(mat.get(), pool_size, n_filters)
-            self.assertLess(np.linalg.norm(
-                (target_cpu - target_np) / target_cpu, np.inf),
+            target_np = self.max_pool_cpu(mat.get(), pool_size)
+            self.assertLess(np.abs(
+                (target_cpu - target_np) / target_cpu).max(),
                 err_tol)
             del mat, target, argmax
 
@@ -431,26 +433,24 @@ class TestSumPool(unittest.TestCase):
     DOUBLE_ERR_TOL = 1e-20
 
     @staticmethod
-    def sum_pool_cpu(x, pooling_size, n_filters):
-        height = x.shape[0]
-        input_width = x.shape[1] / n_filters
+    def sum_pool_cpu(x, pooling_size):
+        height, input_width, n_filters = x.shape
         output_width = input_width // pooling_size
         y = x.reshape((height, output_width, pooling_size, n_filters))\
-             .sum(2)\
-             .reshape((height, n_filters * output_width))
+             .sum(2)
         return y
 
     def sum_pool_test(self, height, width, pool_size, n_filters):
         for dtype, err_tol in ((np.float32, self.FLOAT_ERR_TOL),):
                                # (np.float64, self.DOUBLE_ERR_TOL)):
 
-            mat = gpuarray.to_gpu(np.random.rand(height, width * n_filters)
+            mat = gpuarray.to_gpu(np.random.rand(height, width, n_filters)
                                   .astype(dtype))
-            target = sum_pool(mat, pool_size, n_filters)
+            target = sum_pool(mat, pool_size)
             target_cpu = target.get()
-            target_np = self.sum_pool_cpu(mat.get(), pool_size, n_filters)
-            self.assertLess(np.linalg.norm(
-                (target_cpu - target_np) / target_cpu, np.inf),
+            target_np = self.sum_pool_cpu(mat.get(), pool_size)
+            self.assertLess(np.abs(
+                (target_cpu - target_np) / target_cpu).max(),
                 err_tol)
             del mat, target
 
@@ -469,10 +469,9 @@ class TestMaxPoolGradient(unittest.TestCase):
 
     @staticmethod
     def max_pool_grad_cpu(mat, mat_pooled, argmax,
-                          df_output, pool_size, n_filters):
-        height = mat.shape[0]
-        width = mat.shape[1] / n_filters
-        width_pooled = mat_pooled.shape[1] / n_filters
+                          df_output, pool_size):
+        height, width, n_filters = mat.shape
+        width_pooled = mat_pooled.shape[1]
 
         df_input = np.zeros_like(mat).reshape((height, width_pooled, pool_size, n_filters))
         idx = np.c_[list(product(range(height), range(width_pooled), range(n_filters))), argmax.ravel()]
@@ -483,14 +482,14 @@ class TestMaxPoolGradient(unittest.TestCase):
 
     def max_pool_grad_test(self, height, width, pool_size, n_filters):
         for dtype in (np.float32, ): # np.float64):
-            mat = gpuarray.to_gpu(np.random.rand(height, width * n_filters).astype(dtype))
-            mat_pooled, argmax = max_pool(mat, pool_size, n_filters)
+            mat = gpuarray.to_gpu(np.random.rand(height, width, n_filters).astype(dtype))
+            mat_pooled, argmax = max_pool(mat, pool_size)
             df_output = gpuarray.to_gpu(np.random.rand(*mat_pooled.shape).astype(dtype))
-            df_input = max_pool_gradient(mat, argmax, df_output, n_filters)
+            df_input = max_pool_gradient(mat, argmax, df_output)
             df_input_cpu = df_input.get()
             df_input_np = self.max_pool_grad_cpu(mat.get(), mat_pooled.get(),
                                                  argmax.get(),
-                                                 df_output.get(), pool_size, n_filters)
+                                                 df_output.get(), pool_size)
             self.assertTrue(np.all(df_input_cpu == df_input_np))
             del mat, mat_pooled, df_output, df_input, argmax
 
@@ -508,9 +507,8 @@ class TestSumPoolGradient(unittest.TestCase):
     DOUBLE_ERR_TOL = 1e-20
 
     @staticmethod
-    def sum_pool_grad_cpu(mat, df_output, pool_size, n_filters):
-        height = mat.shape[0]
-        width = mat.shape[1] / n_filters
+    def sum_pool_grad_cpu(mat, df_output, pool_size):
+        height, width, n_filters = mat.shape
         width_pooled = width // pool_size
 
         df_input = np.zeros_like(mat).reshape((height, width_pooled, pool_size, n_filters))
@@ -521,12 +519,12 @@ class TestSumPoolGradient(unittest.TestCase):
     def sum_pool_grad_test(self, height, width, pool_size, n_filters):
         for dtype in (np.float32, ): # np.float64):
             width_pooled = width // pool_size
-            mat = gpuarray.to_gpu(np.random.rand(height, width * n_filters).astype(dtype))
-            df_output = gpuarray.to_gpu(np.random.rand(height, width_pooled * n_filters).astype(dtype))
-            df_input = sum_pool_gradient(mat, df_output, n_filters)
+            mat = gpuarray.to_gpu(np.random.rand(height, width, n_filters).astype(dtype))
+            df_output = gpuarray.to_gpu(np.random.rand(height, width_pooled, n_filters).astype(dtype))
+            df_input = sum_pool_gradient(mat, df_output)
             df_input_cpu = df_input.get()
             df_input_np = self.sum_pool_grad_cpu(mat.get(), df_output.get(),
-                                                 pool_size, n_filters)
+                                                 pool_size)
             self.assertTrue(np.all(df_input_cpu == df_input_np))
             del mat, df_output, df_input
 

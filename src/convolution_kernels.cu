@@ -1076,7 +1076,7 @@ extern "C"
     idx_t input_idx, output_origin, shared_idx, idx, argmax_val;
     data_t gradient_val;
 
-    const idx_t pooling_size = width / width_pooled;
+    const idx_t pooling_size = CEIL_DIV(width, width_pooled);
     const idx_t filter_idx = TX + BX * BDX;
 
     // Setup shared memory
@@ -1218,7 +1218,7 @@ extern "C"
     idx_t input_idx, output_origin, shared_idx, idx;
     data_t gradient_val;
 
-    const idx_t pooling_size = width / width_pooled;
+    const idx_t pooling_size = CEIL_DIV(width, width_pooled);
     const idx_t filter_idx = TX + BX * BDX;
 
     // Setup shared memory

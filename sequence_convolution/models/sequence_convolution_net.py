@@ -15,7 +15,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 import numpy as np
-from .max_pooling_layer import MaxPoolingLayer
+from .pooling_layers import MaxPoolingLayer
 from .sequence_convolution_layer import SequenceConvolutionLayer
 from hebel.models import NeuralNet
 
