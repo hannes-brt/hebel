@@ -94,8 +94,8 @@ __global__ void kMaxRowwise(float* mat,
 """
 
     mod = SourceModule(code)
-    max_column = mod.get_function("kMaxColumnwise")
-    max_row = mod.get_function("kMaxRowwise")
+    max_column = mod.get_function("kMaxColumnwise").prepare('PPII')
+    max_row = mod.get_function("kMaxRowwise").prepare('PPII')
 
 
 def max_by_axis(mat, axis=0):
@@ -106,13 +106,17 @@ def max_by_axis(mat, axis=0):
 
     if axis == 0:
         target = gpuarray.empty(m, dtype=np.float32)
-        max_column(mat, target, np.int32(m), np.int32(n),
-                   block=(32, 1, 1), grid=(m, 1, 1))
+        max_column.prepared_call(
+            (m, 1, 1), (32, 1, 1),
+            mat.gpudata, target.gpudata,
+            np.int32(m), np.int32(n))
 
     elif axis == 1:
         target = gpuarray.empty(n, dtype=np.float32)
-        max_row(mat, target, np.int32(m), np.int32(n),
-                block=(32, 1, 1), grid=(n, 1, 1))
+        max_row.prepared_call(
+            (n, 1, 1), (32, 1, 1),
+            mat.gpudata, target.gpudata,
+            np.int32(m), np.int32(n))
 
     return target
 

@@ -22,3 +22,5 @@ from .multitask_top_layer import MultitaskTopLayer
 from .top_layer import TopLayer
 from .linear_regression_layer import LinearRegressionLayer
 from .input_dropout import InputDropout
+from .column import Column
+from .multi_column_layer import MultiColumnLayer

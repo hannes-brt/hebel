@@ -14,11 +14,11 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from .. import memory_pool
+from .. import memory_pool, sampler
 import numpy as np
 from pycuda import driver as drv
 from pycuda import gpuarray
-from hebel.utils.math import ceil_div
+from ..utils.math import ceil_div
 
 add_row_vec_kernel = None
 add_col_vec_kernel = None
@@ -38,8 +38,8 @@ def init():
     __global__ void addRowVecToMat(const float *mat,
                                    const float *vec,
                                    float *target,
-                                   const int32_t n,
-                                   const int32_t m,
+                                   const unsigned int n,
+                                   const unsigned int m,
                                    const int substract)
     {
       const int tx = threadIdx.x;
@@ -65,8 +65,8 @@ def init():
     __global__ void addColVecToMat(const float *mat,
                                    const float *vec,
                                    float *target,
-                                   const int32_t n,
-                                   const int32_t m,
+                                   const unsigned int n,
+                                   const unsigned int m,
                                    const int substract)
     {
       const int tx = threadIdx.x;
@@ -123,9 +123,9 @@ def init():
     """ % _compilation_constants
 
     mod = SourceModule(code)
-    add_row_vec_kernel = mod.get_function('addRowVecToMat')
-    add_col_vec_kernel = mod.get_function('addColVecToMat')
-    vector_normalize_kernel = mod.get_function("kVectorNormalize")
+    add_row_vec_kernel = mod.get_function('addRowVecToMat').prepare('PPPIIi')
+    add_col_vec_kernel = mod.get_function('addColVecToMat').prepare('PPPIIi')
+    vector_normalize_kernel = mod.get_function("kVectorNormalize").prepare('PfII')
 
 def add_vec_to_mat(mat, vec, axis=None, inplace=False,
                    target=None, substract=False):
@@ -158,12 +158,24 @@ def add_vec_to_mat(mat, vec, axis=None, inplace=False,
 
     if axis == 0:
         assert vec.shape[0] == mat.shape[0]
-        add_col_vec_kernel(mat, vec, target, np.uint32(n), np.uint32(m),
-                           np.int32(substract), block=block, grid=grid)
+        add_col_vec_kernel.prepared_call(
+            grid, block,
+            mat.gpudata,
+            vec.gpudata,
+            target.gpudata,
+            np.uint32(n),
+            np.uint32(m),
+            np.int32(substract))
     elif axis == 1:
         assert vec.shape[0] == mat.shape[1]
-        add_row_vec_kernel(mat, vec, target, np.uint32(n), np.uint32(m),
-                           np.int32(substract), block=block, grid=grid)
+        add_row_vec_kernel.prepared_call(
+            grid, block,
+            mat.gpudata,
+            vec.gpudata,
+            target.gpudata,
+            np.uint32(n),
+            np.uint32(m),
+            np.int32(substract))
     return target
 
 
@@ -174,10 +186,12 @@ def vector_normalize(mat, max_vec_norm=1.):
     assert mat.flags.c_contiguous
     n, m = mat.shape
 
-    vector_normalize_kernel(mat, np.float32(max_vec_norm),
-                            np.int32(m), np.int32(n),
-                            block=(32,1,1), grid=(m,1,1))
-
+    vector_normalize_kernel.prepared_call(
+        (m, 1, 1), (32, 1, 1),
+        mat.gpudata,
+        np.float32(max_vec_norm),
+        np.int32(m),
+        np.int32(n))
 
 def extract_columns(mat, start=0, stop=None, target=None):
     dtype = mat.dtype
@@ -209,7 +223,11 @@ def extract_columns(mat, start=0, stop=None, target=None):
 def insert_columns(src, dst, offset):
     dtype = src.dtype
     itemsize = np.dtype(dtype).itemsize
-    h_src, w_src = src.shape
+    if len(src.shape) == 2:
+        h_src, w_src = src.shape
+    elif len(src.shape) == 3:
+        h_src = src.shape[0]
+        w_src = np.prod(src.shape[1:])
     h_dst, w_dst = dst.shape
 
     assert dst.dtype == dtype
@@ -225,8 +243,15 @@ def insert_columns(src, dst, offset):
     copy.height = h_src
     copy(aligned=True)
 
-def pad_array(mat, left=0, right=0, val=0., new_shape=None):
+def pad_array(mat, left=0, right=0, val=0., new_shape=None, stream=None):
     assert mat.flags.c_contiguous
+
+    is_chararray = False
+    if mat.dtype == '|S1':
+        is_chararray = True
+        mat.dtype = np.int8
+        if type(val) is str:
+            val = ord(val)
     
     if len(mat.shape) == 2:
         height, width = mat.shape
@@ -250,10 +275,21 @@ def pad_array(mat, left=0, right=0, val=0., new_shape=None):
     copy.src_pitch = copy.width_in_bytes = width * itemsize
     copy.dst_pitch = padded_width * itemsize
     copy.height = height
-    copy(aligned=True)
+    copy(stream)
 
     if new_shape is not None:
         padded_mat = padded_mat.reshape(new_shape)
+
+    if is_chararray:
+        mat.dtype = np.dtype('|S1')
+        padded_mat.dtype = np.dtype('|S1')
+        
     return padded_mat
     
-
+def rand_array(shape, dtype=np.float32, dist='uniform', stream=None):
+    mat = gpuarray.empty(shape, dtype, allocator=memory_pool.allocate)
+    if dist == 'uniform':
+        sampler.fill_uniform(mat, stream=stream)
+    elif dist == 'normal':
+        sampler.fill_normal(mat, stream=stream)
+    return mat

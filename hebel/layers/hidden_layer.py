@@ -312,15 +312,3 @@ class HiddenLayer(object):
             df_W += self.l2_penalty_weight * self.W
 
         return (df_W, df_b), df_input
-
-    def __getstate__(self):
-        result = self.__dict__.copy()
-        try:
-            del result['persistent_temp_objects']
-        except KeyError:
-            pass
-        return result
-
-    def __setstate__(self, dict):
-        self.__dict__ = dict
-        self.preallocate_temp_objects(self._batch_size)
