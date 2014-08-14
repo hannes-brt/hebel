@@ -212,12 +212,12 @@ class HiddenLayer(object):
 
     @property
     def l1_penalty(self):
-        return float(self.l1_penalty_weight) * gpuarray.sum(abs(self.W)).get()
+        return float(self.l1_penalty_weight) * gpuarray.sum(abs(self.W))
 
     @property
     def l2_penalty(self):
         return float(self.l2_penalty_weight) * .5 * \
-            gpuarray.sum(self.W ** 2.).get()
+            gpuarray.sum(self.W ** 2.)
 
     def feed_forward(self, input_data, prediction=False):
         """Propagate forward through the layer
