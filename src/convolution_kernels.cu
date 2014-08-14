@@ -26,6 +26,11 @@ typedef {{ dtype }} data_t;
 typedef {{ dtype }}4 vec_t;
 typedef {{ dtype_idx }} idx_t;
 
+#define FILTERS_IN_PER_BLOCK {{ filters_in_per_block }}
+#define POSITIONS_PER_BLOCK {{ positions_per_block }}
+#define FILTERS_OUT_PER_BLOCK {{ filters_out_per_block }}
+#define FILTERS_PER_ITER {{ filters_per_iter }}
+
 extern "C"
 {
 
@@ -382,8 +387,7 @@ extern "C"
 			      const idx_t input_height,
 			      const idx_t filter_width,
 			      const idx_t n_filters_in,
-			      const idx_t n_filters_out,
-			      const idx_t filters_per_iter) {
+			      const idx_t n_filters_out) {
 
     /*
      *  Compute the convolution of a 1D sequence of floating point
@@ -441,8 +445,8 @@ extern "C"
     const idx_t N = input_width * input_height * n_filters_in;
     const idx_t halo_width = filter_width - 1;
     const idx_t output_width = input_width - halo_width;
-    const idx_t n_filter_elements = filter_width * filters_per_iter * filters_per_block;
-    const idx_t filter_idx = TX * filters_per_iter * filter_width; // First element of filter
+    const idx_t n_filter_elements = filter_width * FILTERS_PER_ITER * filters_per_block;
+    const idx_t filter_idx = TX * FILTERS_PER_ITER * filter_width; // First element of filter
     const idx_t f = TX + BX * BDX;
 
     // Setup shared memory
@@ -475,7 +479,7 @@ extern "C"
       if (f < n_filters_out) pvalue = bias_shared[TX];
 
       for (f_blk = 0; 
-	   f_blk < CEIL_DIV(n_filters_in, filters_per_iter); 
+	   f_blk < CEIL_DIV(n_filters_in, FILTERS_PER_ITER); 
 	   f_blk++) {
 
 	// Load filter elements into shared memory
@@ -483,8 +487,8 @@ extern "C"
 	     shared_idx < n_filter_elements;
 	     shared_idx += BDX * BDY) {
 	  
-	  pos_shared = ROW(shared_idx, filters_per_iter);
-	  f_shared = f_blk * filters_per_iter + COLUMN(shared_idx, filters_per_iter);
+	  pos_shared = ROW(shared_idx, FILTERS_PER_ITER);
+	  f_shared = f_blk * FILTERS_PER_ITER + COLUMN(shared_idx, FILTERS_PER_ITER);
 
 	  if (f_shared < n_filters_in) {
 	    read_idx = BX * BDX * filter_width * n_filters_in + 
@@ -496,11 +500,11 @@ extern "C"
 			    
 	// Load input into shared memory
 	for (shared_idx = TX + BDX * TY;
-	     shared_idx < (n_input_elements + halo_width) * filters_per_iter;
+	     shared_idx < (n_input_elements + halo_width) * FILTERS_PER_ITER;
 	     shared_idx += BDX * BDY) {
 
-	  pos_shared = ROW(shared_idx, filters_per_iter);
-	  f_shared = f_blk * filters_per_iter + COLUMN(shared_idx, filters_per_iter);
+	  pos_shared = ROW(shared_idx, FILTERS_PER_ITER);
+	  f_shared = f_blk * FILTERS_PER_ITER + COLUMN(shared_idx, FILTERS_PER_ITER);
 	  
 	  if (f_shared < n_filters_in) {
 	    read_idx = block_origin_input * n_filters_in + pos_shared * n_filters_in +
@@ -511,15 +515,15 @@ extern "C"
 	__syncthreads();
 
 	shared_idx = (OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) - 
-		      block_origin_input) * filters_per_iter;
+		      block_origin_input) * FILTERS_PER_ITER;
 	assert(shared_idx < ((CEIL_DIV(BDY, output_width) * 
-			      input_width + halo_width) * filters_per_iter));
+			      input_width + halo_width) * FILTERS_PER_ITER));
 
 	// Perform convolution
-	for (idx_t k=0; k < filter_width * filters_per_iter; k++) {
+	for (idx_t k=0; k < filter_width * FILTERS_PER_ITER; k++) {
 	  if (row < input_height && 
 	      f < n_filters_out && 
-	      f_blk * filters_per_iter + COLUMN(k, filters_per_iter) < n_filters_in)
+	      f_blk * FILTERS_PER_ITER + COLUMN(k, FILTERS_PER_ITER) < n_filters_in)
 	    pvalue += input_shared[shared_idx + k] * filter_shared[filter_idx + k];
 	}
 	__syncthreads();
@@ -543,10 +547,7 @@ extern "C"
 					   const idx_t input_height,
 					   const idx_t filter_width,
 					   const idx_t n_filters_in,
-					   const idx_t n_filters_out,
-					   const idx_t filters_in_per_block,
-					   const idx_t positions_per_block,
-					   const idx_t filters_out_per_block) {
+					   const idx_t n_filters_out) {
 
     /*
      * Compute the gradient of the 1D convolution layer with respect to the filters.
@@ -596,7 +597,7 @@ extern "C"
      *      positions_per_block - 2) * sizeof(data_t)
      */
 
-    assert(filters_in_per_block * positions_per_block * filters_out_per_block == BDX);
+    // assert(FILTERS_IN_PER_BLOCK * positions_per_block * filters_out_per_block == BDX);
     
     idx_t filter_idx, block_origin_output, block_origin_input, shared_idx,
       row, col, n_input_elements, n, m;
@@ -607,20 +608,20 @@ extern "C"
     const idx_t elements_per_block = BDY; // Number of df_output elements per block
 
     // Indexes wrt to block
-    const idx_t filter_in_b = CUBE_IDX_1(TX, filters_in_per_block, positions_per_block);
-    const idx_t pos_b = CUBE_IDX_2(TX, filters_in_per_block, positions_per_block);
-    const idx_t filter_out_b = CUBE_IDX_3(TX, filters_in_per_block, positions_per_block);
+    const idx_t filter_in_b = CUBE_IDX_1(TX, FILTERS_IN_PER_BLOCK, POSITIONS_PER_BLOCK);
+    const idx_t pos_b = CUBE_IDX_2(TX, FILTERS_IN_PER_BLOCK, POSITIONS_PER_BLOCK);
+    const idx_t filter_out_b = CUBE_IDX_3(TX, FILTERS_IN_PER_BLOCK, POSITIONS_PER_BLOCK);
 
     // Number of blocks in each dimension
-    const idx_t gd_filters_in = CEIL_DIV(n_filters_in, filters_in_per_block);
-    const idx_t gd_pos = CEIL_DIV(filter_width, positions_per_block);
-    const idx_t gd_filters_out = CEIL_DIV(n_filters_out, filters_out_per_block);
+    const idx_t gd_filters_in = CEIL_DIV(n_filters_in, FILTERS_IN_PER_BLOCK);
+    const idx_t gd_pos = CEIL_DIV(filter_width, POSITIONS_PER_BLOCK);
+    const idx_t gd_filters_out = CEIL_DIV(n_filters_out, FILTERS_OUT_PER_BLOCK);
 
     // filter_idx of first thread in block
-    const idx_t filter_in_origin = CUBE_IDX_1(BX, gd_filters_in, gd_pos) * filters_in_per_block;
-    const idx_t pos_origin = CUBE_IDX_2(BX, gd_filters_in, gd_pos) * positions_per_block;
+    const idx_t filter_in_origin = CUBE_IDX_1(BX, gd_filters_in, gd_pos) * FILTERS_IN_PER_BLOCK;
+    const idx_t pos_origin = CUBE_IDX_2(BX, gd_filters_in, gd_pos) * POSITIONS_PER_BLOCK;
     const idx_t filter_out_origin = (CUBE_IDX_3(BX, gd_filters_in, gd_pos) % gd_filters_out) *
-      filters_out_per_block;
+      FILTERS_OUT_PER_BLOCK;
 
     // Global indexes
     const idx_t filter_in_idx = filter_in_origin + filter_in_b;
@@ -631,7 +632,7 @@ extern "C"
     __shared__ extern data_t sdata[];
     data_t* df_output_shared = sdata;
     data_t* df_filters_shared = df_output_shared + 
-      elements_per_block * filters_out_per_block;
+      elements_per_block * FILTERS_OUT_PER_BLOCK;
     data_t* input_shared = df_filters_shared + BDX;
 
     // Zero df_filters_shared
@@ -655,16 +656,16 @@ extern "C"
       
       // Load df_output into shared memory
       for (shared_idx = LIN_THREAD_IDX;
-	   shared_idx < elements_per_block * filters_out_per_block;
+	   shared_idx < elements_per_block * FILTERS_OUT_PER_BLOCK;
 	   shared_idx += LIN_BLOCK_DIM) {
 
 	row = ROW(block_origin_output + 
-			 shared_idx / filters_out_per_block,
+			 shared_idx / FILTERS_OUT_PER_BLOCK,
 			 output_width);
 	col = COLUMN(block_origin_output +
-			    shared_idx / filters_out_per_block,
+			    shared_idx / FILTERS_OUT_PER_BLOCK,
 			    output_width);
-	filter_idx = filter_out_origin + (shared_idx % filters_out_per_block);
+	filter_idx = filter_out_origin + (shared_idx % FILTERS_OUT_PER_BLOCK);
 	
 	n = row * output_width * n_filters_out +
 	  col * n_filters_out + filter_idx;
@@ -674,17 +675,17 @@ extern "C"
 
       // Load input into shared memory
       for (shared_idx = LIN_THREAD_IDX;
-	   shared_idx < (n_input_elements + positions_per_block - 1) * 
-	     filters_in_per_block;
+	   shared_idx < (n_input_elements + POSITIONS_PER_BLOCK - 1) * 
+	     FILTERS_IN_PER_BLOCK;
 	   shared_idx += LIN_BLOCK_DIM) {
 
 	row = ROW(block_origin_input + 
-			 shared_idx / filters_in_per_block,
+			 shared_idx / FILTERS_IN_PER_BLOCK,
 			 input_width);
 	col = COLUMN(block_origin_input +
-			    shared_idx / filters_in_per_block,
+			    shared_idx / FILTERS_IN_PER_BLOCK,
 			    input_width) + pos_origin;
-	filter_idx = filter_in_origin + (shared_idx % filters_in_per_block);
+	filter_idx = filter_in_origin + (shared_idx % FILTERS_IN_PER_BLOCK);
 
 	m = row * input_width * n_filters_in +
 	  col * n_filters_in + filter_idx;
@@ -699,10 +700,10 @@ extern "C"
 	  pos_idx < filter_width &&
 	  filter_out_idx < n_filters_out) {
 	n = (output_idx - block_origin_output) * 
-	  filters_out_per_block +
+	  FILTERS_OUT_PER_BLOCK +
 	  filter_out_b;
 	m = (OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) + pos_b -
-	     block_origin_input) * filters_in_per_block + filter_in_b;
+	     block_origin_input) * FILTERS_IN_PER_BLOCK + filter_in_b;
 	grad_val += df_output_shared[n] * input_shared[m];
       }
       __syncthreads();
@@ -710,8 +711,8 @@ extern "C"
 
     // Increment shared memory
     {% if dtype == 'float' %}
-    atomicAdd(&df_filters_shared[filter_out_b * positions_per_block * filters_in_per_block +
-				 pos_b * filters_in_per_block + filter_in_b],
+    atomicAdd(&df_filters_shared[filter_out_b * POSITIONS_PER_BLOCK * FILTERS_IN_PER_BLOCK +
+				 pos_b * FILTERS_IN_PER_BLOCK + filter_in_b],
 	      grad_val);
     __syncthreads();
 
@@ -719,8 +720,8 @@ extern "C"
     if (TY == 0)
       atomicAdd(&df_filters[filter_out_idx * filter_width * n_filters_in +
 			    pos_idx * n_filters_in + filter_in_idx],
-		df_filters_shared[filter_out_b * positions_per_block * filters_in_per_block +
-				  pos_b * filters_in_per_block + filter_in_b]);
+		df_filters_shared[filter_out_b * POSITIONS_PER_BLOCK * FILTERS_IN_PER_BLOCK +
+				  pos_b * FILTERS_IN_PER_BLOCK + filter_in_b]);
     {% else %}
     assert(0); // Doubles are not supported
     {% endif %}
@@ -733,10 +734,7 @@ extern "C"
 					 const idx_t input_height,
 					 const idx_t filter_width,
 					 const idx_t n_filters_in,
-					 const idx_t n_filters_out,
-					 const idx_t filters_in_per_block,
-					 const idx_t positions_per_block,
-					 const idx_t filters_out_per_block) {
+					 const idx_t n_filters_out) {
 
     /*
      * Compute the gradient of the 1D convolution layer with respect to the input.
@@ -795,20 +793,20 @@ extern "C"
     const idx_t elements_per_block = BDY; // Number of df_output elements per block
 
     // Indexes wrt to block
-    const idx_t filter_in_b = CUBE_IDX_1(TX, filters_in_per_block, positions_per_block);
-    const idx_t pos_b = CUBE_IDX_2(TX, filters_in_per_block, positions_per_block);
-    const idx_t filter_out_b = CUBE_IDX_3(TX, filters_in_per_block, positions_per_block);
+    const idx_t filter_in_b = CUBE_IDX_1(TX, FILTERS_IN_PER_BLOCK, POSITIONS_PER_BLOCK);
+    const idx_t pos_b = CUBE_IDX_2(TX, FILTERS_IN_PER_BLOCK, POSITIONS_PER_BLOCK);
+    const idx_t filter_out_b = CUBE_IDX_3(TX, FILTERS_IN_PER_BLOCK, POSITIONS_PER_BLOCK);
 
     // Number of blocks in each dimension
-    const idx_t gd_filters_in = CEIL_DIV(n_filters_in, filters_in_per_block);
-    const idx_t gd_pos = CEIL_DIV(filter_width, positions_per_block);
-    const idx_t gd_filters_out = CEIL_DIV(n_filters_out, filters_out_per_block);
+    const idx_t gd_filters_in = CEIL_DIV(n_filters_in, FILTERS_IN_PER_BLOCK);
+    const idx_t gd_pos = CEIL_DIV(filter_width, POSITIONS_PER_BLOCK);
+    const idx_t gd_filters_out = CEIL_DIV(n_filters_out, FILTERS_OUT_PER_BLOCK);
 
     // filter_idx of first thread in block
-    const idx_t filter_in_origin = CUBE_IDX_1(BX, gd_filters_in, gd_pos) * filters_in_per_block;
-    const idx_t pos_origin = CUBE_IDX_2(BX, gd_filters_in, gd_pos) * positions_per_block;
+    const idx_t filter_in_origin = CUBE_IDX_1(BX, gd_filters_in, gd_pos) * FILTERS_IN_PER_BLOCK;
+    const idx_t pos_origin = CUBE_IDX_2(BX, gd_filters_in, gd_pos) * POSITIONS_PER_BLOCK;
     const idx_t filter_out_origin = (CUBE_IDX_3(BX, gd_filters_in, gd_pos) % gd_filters_out) *
-      filters_out_per_block;
+      FILTERS_OUT_PER_BLOCK;
 
     // Global indexes
     const idx_t filter_in_idx = filter_in_origin + filter_in_b;
@@ -818,7 +816,7 @@ extern "C"
     // Setup shared memory
     __shared__ extern data_t df_output_shared[];
     data_t* filters_shared = df_output_shared + elements_per_block * 
-      filters_out_per_block;
+      FILTERS_OUT_PER_BLOCK;
     data_t* df_input_shared = filters_shared + BDX;
 
     // Load filters into shared memory
@@ -831,8 +829,8 @@ extern "C"
     __syncthreads();
 
     filter_element = 
-      filters_shared[filter_out_b * positions_per_block * filters_in_per_block +
-		     pos_b * filters_in_per_block + filter_in_b];
+      filters_shared[filter_out_b * POSITIONS_PER_BLOCK * FILTERS_IN_PER_BLOCK +
+		     pos_b * FILTERS_IN_PER_BLOCK + filter_in_b];
 
     // Outer loop over input positions
     for (idx_t output_idx = TY + BY * BDY;
@@ -849,23 +847,23 @@ extern "C"
 
       // Zero df_input_shared
       for (shared_idx = LIN_THREAD_IDX;
-	   shared_idx < (n_input_elements + positions_per_block - 1) *
-	     filters_in_per_block;
+	   shared_idx < (n_input_elements + POSITIONS_PER_BLOCK - 1) *
+	     FILTERS_IN_PER_BLOCK;
 	   shared_idx += LIN_BLOCK_DIM)
 	df_input_shared[shared_idx] = 0;
       
       // Load df_output into shared memory
       for (shared_idx = LIN_THREAD_IDX;
-	   shared_idx < elements_per_block * filters_out_per_block;
+	   shared_idx < elements_per_block * FILTERS_OUT_PER_BLOCK;
 	   shared_idx += LIN_BLOCK_DIM) {
 	
 	row_shared = ROW(block_origin_output + 
-			 shared_idx / filters_out_per_block,
+			 shared_idx / FILTERS_OUT_PER_BLOCK,
 			 output_width);
 	col_shared = COLUMN(block_origin_output +
-			    shared_idx / filters_out_per_block,
+			    shared_idx / FILTERS_OUT_PER_BLOCK,
 			    output_width);
-	filter_idx = filter_out_origin + (shared_idx % filters_out_per_block);
+	filter_idx = filter_out_origin + (shared_idx % FILTERS_OUT_PER_BLOCK);
 	
 	n = row_shared * output_width * n_filters_out +
 	  col_shared * n_filters_out + filter_idx;
@@ -881,12 +879,12 @@ extern "C"
 	  filter_out_idx < n_filters_out) {
 
 	n = (output_idx - block_origin_output) * 
-	  filters_out_per_block + filter_out_b;
+	  FILTERS_OUT_PER_BLOCK + filter_out_b;
 	
 	grad_val = df_output_shared[n] * filter_element;
 
 	m = (OUTPUT_TO_INPUT_IDX(output_idx, input_width, output_width) -
-	     block_origin_input + pos_b) * filters_in_per_block + filter_in_b;
+	     block_origin_input + pos_b) * FILTERS_IN_PER_BLOCK + filter_in_b;
 
 	atomicAdd(df_input_shared + m, grad_val);
       }
@@ -894,12 +892,12 @@ extern "C"
 
       // Add block to global memory
       for (shared_idx = LIN_THREAD_IDX;
-	   shared_idx < (n_input_elements + positions_per_block - 1) * 
-	     filters_in_per_block;
+	   shared_idx < (n_input_elements + POSITIONS_PER_BLOCK - 1) * 
+	     FILTERS_IN_PER_BLOCK;
 	   shared_idx += LIN_BLOCK_DIM) {
 
-	n = shared_idx / filters_in_per_block;
-	m = shared_idx % filters_in_per_block;
+	n = shared_idx / FILTERS_IN_PER_BLOCK;
+	m = shared_idx % FILTERS_IN_PER_BLOCK;
 	
 	input_idx = (block_origin_input + pos_origin + n) * n_filters_in +
 	  filter_in_origin + m;

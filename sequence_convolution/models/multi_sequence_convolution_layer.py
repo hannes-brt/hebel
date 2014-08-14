@@ -80,7 +80,7 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
                                     layer.get('b'),
                                     layer.get('l1_penalty_weight', l1_penalty_weight),
                                     layer.get('l2_penalty_weight', l2_penalty_weight),
-                                    layer.get('padding') or padding
+                                    layer.get('padding', padding)
                                 )
                             else:
                                 master_layer = columns[layer['slaved']].hidden_layers[i_layer]

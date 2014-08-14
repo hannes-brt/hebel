@@ -59,6 +59,25 @@ class Convolution1DAndPoolLayer(HiddenLayer):
             raise ValueError("Unknown pooling op '%s'" % pooling_op)
         self.pooling_op = pooling_op
 
+    @property
+    def l1_penalty(self):
+        return self.conv_layer.l1_penalty
+
+    @property
+    def l2_penalty(self):
+        return self.conv_layer.l2_penalty
+
+    @property
+    def parameters(self):
+        return self.conv_layer.parameters
+
+    @parameters.setter
+    def parameters(self, value):
+        self.conv_layer.parameters = value
+
+    def update_parameters(self, values, stream=None):
+        self.conv_layer.update_parameters(values, stream)
+
     def __getattr__(self, name):
         if name in self.conv_layer_attr:
             return self.conv_layer.__getattribute__(name)

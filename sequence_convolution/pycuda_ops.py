@@ -38,8 +38,16 @@ N_LETTERS = 4
 _src_dir = os.path.join(sequence_conv_root, 'src')
 _code = Template(open(os.path.join(_src_dir, 'convolution_kernels.cu')).read())
 
+filters_in_per_block = 4 # min(4, n_filters_in)
+positions_per_block = 2 # min(2, filter_width)
+filters_out_per_block = 4 # min(4, n_filters_out)
+filters_per_iter = 4
 
-_source_modules = {dtype: SourceModule(_code.render(dtype=dtype, dtype_idx=dtype_idx),
+_source_modules = {dtype: SourceModule(_code.render(dtype=dtype, dtype_idx=dtype_idx,
+                                                    filters_in_per_block=filters_in_per_block,
+                                                    positions_per_block=positions_per_block,
+                                                    filters_out_per_block=filters_out_per_block,
+                                                    filters_per_iter=filters_per_iter),
                                        include_dirs=[_src_dir], no_extern_c=True)
                    for dtype, dtype_idx in (('float', 'unsigned int'),
                                             # ('double', 'unsigned long'))}
@@ -63,9 +71,9 @@ _dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
 # Tell PyCUDA about the types of kernel arguments
 _kernels['float']['convolve_dna_sequence_kernel'].prepare('PPPPIIII')
 _kernels['float']['convolve_dna_sequence_gradient_kernel'].prepare('PPPIIII')
-_kernels['float']['convolve_1d_kernel'].prepare('PPPPIIIIII')
-_kernels['float']['convolve_1d_grad_filters_kernel'].prepare('PPPIIIIIIII')
-_kernels['float']['convolve_1d_grad_input_kernel'].prepare('PPPIIIIIIII')
+_kernels['float']['convolve_1d_kernel'].prepare('PPPPIIIII')
+_kernels['float']['convolve_1d_grad_filters_kernel'].prepare('PPPIIIII')
+_kernels['float']['convolve_1d_grad_input_kernel'].prepare('PPPIIIII')
 _kernels['float']['gradient_reduce_kernel'].prepare('PPII')
 _kernels['float']['max_pool_kernel'].prepare('PPPIIIIP')
 _kernels['float']['max_pool_gradient_kernel'].prepare('PPPIIII')
@@ -160,18 +168,17 @@ def convolve_1d(mat, filters, bias, target=None, stream=None):
     
     block = (min(4, n_filters_out),
              min(10 * MULTIPROCESSOR_COUNT, output_width), 1)
-    filters_per_iter = n_filters_in
     grid = grid_func(block)
     shared = shared_func(block, filters_per_iter)
 
     while shared > MAX_SHARED_MEMORY_PER_BLOCK:
-        if filters_per_iter > 4:
-            filters_per_iter /= 2
+        # if filters_per_iter > 4:
+        #     filters_per_iter /= 2
+        # else:
+        if block[0] > 1:
+            block = (block[0] - 1, block[1], 1)
         else:
-            if block[0] > 1:
-                block = (block[0] - 1, block[1], 1)
-            else:
-                block = (block[0], block[1] / 2, 1)
+            block = (block[0], block[1] / 2, 1)
         grid = grid_func(block)
         shared = shared_func(block, filters_per_iter)
 
@@ -197,7 +204,6 @@ def convolve_1d(mat, filters, bias, target=None, stream=None):
         dtype_idx(filter_width),
         dtype_idx(n_filters_in),
         dtype_idx(n_filters_out),
-        dtype_idx(filters_per_iter),
         shared_size=shared)
 
     return target
@@ -294,9 +300,9 @@ def convolve_1d_gradient_filters(input_data, df_output, filter_width,
     assert target.dtype == dtype
     assert target.shape == (n_filters_out, filter_width, n_filters_in)
 
-    filters_in_per_block = min(4, n_filters_in)
-    positions_per_block = min(1, filter_width)
-    filters_out_per_block = min(4, n_filters_out)
+    # filters_in_per_block = 4 # min(4, n_filters_in)
+    # positions_per_block = 1 # min(1, filter_width)
+    # filters_out_per_block = 4 # min(4, n_filters_out)
     elements_per_block = min(height * output_width, 8)
 
     n_blocks = ceil_div(n_filters_in, filters_in_per_block) * \
@@ -324,9 +330,6 @@ def convolve_1d_gradient_filters(input_data, df_output, filter_width,
         np.uint32(filter_width),
         np.uint32(n_filters_in),
         np.uint32(n_filters_out),
-        np.uint32(filters_in_per_block),
-        np.uint32(positions_per_block),
-        np.uint32(filters_out_per_block),
         shared_size=shared
     )
 
@@ -357,9 +360,6 @@ def convolve_1d_gradient_input(df_output, filters,
     assert target.dtype == dtype
     assert target.shape == (height, input_width, n_filters_in)
 
-    filters_in_per_block = min(4, n_filters_in)
-    positions_per_block = min(2, filter_width)
-    filters_out_per_block = min(4, n_filters_out)
     elements_per_block = min(height * output_width, 4)
 
     n_blocks = ceil_div(n_filters_in, filters_in_per_block) * \
@@ -389,9 +389,6 @@ def convolve_1d_gradient_input(df_output, filters,
         np.uint32(filter_width),
         np.uint32(n_filters_in),
         np.uint32(n_filters_out),
-        np.uint32(filters_in_per_block),
-        np.uint32(positions_per_block),
-        np.uint32(filters_out_per_block),
         shared_size=shared,
     )
 

@@ -60,4 +60,3 @@ typedef enum {
 #define LIN_BLOCK_IDX (BZ * GDY * GDX + BY * GDX + BX)
 #define LIN_BLOCK_DIM (BDZ * BDX * BDY)
 #define LIN_GRID_DIM (GDZ * GDY * GDX)
-

@@ -125,7 +125,6 @@ class Convolution1DLayer(HiddenLayer):
 
 class SlavedConvolution1DLayer(Convolution1DLayer):
     is_master_layer = False
-    n_parameters = 0
 
     def __init__(self, master_layer, n_in=None, padding=None):
 
