@@ -196,9 +196,23 @@ def vector_normalize(mat, max_vec_norm=1.):
 def extract_columns(mat, start=0, stop=None, target=None):
     dtype = mat.dtype
     itemsize = np.dtype(dtype).itemsize
-    N, M = mat.shape
-    if stop is None:
-        stop = M
+
+    input_3d = False
+    if len(mat.shape) == 2:
+        N, M = mat.shape
+        if stop is None:
+            stop = M
+    elif len(mat.shape) == 3:
+        input_3d = True
+        N, M, Z = mat.shape
+        if stop is None:
+            stop = M
+        start = start * Z
+        stop = stop * Z
+        M = M * Z
+        mat = mat.reshape((N, M))
+    else:
+        raise ValueError("mat must have two or three dimensions")
     m = stop - start
 
     assert mat.flags.c_contiguous
@@ -216,6 +230,10 @@ def extract_columns(mat, start=0, stop=None, target=None):
     copy.dst_pitch = copy.width_in_bytes = m * itemsize
     copy.height = N
     copy(aligned=True)
+
+    if input_3d:
+        assert not m % Z
+        target = target.reshape((N, m // Z, Z))
 
     return target
 
