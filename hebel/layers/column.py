@@ -18,6 +18,9 @@ from . import HiddenLayer
 from itertools import chain
 
 class Column(object):
+    l1_penalty_weight = True
+    l2_penalty_weight = True
+
     def __init__(self, hidden_layers):
         assert all([isinstance(hl, HiddenLayer) for hl in hidden_layers])
         self.hidden_layers = hidden_layers
@@ -36,7 +39,7 @@ class Column(object):
 
     @property
     def parameters(self):
-        return list(chain.from_iterable(hl.parameters for hl in self.parameters))
+        return list(chain.from_iterable(hl.parameters for hl in self.hidden_layers))
 
     @parameters.setter
     def parameters(self, new_parameters):
