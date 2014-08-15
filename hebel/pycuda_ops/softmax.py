@@ -45,7 +45,7 @@ def cross_entropy(x, y):
     loss = y * cumath.log(x + eps)
     nan_to_zeros(loss, loss)
     loss = -gpuarray.sum(loss)
-    return float(loss.get())
+    return loss
 
 def cross_entropy_logistic(x, y):
     loss = y * cumath.log(x + eps) + (1. - y) * cumath.log(1. - x + eps)
