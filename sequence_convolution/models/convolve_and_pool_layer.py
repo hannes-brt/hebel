@@ -24,8 +24,8 @@ class Convolution1DAndPoolLayer(HiddenLayer):
     is_master_layer = True
 
     conv_layer_attr = (
-        'n_in', 'filter_width', 'n_filters_in', 'n_filters_out',
-        'activation_function', 'weights_scale', 'W', 'b',
+        'n_in', 'filter_width', 'n_filters_in', 'n_filters',
+        'activation_function', 'weights_scale',
         'l1_penalty_weight', 'l2_penalty_weight', 'padding',
         'n_parameters', 'n_in_padded',
         'lr_multiplier', 'halo', 'l1_penalty', 'l2_penalty')
@@ -33,7 +33,7 @@ class Convolution1DAndPoolLayer(HiddenLayer):
                           'pool_size', 'dropout')
 
     def __init__(self, n_in, filter_width,
-                 n_filters_in, n_filters_out,
+                 n_filters_in, n_filters,
                  pool_size,
                  activation_function='relu',
                  pooling_op='max', dropout=True,
@@ -41,19 +41,19 @@ class Convolution1DAndPoolLayer(HiddenLayer):
                  W=None, b=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  padding=(True, True)):
-        self.conv_layer = Convolution1DLayer(n_in, filter_width, n_filters_in, n_filters_out,
+        self.conv_layer = Convolution1DLayer(n_in, filter_width, n_filters_in, n_filters,
                                              activation_function, weights_scale,
                                              W, b, l1_penalty_weight, l2_penalty_weight,
                                              padding)
 
         if pooling_op == 'max':
-            self.pooling_layer = MaxPoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters_out,
+            self.pooling_layer = MaxPoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
                                                  dropout)
         elif pooling_op == 'sum':
-            self.pooling_layer = SumPoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters_out,
+            self.pooling_layer = SumPoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
                                                  dropout)
         elif pooling_op == 'avg':
-            self.pooling_layer = AveragePoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters_out,
+            self.pooling_layer = AveragePoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
                                                      dropout)
         else:
             raise ValueError("Unknown pooling op '%s'" % pooling_op)
@@ -78,6 +78,14 @@ class Convolution1DAndPoolLayer(HiddenLayer):
     def update_parameters(self, values, stream=None):
         self.conv_layer.update_parameters(values, stream)
 
+    @property
+    def lr_multiplier(self):
+        return self.conv_layer.lr_multiplier
+
+    @lr_multiplier.setter
+    def lr_multiplier(self, value):
+        self.conv_layer.lr_multiplier = value
+
     def __getattr__(self, name):
         if name in self.conv_layer_attr:
             return self.conv_layer.__getattribute__(name)
@@ -93,6 +101,22 @@ class Convolution1DAndPoolLayer(HiddenLayer):
             self.pooling_layer.__setattr__(key, value)
         else:
             self.__dict__[key] = value
+
+    @property
+    def W(self):
+        return self.conv_layer.W
+
+    @W.setter
+    def W(self, value):
+        self.conv_layer.W = value
+
+    @property
+    def b(self):
+        return self.conv_layer.b
+
+    @b.setter
+    def b(self, value):
+        self.conv_layer.b = value
 
     def feed_forward(self, input_data, prediction=False):
         filtermap, input_padded_conv = self.conv_layer.feed_forward(input_data, prediction)
@@ -118,6 +142,10 @@ class SlavedConvolution1DAndPoolLayer(Convolution1DAndPoolLayer):
         self.conv_layer = SlavedConvolution1DLayer(master_layer.conv_layer, n_in, padding)
         self.pooling_layer = master_layer.pooling_layer
         self.pooling_op = master_layer.pooling_op
+
+    @property
+    def master_layer(self):
+        return self.conv_layer.master_layer
 
 
 class SequenceConvolutionAndPoolLayer(Convolution1DAndPoolLayer):
@@ -159,8 +187,10 @@ class SequenceConvolutionAndPoolLayer(Convolution1DAndPoolLayer):
 
 class SlavedSequenceConvolutionAndPoolLayer(SequenceConvolutionAndPoolLayer):
     is_master_layer = False
+    n_parameters = 0
 
     def __init__(self, master_layer, n_in=None, padding=None):
+        self.master_layer = master_layer
         self.conv_layer = SlavedSequenceConvolutionLayer(master_layer.conv_layer, n_in, padding)
         self.pooling_layer = master_layer.pooling_layer
         self.pooling_op = master_layer.pooling_op

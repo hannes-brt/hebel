@@ -14,7 +14,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from hebel.layers import MultiColumnLayer, Column, HiddenLayer
+from hebel.layers import MultiColumnLayer, Column, HiddenLayer, FlatteningLayer
 from . import SequenceConvolutionAndPoolLayer, SlavedSequenceConvolutionAndPoolLayer, \
     Convolution1DAndPoolLayer, SlavedConvolution1DAndPoolLayer
 
@@ -43,12 +43,16 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
             elif isinstance(column, dict):
                 # If the column is given as a dict, then slave the entire column
                 column_obj = []
-                for i_layer, layer in enumerate(columns[column['slaved']].hidden_layers):
+                hidden_layers = columns[column['slaved']].hidden_layers
+                for i_layer, layer in enumerate(hidden_layers):
                     if i_layer == 0:
                         # First layer is a sequence convolution
                         layer_obj = SlavedSequenceConvolutionAndPoolLayer(
                             layer, column.get('n_in'),
                             column.get('padding', padding))
+                    elif i_layer == len(hidden_layers) - 1:
+                        # Last layer is FlatteningLayer
+                        layer_obj = FlatteningLayer(layer.n_in, layer.n_filters)
                     else:
                         # Other layers are 1D convolutions
                         layer_obj = SlavedConvolution1DAndPoolLayer(
@@ -117,6 +121,11 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
                                 )
 
                         column_obj.append(layer_obj)
+
+                column_obj.append(
+                    FlatteningLayer(column_obj[-1].n_units_per_filter,
+                                    column_obj[-1].n_filters)
+                )
                 column_obj = Column(column_obj)
                 columns.append(column_obj)
             else:

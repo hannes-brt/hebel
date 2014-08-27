@@ -69,7 +69,7 @@ class SequenceConvolutionLayer(HiddenLayer):
             input_padded = pad_array(input_data,
                                      left=self.halo if self.padding[0] else 0,
                                      right=self.halo if self.padding[1] else 0,
-                                     val='N')
+                                     val='X')
         else:
             input_padded = input_data
             
@@ -85,12 +85,12 @@ class SequenceConvolutionLayer(HiddenLayer):
             filtermap, input_padded = cache
 
         h, w, f = filtermap.shape
-        filtermap = filtermap.reshape(h, w * f)
-        df_output = df_output.reshape(h, w * f)
+        # filtermap = filtermap.reshape(h, w * f)
+        # df_output = df_output.reshape(h, w * f)
         df_filtermap = self.df(filtermap)
         delta = df_filtermap * df_output
-        df_b = pycuda_ops.sum_delta(delta, self.n_filters)
-        delta = delta.reshape(h, w, f)
+        # delta = delta.reshape(h, w, f)
+        df_b = pycuda_ops.sum_delta(delta)
         df_W = pycuda_ops.convolve_sequence_gradient(
             input_padded, delta,
             self.filter_width, self.n_filters)
@@ -108,21 +108,15 @@ class SequenceConvolutionLayer(HiddenLayer):
 
 class SlavedSequenceConvolutionLayer(SequenceConvolutionLayer):
     is_master_layer = False
+    n_parameters = 0
+    lr_multiplier = []
 
-    def __init__(self, master_layer, n_in=None, padding=None):
+    def __init__(self, master_layer, n_in=None, padding=None,
+                 l1_penalty_weight=None, l2_penalty_weight=None):
 
         self.n_in = master_layer.n_in if n_in is None else n_in
         self.padding = master_layer.padding if padding is None else padding
-        self.n_filters = master_layer.n_filters
-        self.filter_width = master_layer.filter_width
-        self.activation_function = master_layer.activation_function
-        self.l1_penalty_weight = master_layer.l1_penalty_weight
-        self.l2_penalty_weight = master_layer.l2_penalty_weight
-        self.lr_multiplier = master_layer.lr_multiplier
         self.master_layer = master_layer
-
-        self.W = master_layer.W
-        self.b = master_layer.b
 
         self.f = master_layer.f
         self.df = master_layer.df
@@ -132,3 +126,44 @@ class SlavedSequenceConvolutionLayer(SequenceConvolutionLayer):
         self.n_units_per_filter = self.n_in_padded - self.halo
         self.n_units = self.n_units_per_filter * self.n_filters
 
+        self.l1_penalty_weight = master_layer.l1_penalty_weight \
+            if l1_penalty_weight is None else l1_penalty_weight
+
+        self.l2_penalty_weight = master_layer.l2_penalty_weight \
+            if l2_penalty_weight is None else l2_penalty_weight
+
+    @property
+    def parameters(self):
+        return tuple()
+
+    @parameters.setter
+    def parameters(self, value):
+        pass
+
+    @property
+    def W(self):
+        return self.master_layer.W
+
+    @W.setter
+    def W(self, value):
+        raise AttributeError('Setting the weights is not allowed in a slaved layer.')
+
+    @property
+    def b(self):
+        return self.master_layer.b
+
+    @b.setter
+    def b(self):
+        raise AttributeError('Setting the biases is not allowed in a slaved layer.')
+
+    @property
+    def n_filters(self):
+        return self.master_layer.n_filters
+
+    @property
+    def filter_width(self):
+        return self.master_layer.filter_width
+
+    @property
+    def activation_function(self):
+        return self.master_layer.activation_function

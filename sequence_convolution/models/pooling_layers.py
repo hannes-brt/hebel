@@ -114,7 +114,7 @@ class SumPoolingLayer(MaxPoolingLayer):
         padding_width = padded_width - self.n_in
         new_shape = (input_data.shape[0], padded_width, input_data.shape[2])
         input_padded = pad_array(input_data, right=padding_width * input_data.shape[2],
-                                 new_shape=new_shape, val=np.finfo(np.float32).min)
+                                 new_shape=new_shape, val=0.)
 
         pooled = pycuda_ops.sum_pool(input_padded, self.pool_size)
 
@@ -146,12 +146,12 @@ class SumPoolingLayer(MaxPoolingLayer):
 
 class AveragePoolingLayer(SumPoolingLayer):
     def feed_forward(self, input_data, prediction=False):
-            ff = super(AveragePoolingLayer, self)\
-                .feed_forward(input_data, prediction)
-            pooled = ff[0]
-            pooled /= self.pool_size
-            ff = (pooled,) + ff[1:]
-            return ff
+        ff = super(AveragePoolingLayer, self)\
+            .feed_forward(input_data, prediction)
+        pooled = ff[0]
+        pooled /= self.pool_size
+        ff = (pooled,) + ff[1:]
+        return ff
 
     def backprop(self, input_data, df_output, cache=None):
         _, df_input = super(AveragePoolingLayer, self)\

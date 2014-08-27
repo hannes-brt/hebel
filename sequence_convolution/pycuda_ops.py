@@ -608,13 +608,13 @@ def sum_pool_gradient(mat, df_output,
 
     return target
 
-def sum_delta(delta, n_filters, cache_one_vector=True):
+def sum_delta(delta, cache_one_vector=True):
     assert delta.flags.c_contiguous
-    assert not delta.shape[1] % n_filters
-    width = delta.shape[1] / n_filters
-    target_tmp = matrix_sum_out_axis(delta, 0, cache_one_vector)
-    delta_r = target_tmp.reshape((n_filters, width))
-    target_sum = matrix_sum_out_axis(delta_r, 1, cache_one_vector).ravel()
+    height, width, n_filters = delta.shape
+    target_tmp = sum_pool(delta, width)
+    assert target_tmp.shape[1] == 1
+    target_tmp = target_tmp.reshape((height, n_filters))
+    target_sum = matrix_sum_out_axis(target_tmp, 0, cache_one_vector)
     return target_sum
 
 
