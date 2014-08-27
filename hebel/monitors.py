@@ -190,7 +190,7 @@ class SimpleProgressMonitor(object):
         # Print logs
         self.print_error(epoch, train_error, validation_error, new_best)
 
-        if epoch_t is not None:
+        if epoch_t is not None and epoch > 0:
             self.avg_epoch_t = ((epoch - 1) * \
                                 self.avg_epoch_t + epoch_t) / epoch \
                                 if self.avg_epoch_t is not None else epoch_t
