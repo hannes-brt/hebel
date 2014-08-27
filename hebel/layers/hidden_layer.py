@@ -99,6 +99,7 @@ class HiddenLayer(object):
                                    lr_multiplier=1.)
 
     """
+    is_master_layer = True
     n_parameters = 2
     W = None
     b = None
