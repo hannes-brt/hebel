@@ -125,21 +125,21 @@ def init(device_id=None, random_seed=None):
     if not is_initialized:
         is_initialized = True
 
-    global context
-    context.init_context(device_id)
+        global context
+        context.init_context(device_id)
 
-    from pycuda import gpuarray, driver, curandom
+        from pycuda import gpuarray, driver, curandom
 
-    # Initialize memory pool
-    global memory_pool
-    memory_pool.init()
+        # Initialize memory pool
+        global memory_pool
+        memory_pool.init()
 
-    # Initialize PRG
-    sampler.set_seed(random_seed)
-        
-    # Initialize pycuda_ops
-    from hebel import pycuda_ops
-    pycuda_ops.init()
+        # Initialize PRG
+        sampler.set_seed(random_seed)
+
+        # Initialize pycuda_ops
+        from hebel import pycuda_ops
+        pycuda_ops.init()
 
 def _finish_up():
     global is_initialized
