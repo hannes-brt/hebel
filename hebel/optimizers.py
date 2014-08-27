@@ -24,6 +24,8 @@ import time, cPickle, os, inspect
 from .pycuda_ops.matrix import vector_normalize
 from .schedulers import constant_scheduler
 from .monitors import SimpleProgressMonitor
+from . import memory_pool
+from pycuda._driver import MemoryError
 
 
 class EarlyStoppingModule(object):
@@ -34,7 +36,17 @@ class EarlyStoppingModule(object):
     def update(self, epoch, validation_loss):
         if validation_loss < self.best_validation_loss:
             self.best_validation_loss = validation_loss
-            self.best_params = [p.copy() for p in self.model.parameters]
+            try:
+                del self.best_params
+            except AttributeError:
+                pass
+
+            try:
+                self.best_params = [p.copy() for p in self.model.parameters]
+            except MemoryError:
+                memory_pool.free_held()
+                self.best_params = [p.copy() for p in self.model.parameters]
+
             assert self.best_params[0] is not self.model.parameters[0]
             self.best_epoch = epoch
             return True
@@ -100,8 +112,6 @@ class SGD(object):
 
         self.early_stopping_module = EarlyStoppingModule(self.model) \
                                      if early_stopping else None
-
-        self.model.preallocate_temp_objects(self.train_data)
 
     def run(self, iterations=200, validation_interval=5,
             yaml_config=None,
