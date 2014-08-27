@@ -16,6 +16,7 @@
 
 import numpy as np
 from hashlib import md5
+from pycuda import gpuarray
 from ..layers import HiddenLayer, TopLayer, SoftmaxLayer, LogisticLayer, InputDropout
 from .model import Model
 
@@ -174,21 +175,12 @@ class NeuralNet(Model):
         self.n_in = self.hidden_layers[0].n_in if self.hidden_layers else n_in
         self.n_out = self.top_layer.n_out 
 
-        self.n_parameters = sum(hl.n_parameters
-                                for hl in self.hidden_layers) + \
-                                    self.top_layer.n_parameters
+    @property
+    def n_parameters(self):
+        return sum(hl.n_parameters
+                   for hl in self.hidden_layers) + \
+            self.top_layer.n_parameters
 
-        self.lr_multiplier = [lr for hl in
-                              self.hidden_layers + [self.top_layer]
-                              for lr in hl.lr_multiplier]
-    
-    def preallocate_temp_objects(self, data_provider):
-        for hl in self.hidden_layers:
-            if hasattr(hl, 'preallocate_temp_objects'):
-                hl.preallocate_temp_objects(data_provider)
-        if hasattr(self.top_layer, 'preallocate_temp_objects'):
-            self.top_layer.preallocate_temp_objects(data_provider)
-    
     @property
     def parameters(self):
         """ A property that returns all of the model's parameters. """
@@ -220,6 +212,23 @@ class NeuralNet(Model):
             i += hl.n_parameters
 
         self.top_layer.parameters = value[-self.top_layer.n_parameters:]
+
+    @property
+    def lr_multiplier(self):
+        return [lr for hl in
+                self.hidden_layers + [self.top_layer]
+                for lr in hl.lr_multiplier]
+
+    @lr_multiplier.setter
+    def lr_multiplier(self, value):
+        assert len(value) == self.n_parameters
+
+        i = 0
+        for hl in self.hidden_layers:
+            hl.lr_multiplier = value[i:i+hl.n_parameters]
+            i += hl.n_parameters
+
+        self.top_layer.lr_multiplier = value[i:i+self.top_layer.n_parameters]
 
     def update_parameters(self, value):
         assert len(value) == self.n_parameters
@@ -436,3 +445,12 @@ class NeuralNet(Model):
         if return_cache:
             return activations, hidden_cache
         return activations
+
+    def calibrate_learning_rate(self, data_provider):
+        lr_multiplier = []
+        for data, targets in data_provider:
+            _, gradients = self.training_pass(data, targets)
+            lr_multiplier.append([float((grad.size / gpuarray.sum(grad.__abs__())).get()) for grad in gradients])
+        lr_multiplier = np.array(lr_multiplier).mean(0)
+        lr_multiplier /= lr_multiplier.max()
+        self.lr_multiplier = lr_multiplier.tolist()
