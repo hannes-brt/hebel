@@ -2,6 +2,7 @@ from .utils.math import ceil_div
 import numpy as np
 import os
 from hebel.optimizers import SGD
+from hebel import memory_pool
 
 class CrossValidation(object):
     def __init__(self, config, data):
@@ -32,6 +33,7 @@ class CrossValidation(object):
         np.random.seed(config.get('numpy_seed'))
 
     def run_fold(self, k):
+        memory_pool.free_held()
         fold_range = (k*self.fold_size, min((k+1)*self.fold_size, self.n_data))
         test_idx = np.arange(fold_range[0], fold_range[1], dtype=np.int32)
 
@@ -55,6 +57,7 @@ class CrossValidation(object):
                                           self.config.get('batch_size_test'))
 
         model = self.make_model()
+        model.calibrate_learning_rate(dp_train)
         self.models_cv.append(model)
 
         progress_monitor = self.make_progress_monitor(k)
@@ -84,6 +87,9 @@ class CrossValidation(object):
         
         self.train_error['training_error'].append(progress_monitor.train_error)
         self.train_error['validation_error'].append(progress_monitor.validation_error)
+
+
+        del optimizer, dp_train, dp_validate, dp_test
 
     def run(self):
         for k in range(self.n_folds):
