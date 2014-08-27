@@ -66,6 +66,14 @@ class Column(object):
     def lr_multiplier(self):
         return tuple(chain.from_iterable((hl.lr_multiplier for hl in self.hidden_layers)))
 
+    @lr_multiplier.setter
+    def lr_multiplier(self, value):
+        assert self.n_parameters == len(value)
+        i = 0
+        for hl in self.hidden_layers:
+            hl.lr_multiplier = value[i:i+hl.n_parameters]
+            i += hl.n_parameters
+
     def feed_forward(self, input_data, prediction=False):
         cache = []
         activations = [input_data]

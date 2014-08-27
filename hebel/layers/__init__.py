@@ -24,3 +24,4 @@ from .linear_regression_layer import LinearRegressionLayer
 from .input_dropout import InputDropout
 from .column import Column
 from .multi_column_layer import MultiColumnLayer
+from .flattening_layer import FlatteningLayer
