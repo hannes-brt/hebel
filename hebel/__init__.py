@@ -61,7 +61,7 @@ class _Context(object):
             context = make_default_context()
             self._context = context
         else:
-            self._context = driver.Device(device_id).make_context()
+            self._context = cuda.Device(device_id).make_context()
             self._context.push()
 
     def __getattribute__(self, name):
