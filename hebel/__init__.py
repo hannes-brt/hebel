@@ -61,13 +61,14 @@ class _Context(object):
             context = make_default_context()
             self._context = context
         else:
-            self._context = cuda.Device(device_id).make_context()
-            self._context.push()
+            context = cuda.Device(device_id).make_context()
+            context.push()
+            self._context = context
 
     def __getattribute__(self, name):
-        if name == 'init_context':
+        if name in 'init_context':
             return object.__getattribute__(self, name)
-        
+
         if object.__getattribute__(self, '_context') is None:
             raise RuntimeError("Context hasn't been initialized yet")
         
