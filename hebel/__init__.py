@@ -62,7 +62,6 @@ class _Context(object):
             self._context = context
         else:
             context = cuda.Device(device_id).make_context()
-            context.push()
             self._context = context
 
     def __getattribute__(self, name):
@@ -136,11 +135,13 @@ def init(device_id=None, random_seed=None):
         memory_pool.init()
 
         # Initialize PRG
+        global sampler
         sampler.set_seed(random_seed)
 
         # Initialize pycuda_ops
         from hebel import pycuda_ops
         pycuda_ops.init()
+
 
 def _finish_up():
     global is_initialized
@@ -151,6 +152,7 @@ def _finish_up():
 
         from pycuda.tools import clear_context_caches
         clear_context_caches()
+        is_initialized = False
 
 import atexit
 atexit.register(_finish_up)
