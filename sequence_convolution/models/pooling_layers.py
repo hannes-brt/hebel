@@ -31,7 +31,7 @@ class MaxPoolingLayer(HiddenLayer):
                  l1_penalty_weight=0., l2_penalty_weight=0.):
 
         self.n_in = n_in
-        self.pool_size = pool_size
+        self.pool_size = pool_size if pool_size != 'global' else n_in
         self.n_filters = n_filters
 
         self.l1_penalty_weight = 0.
@@ -39,7 +39,7 @@ class MaxPoolingLayer(HiddenLayer):
 
         self.dropout = dropout
 
-        self.n_units_per_filter = self._compute_n_units(n_in, pool_size, n_filters)
+        self.n_units_per_filter = self._compute_n_units(self.n_in, self.pool_size, self.n_filters)
         self.n_units = self.n_units_per_filter * self.n_filters
 
     @staticmethod
