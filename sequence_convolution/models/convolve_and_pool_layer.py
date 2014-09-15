@@ -137,16 +137,13 @@ class Convolution1DAndPoolLayer(HiddenLayer):
 
 class SlavedConvolution1DAndPoolLayer(Convolution1DAndPoolLayer):
     is_master_layer = False
+    n_parameters = 0
 
     def __init__(self, master_layer, n_in, padding):
         self.conv_layer = SlavedConvolution1DLayer(master_layer.conv_layer, n_in, padding)
         self.pooling_layer = master_layer.pooling_layer
         self.pooling_op = master_layer.pooling_op
-
-    @property
-    def master_layer(self):
-        return self.conv_layer.master_layer
-
+        self.master_layer = master_layer
 
 class SequenceConvolutionAndPoolLayer(Convolution1DAndPoolLayer):
     conv_layer_attr = (

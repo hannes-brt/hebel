@@ -124,22 +124,16 @@ class Convolution1DLayer(HiddenLayer):
 
 class SlavedConvolution1DLayer(Convolution1DLayer):
     is_master_layer = False
+    n_parameters = 0
+    lr_multiplier = []
 
-    def __init__(self, master_layer, n_in=None, padding=None):
+    def __init__(self, master_layer, n_in=None, padding=None,
+                 l1_penalty_weight=0., l2_penalty_weight=0.):
 
         self.n_in = master_layer.n_in if n_in is None else n_in
         self.padding = master_layer.padding if padding is None else padding
         self.n_filters_in = master_layer.n_filters_in
-        self.n_filters = master_layer.n_filters
-        self.filter_width = master_layer.filter_width
-        self.activation_function = master_layer.activation_function
-        self.l1_penalty_weight = master_layer.l1_penalty_weight
-        self.l2_penalty_weight = master_layer.l2_penalty_weight
-        self.lr_multiplier = master_layer.lr_multiplier
         self.master_layer = master_layer
-
-        self.W = master_layer.W
-        self.b = master_layer.b
 
         self.f = master_layer.f
         self.df = master_layer.df
@@ -148,4 +142,46 @@ class SlavedConvolution1DLayer(Convolution1DLayer):
         self.n_in_padded = self.n_in + sum(self.padding) * self.halo
         self.n_units_per_filter = self.n_in_padded - self.halo
         self.n_units = self.n_units_per_filter * self.n_filters
+
+        self.l1_penalty_weight = master_layer.l1_penalty_weight \
+            if l1_penalty_weight is None else l1_penalty_weight
+
+        self.l2_penalty_weight = master_layer.l2_penalty_weight \
+            if l2_penalty_weight is None else l2_penalty_weight
+
+    @property
+    def parameters(self):
+        return tuple()
+
+    @parameters.setter
+    def parameters(self, value):
+        pass
+
+    @property
+    def W(self):
+        return self.master_layer.W
+
+    @W.setter
+    def W(self, value):
+        raise AttributeError('Setting the weights is not allowed in a slaved layer.')
+
+    @property
+    def b(self):
+        return self.master_layer.b
+
+    @b.setter
+    def b(self):
+        raise AttributeError('Setting the biases is not allowed in a slaved layer.')
+
+    @property
+    def n_filters(self):
+        return self.master_layer.n_filters
+
+    @property
+    def filter_width(self):
+        return self.master_layer.filter_width
+
+    @property
+    def activation_function(self):
+        return self.master_layer.activation_function
 
