@@ -75,7 +75,7 @@ class CrossValidation(object):
                         early_stopping=self.config.get('early_stopping', True))
 
         optimizer.run(self.config['epochs'],
-                      validation_interval=self.config.get('validation_interval'),
+                      validation_interval=self.config.get('validation_interval', 5),
                       yaml_config=self.config['yaml_config'])
 
         stats = self.get_stats(dp_train, dp_test, model)
