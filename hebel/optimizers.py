@@ -37,23 +37,24 @@ class EarlyStoppingModule(object):
         if validation_loss < self.best_validation_loss:
             self.best_validation_loss = validation_loss
             try:
-                del self.best_params
+                del self.best_model
             except AttributeError:
                 pass
 
             try:
-                self.best_params = [p.copy() for p in self.model.parameters]
+                self.best_model = cPickle.dumps(self.model)
             except MemoryError:
                 memory_pool.free_held()
-                self.best_params = [p.copy() for p in self.model.parameters]
+                self.best_model = cPickle.dumps(self.model)
 
-            assert self.best_params[0] is not self.model.parameters[0]
+            # assert self.best_model[0] is not self.model.parameters[0]
             self.best_epoch = epoch
             return True
         return False
 
     def finish(self):
-        self.model.parameters = self.best_params
+        # self.model.parameters = self.best_model
+        self.model = cPickle.loads(self.best_model)
         print "Optimization complete. " \
             "Best validation error of %.5g obtained in self.epoch %d" % \
             (self.best_validation_loss, self.best_epoch)
@@ -187,6 +188,7 @@ class SGD(object):
 
         if self.early_stopping_module is not None:
             self.early_stopping_module.finish()
+            self.model = self.early_stopping_module.model
 
         self.progress_monitor.finish_training()
 
