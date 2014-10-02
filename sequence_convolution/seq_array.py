@@ -21,6 +21,7 @@ from pycuda import gpuarray
 import random
 from hebel import memory_pool
 from hebel.data_providers import MultiTaskDataProvider
+from hebel.utils.math import ceil_div
 
 
 def encode_sequence(seq):
@@ -115,14 +116,15 @@ class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
         self.i = 0
 
         self.get_next_batch()
-        self.n_batches = self.N / self.batch_size
+        self.n_batches = ceil_div(self.N, self.batch_size)
     
     def _make_batches(self):
         pass
 
     def next(self):
-        if self.i >= self.n_batches:
+        if self.i >= self.N:
             self.i = 0
+            self.get_next_batch()
             raise StopIteration
         
         # self.table.read(self.i, self.i + self.batch_size)
@@ -135,22 +137,29 @@ class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
         sequences = self.sequences_next
         targets = self.targets_next
 
-        self.i += 1
+        self.i += self.batch_size
         self.get_next_batch()
 
+        assert sequences.shape[0] > 0
         return [sequences], targets
 
     def get_next_batch(self):
-        data = self.table.read(self.i, self.i + self.batch_size)
-        self.sequences_next = \
-            np.ndarray((self.batch_size, data['seq'].itemsize),
-                       '|S1', np.ascontiguousarray(data['seq']).data)
-        if self.trim:
-            self.sequences_next = np.copy(self.sequences_next[:, self.trim[0]:-self.trim[1]])
-        self.sequences_next = gpuarray.to_gpu_async(self.sequences_next, allocator=memory_pool.allocate)
-        self.targets_next = gpuarray.to_gpu_async(np.ascontiguousarray(data['label'], np.float32,
-                                                                       allocator=memory_pool.allocate)
-            .reshape((self.batch_size, 1)))
+        if self.i < self.N:
+            data = self.table.read(self.i, self.i + self.batch_size)
+            assert data.shape[0] > 0
+
+            self.sequences_next = \
+                np.ndarray((data.shape[0], data['seq'].itemsize),
+                           '|S1', np.ascontiguousarray(data['seq']).data)
+            if self.trim:
+                self.sequences_next = np.copy(self.sequences_next[:, self.trim[0]:-self.trim[1]])
+            self.sequences_next = gpuarray.to_gpu_async(
+                self.sequences_next, allocator=memory_pool.allocate)
+            self.targets_next = gpuarray.to_gpu_async(
+                np.ascontiguousarray(data['label'], np.float32)
+                .reshape((data.shape[0], 1)),
+                allocator=memory_pool.allocate
+            )
 
 
 def sample_sequence(length, n):
