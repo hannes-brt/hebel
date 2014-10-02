@@ -446,9 +446,10 @@ class NeuralNet(Model):
             return activations, hidden_cache
         return activations
 
-    def calibrate_learning_rate(self, data_provider):
+    def calibrate_learning_rate(self, data_provider, mini_batches=None):
         lr_multiplier = []
-        for data, targets in data_provider:
+        for i, (data, targets) in enumerate(data_provider):
+            if mini_batches is not None and i > mini_batches: break
             _, gradients = self.training_pass(data, targets)
             lr_multiplier.append([float((grad.size / gpuarray.sum(grad.__abs__())).get()) for grad in gradients])
         lr_multiplier = np.array(lr_multiplier).mean(0)
