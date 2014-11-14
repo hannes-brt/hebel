@@ -15,6 +15,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 import numpy as np
+import warnings
 eps = np.finfo(np.float32).eps
 
 def init():
@@ -23,9 +24,15 @@ def init():
     from . import reductions
     from . import softmax
     from . import linalg
+    from . import cudnn
 
     elementwise.init()
     matrix.init()
     reductions.init()
     # softmax.init()
     linalg.init()
+
+    try:
+        cudnn.init()
+    except OSError:
+        warnings.warn("cuDNN library could not be loaded. Convolutional layers will not be available.")

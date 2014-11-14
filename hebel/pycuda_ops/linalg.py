@@ -27,6 +27,7 @@
 # SUCH DAMAGE.
 
 from string import lower
+import atexit
 import pycuda.gpuarray as gpuarray
 import numpy as np
 from . import cublas
@@ -35,6 +36,12 @@ from .. import memory_pool
 def init():
     global _global_cublas_handle
     _global_cublas_handle = cublas.cublasCreate()
+
+@atexit.register
+def destroy_handle():
+    global _global_cublas_handle
+    if _global_cublas_handle is not None:
+        cublas.cublasDestroy(_global_cublas_handle)
 
 def dot(x_gpu, y_gpu, transa='N', transb='N', handle=None, target=None):
     """
@@ -185,7 +192,7 @@ def dot(x_gpu, y_gpu, transa='N', transb='N', handle=None, target=None):
 
         if target is None:
             target = gpuarray.empty((n, ldc), x_gpu.dtype, allocator=memory_pool.allocate)
-        
+
         cublas_func(handle, transb, transa, m, n, k, alpha, y_gpu.gpudata,
                     lda, x_gpu.gpudata, ldb, beta, target.gpudata, ldc)
 

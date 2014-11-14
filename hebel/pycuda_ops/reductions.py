@@ -15,7 +15,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 import numpy as np
-from pycuda import gpuarray
+from pycuda import gpuarray, driver
 from . import linalg
 from .. import memory_pool
 
@@ -129,7 +129,7 @@ def _matrix_sum_out_axis_wrapper():
         N, M = mat.shape
 
         if axis == 0:
-            vec_shape = (N, 1)
+            vec_shape = (N,)
             try:
                 ones = one_vector_cache[vec_shape]
             except KeyError:
@@ -144,7 +144,7 @@ def _matrix_sum_out_axis_wrapper():
                 # target = target.reshape((target.shape[0], 1))
                 # target.shape = (target.shape[0], 1)
             assert target.shape == (M,)
-            linalg.dot(mat, ones, transa='T', target=target)
+            linalg.dot(ones, mat, target=target)
         elif axis == 1:
             vec_shape = (M, 1)
             try:
