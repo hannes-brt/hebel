@@ -21,11 +21,12 @@ class FlatteningLayer(HiddenLayer):
     n_parameters = 0
     lr_multiplier = []
 
-    def __init__(self, n_in, n_filters,
+    def __init__(self, height, width, n_filters,
                  l1_penalty_weight=0., l2_penalty_weight=0.):
-        self.n_in = n_in
+        self.height = height
+        self.width = width
         self.n_filters = n_filters
-        self.n_units = n_in * n_filters
+        self.n_units = height * width * n_filters
 
         self.l1_penalty_weight = 0.
         self.l2_penalty_weight = 0.
@@ -36,7 +37,8 @@ class FlatteningLayer(HiddenLayer):
 
     def backprop(self, input_data, df_output, cache=None):
         N = input_data.shape[0]
-        return tuple(), df_output.reshape((N, self.n_in, self.n_filters))
+        return tuple(), df_output.reshape((N, self.n_filters,
+                                           self.height, self.width))
 
     @property
     def parameters(self):
