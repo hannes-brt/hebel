@@ -22,7 +22,7 @@ import random
 from hebel import memory_pool
 from hebel.data_providers import MultiTaskDataProvider
 from hebel.utils.math import ceil_div
-
+from .pycuda_ops import sequence_to_float
 
 def encode_sequence(seq):
     seq_upper = map(string.upper, seq)
@@ -52,6 +52,7 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
         else:
             data = self.enc_seq
 
+        data = sequence_to_float(data)
         for key, value in kwargs.iteritems():
             self.__dict__[key] = value
         super(SeqArrayDataProvider, self).__init__(data, targets, batch_size)
@@ -98,6 +99,18 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
                 enc_seq = [gpuarray.to_gpu(x, allocator=memory_pool.allocate) for x in enc_seq]
 
         self.enc_seq = enc_seq
+
+    def next(self):
+        if self.i >= self.n_batches:
+            self.i = 0
+            raise StopIteration
+
+        minibatch_data = self.data_batches[self.i]
+        minibatch_targets = self.target_batches[self.i]
+
+        self.i += 1
+        return minibatch_data, minibatch_targets
+
 
 
 class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
@@ -155,6 +168,7 @@ class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
                 self.sequences_next = np.copy(self.sequences_next[:, self.trim[0]:-self.trim[1]])
             self.sequences_next = gpuarray.to_gpu_async(
                 self.sequences_next, allocator=memory_pool.allocate)
+            self.sequences_next = sequence_to_float(self.sequences_next)
             self.targets_next = gpuarray.to_gpu_async(
                 np.ascontiguousarray(data['label'], np.float32)
                 .reshape((data.shape[0], 1)),

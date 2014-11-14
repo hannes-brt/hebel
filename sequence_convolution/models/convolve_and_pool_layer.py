@@ -14,9 +14,8 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from . import SequenceConvolutionLayer, Convolution1DLayer, AveragePoolingLayer, \
-    SumPoolingLayer, MaxPoolingLayer, \
-    SlavedSequenceConvolutionLayer, SlavedConvolution1DLayer
+from . import Convolution1DLayer, AveragePoolingLayer, \
+    MaxPoolingLayer, SlavedConvolution1DLayer
 from hebel.layers import HiddenLayer
 
 
@@ -40,7 +39,7 @@ class Convolution1DAndPoolLayer(HiddenLayer):
                  weights_scale=.01,
                  W=None, b=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
-                 padding=(True, True)):
+                 padding=True):
         self.conv_layer = Convolution1DLayer(n_in, filter_width, n_filters_in, n_filters,
                                              activation_function, weights_scale,
                                              W, b, l1_penalty_weight, l2_penalty_weight,
@@ -48,9 +47,6 @@ class Convolution1DAndPoolLayer(HiddenLayer):
 
         if pooling_op == 'max':
             self.pooling_layer = MaxPoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
-                                                 dropout)
-        elif pooling_op == 'sum':
-            self.pooling_layer = SumPoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
                                                  dropout)
         elif pooling_op == 'avg':
             self.pooling_layer = AveragePoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
@@ -144,50 +140,3 @@ class SlavedConvolution1DAndPoolLayer(Convolution1DAndPoolLayer):
         self.pooling_layer = master_layer.pooling_layer
         self.pooling_op = master_layer.pooling_op
         self.master_layer = master_layer
-
-class SequenceConvolutionAndPoolLayer(Convolution1DAndPoolLayer):
-    conv_layer_attr = (
-        'n_in', 'filter_width', 'n_filters',
-        'activation_function', 'weights_scale', 'W', 'b',
-        'l1_penalty_weight', 'l2_penalty_weight', 'padding',
-        'n_parameters', 'n_in_padded',
-        'lr_multiplier', 'halo', 'l1_penalty', 'l2_penalty')
-    pooling_layer_attr = ('n_units', 'n_units_per_filter',
-                          'pool_size', 'dropout')
-
-    def __init__(self, n_in, filter_width,
-                 n_filters, pool_size,
-                 activation_function='relu',
-                 pooling_op='max', dropout=True,
-                 weights_scale=.01,
-                 W=None, b=None,
-                 l1_penalty_weight=0., l2_penalty_weight=0.,
-                 padding=(True, True)):
-        self.conv_layer = SequenceConvolutionLayer(n_in, filter_width, n_filters,
-                                                   activation_function, weights_scale,
-                                                   W, b, l1_penalty_weight, l2_penalty_weight,
-                                                   padding)
-
-        if pooling_op == 'max':
-            self.pooling_layer = MaxPoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
-                                                 dropout)
-        elif pooling_op == 'sum':
-            self.pooling_layer = SumPoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
-                                                 dropout)
-        elif pooling_op == 'avg':
-            self.pooling_layer = AveragePoolingLayer(self.conv_layer.n_units_per_filter, pool_size, n_filters,
-                                                     dropout)
-        else:
-            raise ValueError("Unknown pooling op '%s'" % pooling_op)
-        self.pooling_op = pooling_op
-
-
-class SlavedSequenceConvolutionAndPoolLayer(SequenceConvolutionAndPoolLayer):
-    is_master_layer = False
-    n_parameters = 0
-
-    def __init__(self, master_layer, n_in=None, padding=None):
-        self.master_layer = master_layer
-        self.conv_layer = SlavedSequenceConvolutionLayer(master_layer.conv_layer, n_in, padding)
-        self.pooling_layer = master_layer.pooling_layer
-        self.pooling_op = master_layer.pooling_op

@@ -14,10 +14,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from pooling_layers import MaxPoolingLayer, SumPoolingLayer, AveragePoolingLayer
-from sequence_convolution_layer import SequenceConvolutionLayer, SlavedSequenceConvolutionLayer
-from sequence_convolution_net import SequenceConvolutionNet
+from pooling_layers import MaxPoolingLayer, AveragePoolingLayer
 from convolution_1d_layer import Convolution1DLayer, SlavedConvolution1DLayer
-from convolve_and_pool_layer import Convolution1DAndPoolLayer, SlavedConvolution1DAndPoolLayer, \
-    SequenceConvolutionAndPoolLayer, SlavedSequenceConvolutionAndPoolLayer
+from convolve_and_pool_layer import Convolution1DAndPoolLayer, SlavedConvolution1DAndPoolLayer
 from multi_sequence_convolution_layer import MultiSequenceConvolutionLayer

@@ -16,12 +16,11 @@
 
 import numpy as np
 from pycuda import gpuarray
-from .. import pycuda_ops
-from hebel import sampler, memory_pool
+from hebel import memory_pool
 from hebel.layers import HiddenLayer
-from hebel.pycuda_ops.reductions import matrix_sum_out_axis
-from hebel.pycuda_ops.matrix import pad_array, rand_array, extract_columns
+from hebel.pycuda_ops.matrix import rand_array
 from hebel.pycuda_ops.elementwise import sign
+from hebel.pycuda_ops import cudnn
 
 class Convolution1DLayer(HiddenLayer):
     n_parameters = 2
@@ -32,34 +31,34 @@ class Convolution1DLayer(HiddenLayer):
                  weights_scale=.01,
                  W=None, b=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
-                 padding=(True, True)):
+                 padding=True):
 
         if W is None:
             self.W = weights_scale * \
-                (rand_array((n_filters, filter_width, n_filters_in)) - .5)
+                (rand_array((n_filters, n_filters_in, 1, filter_width)) - .5)
         else:
             self.W = W
 
         if b is None:
-            self.b = gpuarray.zeros((n_filters,),
+            self.b = gpuarray.zeros((1, n_filters, 1, 1),
                                     np.float32,
                                     allocator=memory_pool.allocate)
         else:
             self.b = b
 
-        assert self.W.shape == (n_filters, filter_width, n_filters_in)
-        assert self.b.shape == (n_filters,)
+        assert self.W.shape == (n_filters, n_filters_in, 1, filter_width)
+        assert self.b.shape == (1, n_filters, 1, 1)
 
         self.n_in = n_in
         halo = filter_width - 1
-        self.n_in_padded = self.n_in + sum(padding) * halo
+        self.n_in_padded = self.n_in + ((2 * halo) if padding else 0)
         self.filter_width = filter_width
         self.n_filters_in = n_filters_in
         self.n_filters = n_filters
         self.n_units_per_filter = self.n_in_padded - halo
         self.n_units = self.n_units_per_filter * self.n_filters
 
-        self._set_activation_fct(activation_function)
+        self.activation_function = activation_function
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
@@ -69,47 +68,26 @@ class Convolution1DLayer(HiddenLayer):
         self.halo = filter_width - 1
 
     def feed_forward(self, input_data, prediction=False):
-        if any(self.padding):
-            new_shape = (input_data.shape[0], self.n_in_padded, input_data.shape[2])
-            input_padded = pad_array(input_data,
-                                     left=self.n_filters_in * self.halo
-                                     if self.padding[0] else 0,
-                                     right=self.n_filters_in * self.halo
-                                     if self.padding[1] else 0,
-                                     val=0.,
-                                     new_shape=new_shape)
-        else:
-            input_padded = input_data
-            
-        filtermap = pycuda_ops.convolve_1d(input_padded, self.W, self.b)
+        input_desc = cudnn.Tensor4dDesc(input_data.shape[0], self.n_filters_in, 1, self.n_in)
+        filter_desc = cudnn.FilterDesc(self.n_filters, self.n_filters_in, 1, self.filter_width)
 
-        self.f(filtermap)
-        return filtermap, input_padded
+        padding = self.halo if self.padding else 0
+        conv_desc = cudnn.ConvolutionDesc(input_desc, filter_desc, pad_w=padding)
+
+        filtermap = cudnn.convolution_forward(input_data, self.W, self.b, conv_desc)
+
+        filtermap_act = cudnn.activation_forward(filtermap, self.activation_function)
+        return filtermap_act, (filtermap, conv_desc)
 
     def backprop(self, input_data, df_output, cache=None):
         if cache is None:
-            filtermap, input_padded = self.feed_forward(input_data, False)
+            filtermap_act, (filtermap, conv_desc) = self.feed_forward(input_data, False)
         else:
-            filtermap, input_padded = cache
+            filtermap_act, (filtermap, conv_desc) = cache
 
-        # if len(filtermap.shape) == 2:
-        #     h, w = filtermap.shape
-        #     filtermap = filtermap.reshape((h, self.n_units_per_filter, self.n_filters))
-
-        h, w, f = filtermap.shape
-        df_filtermap = self.df(filtermap)
-        delta = df_filtermap * df_output
-        df_b = pycuda_ops.sum_delta(delta)
-        # delta = delta.reshape(h, w, f)
-        df_W = pycuda_ops.convolve_1d_gradient_filters(
-            input_padded, delta, self.filter_width
-        )
-        df_input = pycuda_ops.convolve_1d_gradient_input(delta, self.W)
-
-        if any(self.padding):
-            column_start = 0 + self.padding[0] * self.halo
-            column_end = column_start + self.n_in
-            df_input = extract_columns(df_input, column_start, column_end)
+        df_filtermap = cudnn.activation_backward(filtermap, filtermap_act,
+                                                 df_output, self.activation_function)
+        df_b, df_W, df_input = cudnn.convolution_backward(input_data, self.W, df_filtermap, conv_desc)
 
         # L1 weight decay
         if self.l1_penalty_weight:

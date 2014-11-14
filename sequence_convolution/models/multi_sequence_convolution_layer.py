@@ -15,8 +15,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 from hebel.layers import MultiColumnLayer, Column, HiddenLayer, FlatteningLayer
-from . import SequenceConvolutionAndPoolLayer, SlavedSequenceConvolutionAndPoolLayer, \
-    Convolution1DAndPoolLayer, SlavedConvolution1DAndPoolLayer
+from . import Convolution1DAndPoolLayer, SlavedConvolution1DAndPoolLayer
 
 class MultiSequenceConvolutionLayer(MultiColumnLayer):
     def __init__(self, subregion_columns,
@@ -29,7 +28,7 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
                  l1_penalty_weight=0.,
                  l2_penalty_weight=0.,
                  weights_scale=.01,
-                 padding=(True, True)):
+                 padding=True):
 
         columns = []
 
@@ -47,12 +46,12 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
                 for i_layer, layer in enumerate(hidden_layers):
                     if i_layer == 0:
                         # First layer is a sequence convolution
-                        layer_obj = SlavedSequenceConvolutionAndPoolLayer(
+                        layer_obj = SlavedConvolution1DAndPoolLayer(
                             layer, column.get('n_in'),
                             column.get('padding', padding))
                     elif i_layer == len(hidden_layers) - 1:
                         # Last layer is FlatteningLayer
-                        layer_obj = FlatteningLayer(layer.n_in, layer.n_filters)
+                        layer_obj = FlatteningLayer(1, layer.n_in, layer.n_filters)
                     else:
                         # Other layers are 1D convolutions
                         layer_obj = SlavedConvolution1DAndPoolLayer(
@@ -71,9 +70,10 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
                     else:
                         if i_layer == 0:
                             if 'slaved' not in layer:
-                                layer_obj = SequenceConvolutionAndPoolLayer(
+                                layer_obj = Convolution1DAndPoolLayer(
                                     layer.get('n_in'),
                                     layer.get('filter_width'),
+                                    4,
                                     layer.get('n_filters'),
                                     layer.get('pool_size', pool_size),
                                     layer.get('activation_function', activation_function),
@@ -88,7 +88,7 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
                                 )
                             else:
                                 master_layer = columns[layer['slaved']].hidden_layers[i_layer]
-                                layer_obj = SlavedSequenceConvolutionAndPoolLayer(
+                                layer_obj = SlavedConvolution1DAndPoolLayer(
                                     master_layer,
                                     layer.get('n_in'),
                                     layer.get('padding', padding)
@@ -123,7 +123,7 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
                         column_obj.append(layer_obj)
 
                 column_obj.append(
-                    FlatteningLayer(column_obj[-1].n_units_per_filter,
+                    FlatteningLayer(1, column_obj[-1].n_units_per_filter,
                                     column_obj[-1].n_filters)
                 )
                 column_obj = Column(column_obj)
