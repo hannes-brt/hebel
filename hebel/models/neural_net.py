@@ -14,6 +14,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+from .. import context
 import numpy as np
 from hashlib import md5
 from pycuda import gpuarray
@@ -330,6 +331,7 @@ class NeuralNet(Model):
         # Forward pass
         loss, hidden_cache, logistic_cache = self.evaluate(
             input_data, targets, return_cache=True, prediction=False)
+
 
         # assert np.isfinite(loss)
 
