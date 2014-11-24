@@ -14,9 +14,11 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import numpy as np
 from itertools import izip
+
+import numpy as np
 from pycuda import gpuarray
+
 from .top_layer import TopLayer
 from .softmax_layer import SoftmaxLayer
 

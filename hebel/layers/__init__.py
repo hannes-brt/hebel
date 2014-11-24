@@ -25,3 +25,5 @@ from .input_dropout import InputDropout
 from .column import Column
 from .multi_column_layer import MultiColumnLayer
 from .flattening_layer import FlatteningLayer
+from .parameterfree_layer import ParameterfreeLayer
+from .noise_layer import GaussianNoiseLayer, UniformNoiseLayer

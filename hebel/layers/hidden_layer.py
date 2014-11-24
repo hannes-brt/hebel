@@ -14,14 +14,15 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import numpy as np
 import cPickle
 from itertools import izip
+from math import sqrt
+
+import numpy as np
 from pycuda import gpuarray
 from pycuda.gpuarray import GPUArray
-from math import sqrt
+
 from .. import sampler, memory_pool
-from ..pycuda_ops import eps
 from ..pycuda_ops import linalg
 from ..pycuda_ops.elementwise import sigmoid, df_sigmoid, \
      tanh, df_tanh, relu, df_relu, linear, df_linear, \
