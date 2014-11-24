@@ -14,11 +14,12 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+from math import sqrt
+
 import numpy as np
-import cPickle
 from pycuda import gpuarray
 from pycuda import cumath
-from math import sqrt
+
 from .. import sampler, memory_pool
 from .top_layer import TopLayer
 from ..pycuda_ops import eps, linalg

@@ -14,15 +14,12 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import numpy as np
-import cPickle
 from pycuda import gpuarray
+
 from .dummy_layer import DummyLayer
-from .. import memory_pool
 from ..pycuda_ops.elementwise import sample_dropout_mask, \
     apply_dropout_mask
-from ..pycuda_ops.matrix import add_vec_to_mat
-from ..pycuda_ops.reductions import matrix_sum_out_axis
+
 
 class InputDropout(DummyLayer):
     r"""This layer performs dropout on the input data.
@@ -47,14 +44,15 @@ class InputDropout(DummyLayer):
     """
 
     def __init__(self, n_in, dropout_probability=.2,
-                 compute_input_gradients=False):
+                 n_filters=1):
         self.n_in = n_in
-        self.n_units = n_in
+        self.n_filters = n_filters
+        self.n_units = n_in * n_filters
+        self.n_units_per_filter = n_in
         
         assert dropout_probability >= 0. and \
             dropout_probability <= 1.
         self.dropout_probability = dropout_probability
-        self.compute_input_gradients = compute_input_gradients
 
     def feed_forward(self, input_data, prediction=False):
         """Propagate forward through the layer
@@ -73,8 +71,6 @@ class InputDropout(DummyLayer):
         dropout_data : ``GPUArray``
             The data after performing dropout.
         """
-
-        assert input_data.shape[1] == self.n_in
 
         if not prediction:
             dropout_input = gpuarray.empty_like(input_data)
@@ -110,7 +106,11 @@ class InputDropout(DummyLayer):
             Gradients with respect to the input.
         """
 
-        if self.compute_input_gradients:            
-            apply_dropout_mask(df_output, dropout_mask)
+        if cache is None:
+            cache = self.feed_forward(input_data,
+                                      prediction=False)
+
+        activations, dropout_mask = cache
+        apply_dropout_mask(df_output, dropout_mask)
 
         return tuple(), df_output

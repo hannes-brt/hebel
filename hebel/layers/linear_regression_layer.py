@@ -14,12 +14,13 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import numpy as np
-from pycuda import gpuarray, cumath
 from math import sqrt
+
+import numpy as np
+from pycuda import gpuarray
+
 from .. import sampler, memory_pool
 from .softmax_layer import SoftmaxLayer
-from ..pycuda_ops.elementwise import sign, nan_to_zeros
 from ..pycuda_ops.reductions import matrix_sum_out_axis
 from ..pycuda_ops.matrix import add_vec_to_mat
 from ..pycuda_ops import linalg

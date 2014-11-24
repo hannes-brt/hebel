@@ -36,7 +36,8 @@ setup( name='Hebel',
            'pycuda',
            'numpy',
            'pyyaml',
-           'skdata'
+           'skdata',
+           'cudnn-python-wrappers'
        ],
        test_suite='nose.collector',
        tests_require=['nose'],

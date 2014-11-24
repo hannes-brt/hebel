@@ -14,12 +14,15 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from .. import memory_pool
-from . import HiddenLayer, Column
+from itertools import chain
+
 from pycuda import gpuarray
 import numpy as np
+
+from .. import memory_pool
+from . import HiddenLayer, Column
 from ..pycuda_ops.matrix import insert_columns, extract_columns
-from itertools import chain
+
 
 class MultiColumnLayer(HiddenLayer):
     l1_penalty_weight = True

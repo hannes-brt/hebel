@@ -14,13 +14,9 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-import numpy as np
-from . import HiddenLayer
+from .parameterfree_layer import ParameterfreeLayer
 
-class FlatteningLayer(HiddenLayer):
-    n_parameters = 0
-    lr_multiplier = []
-
+class FlatteningLayer(ParameterfreeLayer):
     def __init__(self, height, width, n_filters,
                  l1_penalty_weight=0., l2_penalty_weight=0.):
         self.height = height
@@ -39,22 +35,3 @@ class FlatteningLayer(HiddenLayer):
         N = input_data.shape[0]
         return tuple(), df_output.reshape((N, self.n_filters,
                                            self.height, self.width))
-
-    @property
-    def parameters(self):
-        return []
-
-    @parameters.setter
-    def parameters(self, value):
-        pass
-
-    def update_parameters(self, values, stream=None):
-        pass
-
-    @property
-    def l1_penalty(self):
-        return 0.
-
-    @property
-    def l2_penalty(self):
-        return 0.

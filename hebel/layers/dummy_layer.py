@@ -14,42 +14,19 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from .hidden_layer import HiddenLayer
+from .parameterfree_layer import ParameterfreeLayer
 
 
-class DummyLayer(HiddenLayer):
+class DummyLayer(ParameterfreeLayer):
     """ This class has no hidden units and simply passes through its
     input
     """
 
-    lr_multiplier = []
-    n_parameters = 0
-    l1_penalty_weight = 0.
-    l2_penalty_weight = 0.
     dropout = False
 
     def __init__(self, n_in):
         self.n_in = n_in
         self.n_units = n_in
-
-    @property
-    def parameters(self):
-        return []
-
-    @parameters.setter
-    def parameters(self, value):
-        pass
-
-    def update_parameters(self, values, stream=None):
-        pass
-
-    @property
-    def l1_penalty(self):
-        return 0.
-
-    @property
-    def l2_penalty(self):
-        return 0.
 
     def feed_forward(self, input_data, prediction=False):
         assert input_data.shape[1] == self.n_in
