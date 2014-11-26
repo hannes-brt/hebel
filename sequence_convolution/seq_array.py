@@ -114,13 +114,13 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
 
 
 class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
-    def __init__(self, group, split_name, batch_size=None, trim=None):
-        self.group = group
-        self.table = self.group._f_get_child(split_name)
-        self.batch_size = self.group._v_attrs.batch_size \
+    def __init__(self, table, batch_size=None, trim=None):
+        self.table = table
+        self.batch_size = self.table.attrs.BATCH_SIZE \
                           if batch_size is None else batch_size
-        self.n_pos_batch = self.group._v_attrs.n_pos_batch
-        self.n_neg_batch = self.group._v_attrs.n_neg_batch
+        assert not self.batch_size % self.table.attrs.BATCH_SIZE
+        self.n_pos_batch = self.table.attrs.POS_PER_BATCH
+        self.n_neg_batch = self.table.attrs.NEG_PER_BATCH
         self.seq_length = self.table.cols.seq.dtype.itemsize - \
                           (sum(trim) if trim is not None else 0)
         self.trim = trim
