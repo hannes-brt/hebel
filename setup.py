@@ -1,18 +1,11 @@
 from setuptools import setup
 from hebel.version import version
 
-try:
-    from pypandoc import convert
-    read_md = lambda f: convert(f, 'rst')
-except ImportError:
-    print("warning: pypandoc module not found, could not convert Markdown to RST")
-    read_md = lambda f: open(f, 'r').read()
-
 setup( name='Hebel',
        version=version,
        description='GPU-Accelerated '
        'Deep Learning Library in Python',
-       long_description=read_md('README.md'),
+       long_description=open('README.rst', 'r').read(),
        keywords='cuda gpu machine-learning deep-learning neural-networks',
        classifiers=[
            'Development Status :: 3 - Alpha',
