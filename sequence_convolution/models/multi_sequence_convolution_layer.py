@@ -51,7 +51,7 @@ class MultiSequenceConvolutionLayer(MultiColumnLayer):
                             column.get('padding', padding))
                     elif i_layer == len(hidden_layers) - 1:
                         # Last layer is FlatteningLayer
-                        layer_obj = FlatteningLayer(1, layer.n_in, layer.n_filters)
+                        layer_obj = FlatteningLayer(layer.height, layer.width, layer.n_filters)
                     else:
                         # Other layers are 1D convolutions
                         layer_obj = SlavedConvolution1DAndPoolLayer(

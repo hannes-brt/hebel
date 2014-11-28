@@ -113,8 +113,6 @@ class SlavedConvolution1DLayer(Convolution1DLayer):
         self.n_filters_in = master_layer.n_filters_in
         self.master_layer = master_layer
 
-        self.activation_function = master_layer.activation_function
-
         self.halo = self.filter_width - 1
         self.n_in_padded = self.n_in + sum(self.padding) * self.halo
         self.n_units_per_filter = self.n_in_padded - self.halo
