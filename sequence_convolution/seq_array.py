@@ -52,7 +52,7 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
         else:
             data = self.enc_seq
 
-        data = sequence_to_float(data)
+        data = map(sequence_to_float, data)
         for key, value in kwargs.iteritems():
             self.__dict__[key] = value
         super(SeqArrayDataProvider, self).__init__(data, targets, batch_size)

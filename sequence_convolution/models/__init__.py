@@ -18,3 +18,4 @@ from pooling_layers import MaxPoolingLayer, AveragePoolingLayer
 from convolution_1d_layer import Convolution1DLayer, SlavedConvolution1DLayer
 from convolve_and_pool_layer import Convolution1DAndPoolLayer, SlavedConvolution1DAndPoolLayer
 from multi_sequence_convolution_layer import MultiSequenceConvolutionLayer
+from convolution_dummy_layer import ConvolutionDummyLayer
