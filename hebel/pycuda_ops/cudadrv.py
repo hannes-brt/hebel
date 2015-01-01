@@ -33,12 +33,13 @@ Python interface to CUDA driver functions.
 """
 
 import sys, ctypes
+from ctypes.util import find_library
 
 # Load CUDA driver library:
 if sys.platform == 'linux2':
     _libcuda_libname_list = ['libcuda.so', 'libcuda.so.3', 'libcuda.so.4']
 elif sys.platform == 'darwin':
-    _libcuda_libname_list = ['libcuda.dylib']
+    _libcuda_libname_list = ['CUDA', 'libcuda.dylib']
 elif sys.platform == 'win32':
     _libcuda_libname_list = ['nvcuda.dll']
 else:
@@ -48,7 +49,7 @@ else:
 _libcuda = None
 for _libcuda_libname in _libcuda_libname_list:
     try:
-        _libcuda = ctypes.cdll.LoadLibrary(_libcuda_libname)
+        _libcuda = ctypes.cdll.LoadLibrary(find_library(_libcuda_libname))
     except OSError:
         pass
     else:
