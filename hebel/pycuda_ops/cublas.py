@@ -191,18 +191,18 @@ def cublasCreate():
 
     Returns
     -------
-    handle : int
+    handle : void_p
         CUBLAS context.
             
     """
 
-    handle = ctypes.c_int()
+    handle = ctypes.c_void_p()
     status = _libcublas.cublasCreate_v2(ctypes.byref(handle))
     cublasCheckStatus(status)
     return handle.value    
 
 _libcublas.cublasDestroy_v2.restype = int
-_libcublas.cublasDestroy_v2.argtypes = [ctypes.c_int]
+_libcublas.cublasDestroy_v2.argtypes = [ctypes.c_void_p]
 def cublasDestroy(handle):
     """
     Release CUBLAS resources.
@@ -211,16 +211,16 @@ def cublasDestroy(handle):
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
         
     """
 
-    status = _libcublas.cublasDestroy_v2(ctypes.c_int(handle))
+    status = _libcublas.cublasDestroy_v2(ctypes.c_void_p(handle))
     cublasCheckStatus(status)
 
 _libcublas.cublasGetVersion_v2.restype = int
-_libcublas.cublasGetVersion_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasGetVersion_v2.argtypes = [ctypes.c_void_p,
                                            ctypes.c_void_p]
 def cublasGetVersion(handle):
     """
@@ -230,7 +230,7 @@ def cublasGetVersion(handle):
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
 
     Returns
@@ -246,7 +246,7 @@ def cublasGetVersion(handle):
     return version.value
 
 _libcublas.cublasSetStream_v2.restype = int
-_libcublas.cublasSetStream_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSetStream_v2.argtypes = [ctypes.c_void_p,
                                           ctypes.c_int]
 def cublasSetStream(handle, id):
     """
@@ -265,7 +265,7 @@ def cublasSetStream(handle, id):
     cublasCheckStatus(status)
 
 _libcublas.cublasGetStream_v2.restype = int
-_libcublas.cublasGetStream_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasGetStream_v2.argtypes = [ctypes.c_void_p,
                                           ctypes.c_void_p]
 def cublasGetStream(handle):
     """
@@ -273,7 +273,7 @@ def cublasGetStream(handle):
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
   
     Returns
@@ -304,7 +304,7 @@ else:
         
         Returns
         -------
-        handle : int
+        handle : void_p
             CUBLAS context.
         
         """
@@ -323,7 +323,7 @@ I_AMAX_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vector.
@@ -357,7 +357,7 @@ I_AMAX_doc = Template(
 """)
 
 _libcublas.cublasIsamax_v2.restype = int
-_libcublas.cublasIsamax_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasIsamax_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -377,7 +377,7 @@ cublasIsamax.__doc__ = \
                                            func='cublasIsamax')
 
 _libcublas.cublasIdamax_v2.restype = int
-_libcublas.cublasIdamax_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasIdamax_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -397,7 +397,7 @@ cublasIdamax.__doc__ = \
                                            func='cublasIdamax')
 
 _libcublas.cublasIcamax_v2.restype = int
-_libcublas.cublasIcamax_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasIcamax_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -417,7 +417,7 @@ cublasIcamax.__doc__ = \
                                            func='cublasIcamax')
 
 _libcublas.cublasIzamax_v2.restype = int
-_libcublas.cublasIzamax_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasIzamax_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -446,7 +446,7 @@ I_AMIN_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vector.
@@ -481,7 +481,7 @@ I_AMIN_doc = Template(
 )
 
 _libcublas.cublasIsamin_v2.restype = int
-_libcublas.cublasIsamin_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasIsamin_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -501,7 +501,7 @@ cublasIsamin.__doc__ = \
                                            func='cublasIsamin')
 
 _libcublas.cublasIdamin_v2.restype = int
-_libcublas.cublasIdamin_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasIdamin_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -521,7 +521,7 @@ cublasIdamin.__doc__ = \
                                            func='cublasIdamin')
 
 _libcublas.cublasIcamin_v2.restype = int
-_libcublas.cublasIcamin_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasIcamin_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -541,7 +541,7 @@ cublasIcamin.__doc__ = \
                                            func='cublasIcamin')
 
 _libcublas.cublasIzamin_v2.restype = int
-_libcublas.cublasIzamin_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasIzamin_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -570,7 +570,7 @@ _ASUM_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vector.
@@ -601,7 +601,7 @@ _ASUM_doc = Template(
 )
 
 _libcublas.cublasSasum_v2.restype = int
-_libcublas.cublasSasum_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSasum_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -621,7 +621,7 @@ cublasSasum.__doc__ = \
                                          ret_type='numpy.float32')
 
 _libcublas.cublasDasum_v2.restype = int
-_libcublas.cublasDasum_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDasum_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -641,7 +641,7 @@ cublasDasum.__doc__ = \
                                          ret_type='numpy.float64')
 
 _libcublas.cublasScasum_v2.restype = int
-_libcublas.cublasScasum_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasScasum_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -661,7 +661,7 @@ cublasScasum.__doc__ = \
                                           ret_type='numpy.float32')
 
 _libcublas.cublasDzasum_v2.restype = int
-_libcublas.cublasDzasum_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDzasum_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -690,7 +690,7 @@ _AXPY_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vectors.
@@ -729,7 +729,7 @@ _AXPY_doc = Template(
 )
 
 _libcublas.cublasSaxpy_v2.restype = int
-_libcublas.cublasSaxpy_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSaxpy_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -751,7 +751,7 @@ cublasSaxpy.__doc__ = \
                                          func='cublasSaxpy')
 
 _libcublas.cublasDaxpy_v2.restype = int
-_libcublas.cublasDaxpy_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDaxpy_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -773,7 +773,7 @@ cublasDaxpy.__doc__ = \
                                          func='cublasDaxpy')
 
 _libcublas.cublasCaxpy_v2.restype = int
-_libcublas.cublasCaxpy_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCaxpy_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -795,7 +795,7 @@ cublasCaxpy.__doc__ = \
                                          func='cublasCaxpy')
 
 _libcublas.cublasZaxpy_v2.restype = int
-_libcublas.cublasZaxpy_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZaxpy_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -826,7 +826,7 @@ _COPY_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vectors.
@@ -860,7 +860,7 @@ _COPY_doc = Template(
 """)
 
 _libcublas.cublasScopy_v2.restype = int
-_libcublas.cublasScopy_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasScopy_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -878,7 +878,7 @@ cublasScopy.__doc__ = \
                                          func='cublasScopy')
 
 _libcublas.cublasDcopy_v2.restype = int
-_libcublas.cublasDcopy_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDcopy_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -896,7 +896,7 @@ cublasDcopy.__doc__ = \
                                          func='cublasDcopy')
 
 _libcublas.cublasCcopy_v2.restype = int
-_libcublas.cublasCcopy_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCcopy_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -914,7 +914,7 @@ cublasCcopy.__doc__ = \
                                          func='cublasCcopy')
 
 _libcublas.cublasZcopy_v2.restype = int
-_libcublas.cublasZcopy_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZcopy_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -942,7 +942,7 @@ _DOT_doc = Template(
     
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vectors.
@@ -982,7 +982,7 @@ _DOT_doc = Template(
 """)
 
 _libcublas.cublasSdot_v2.restype = int
-_libcublas.cublasSdot_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSdot_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
                                      ctypes.c_int,
@@ -1005,7 +1005,7 @@ cublasSdot.__doc__ = _DOT_doc.substitute(precision='single-precision',
                                          check='np.allclose(d, np.dot(x, y))')
 
 _libcublas.cublasDdot_v2.restype = int
-_libcublas.cublasDdot_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDdot_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
                                      ctypes.c_int,
@@ -1028,7 +1028,7 @@ cublasDdot.__doc__ = _DOT_doc.substitute(precision='double-precision',
                                          check='np.allclose(d, np.dot(x, y))')
 
 _libcublas.cublasCdotu_v2.restype = int
-_libcublas.cublasCdotu_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCdotu_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1051,7 +1051,7 @@ cublasCdotu.__doc__ = _DOT_doc.substitute(precision='single-precision',
                                          check='np.allclose(d, np.dot(x, y))')
 
 _libcublas.cublasCdotc_v2.restype = int
-_libcublas.cublasCdotc_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCdotc_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1074,7 +1074,7 @@ cublasCdotc.__doc__ = _DOT_doc.substitute(precision='single-precision',
                                          check='np.allclose(d, np.dot(np.conj(x), y))')
 
 _libcublas.cublasZdotu_v2.restype = int
-_libcublas.cublasZdotu_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZdotu_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1097,7 +1097,7 @@ cublasZdotu.__doc__ = _DOT_doc.substitute(precision='double-precision',
                                           check='np.allclose(d, np.dot(x, y))')
 
 _libcublas.cublasZdotc_v2.restype = int
-_libcublas.cublasZdotc_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZdotc_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1128,7 +1128,7 @@ _NRM2_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vectors.
@@ -1158,7 +1158,7 @@ _NRM2_doc = Template(
 """)
 
 _libcublas.cublasSnrm2_v2.restype = int
-_libcublas.cublasSnrm2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSnrm2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1179,7 +1179,7 @@ cublasSnrm2.__doc__ = \
                                          func='cublasSnrm2')
 
 _libcublas.cublasDnrm2_v2.restype = int
-_libcublas.cublasDnrm2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDnrm2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1200,7 +1200,7 @@ cublasDnrm2.__doc__ = \
                                          func='cublasDnrm2')
 
 _libcublas.cublasScnrm2_v2.restype = int
-_libcublas.cublasScnrm2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasScnrm2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1221,7 +1221,7 @@ cublasScnrm2.__doc__ = \
                                          func='cublasScnrm2')
 
 _libcublas.cublasDznrm2_v2.restype = int
-_libcublas.cublasDznrm2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDznrm2_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_void_p,
                                        ctypes.c_int,
@@ -1252,7 +1252,7 @@ _ROT_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vectors.
@@ -1294,7 +1294,7 @@ _ROT_doc = Template(
 """)
 
 _libcublas.cublasSrot_v2.restype = int
-_libcublas.cublasSrot_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSrot_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
                                      ctypes.c_int,
@@ -1321,7 +1321,7 @@ cublasSrot.__doc__ = _ROT_doc.substitute(precision='single-precision',
                                          func='cublasSrot')
 
 _libcublas.cublasDrot_v2.restype = int
-_libcublas.cublasDrot_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDrot_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
                                      ctypes.c_int,
@@ -1347,7 +1347,7 @@ cublasDrot.__doc__ = _ROT_doc.substitute(precision='double-precision',
                                          func='cublasDrot')
 
 _libcublas.cublasCrot_v2.restype = int
-_libcublas.cublasCrot_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCrot_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
                                      ctypes.c_int,
@@ -1374,7 +1374,7 @@ cublasCrot.__doc__ = _ROT_doc.substitute(precision='single-precision',
                                          func='cublasCrot')
 
 _libcublas.cublasCsrot_v2.restype = int
-_libcublas.cublasCsrot_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCsrot_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
                                      ctypes.c_int,
@@ -1399,7 +1399,7 @@ cublasCsrot.__doc__ = _ROT_doc.substitute(precision='single-precision',
                                           func='cublasCsrot')
 
 _libcublas.cublasZrot_v2.restype = int
-_libcublas.cublasZrot_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZrot_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
                                      ctypes.c_int,
@@ -1425,7 +1425,7 @@ cublasZrot.__doc__ = _ROT_doc.substitute(precision='double-precision',
                                          func='cublasZrot')
 
 _libcublas.cublasZdrot_v2.restype = int
-_libcublas.cublasZdrot_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZdrot_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
                                      ctypes.c_int,
@@ -1465,7 +1465,7 @@ _ROTG_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     a, b : ${type}
         Entries of vector whose second entry should be zeroed
@@ -1496,7 +1496,7 @@ _ROTG_doc = Template(
 """)
 
 _libcublas.cublasSrotg_v2.restype = int
-_libcublas.cublasSrotg_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSrotg_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1523,7 +1523,7 @@ cublasSrotg.__doc__ = \
                                          func='cublasSrotg')
 
 _libcublas.cublasDrotg_v2.restype = int
-_libcublas.cublasDrotg_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDrotg_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1550,7 +1550,7 @@ cublasDrotg.__doc__ = \
                                          func='cublasDrotg')
 
 _libcublas.cublasCrotg_v2.restype = int
-_libcublas.cublasCrotg_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCrotg_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1577,7 +1577,7 @@ cublasCrotg.__doc__ = \
                                          func='cublasCrotg')
 
 _libcublas.cublasZrotg_v2.restype = int
-_libcublas.cublasZrotg_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZrotg_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1613,7 +1613,7 @@ _ROTM_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vectors.
@@ -1644,7 +1644,7 @@ _ROTM_doc = Template(
 """)
 
 _libcublas.cublasSrotm_v2.restype = int
-_libcublas.cublasSrotm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSrotm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1661,7 +1661,7 @@ cublasSrotm.__doc__ = \
                     _ROTM_doc.substitute(precision='single-precision')
 
 _libcublas.cublasDrotm_v2.restype = int
-_libcublas.cublasDrotm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDrotm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1688,7 +1688,7 @@ _ROTMG_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     d1 : ${type}
         ${precision} real value.
@@ -1718,7 +1718,7 @@ _ROTMG_doc = Template(
 """)
 
 _libcublas.cublasSrotmg_v2.restype = int
-_libcublas.cublasSrotmg_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSrotmg_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_void_p,
                                        ctypes.c_void_p,
                                        ctypes.c_void_p,
@@ -1743,7 +1743,7 @@ cublasSrotmg.__doc__ = \
                                            type='numpy.float32')
 
 _libcublas.cublasDrotmg_v2.restype = int
-_libcublas.cublasDrotmg_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDrotmg_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_void_p,
                                        ctypes.c_void_p,
                                        ctypes.c_void_p,
@@ -1777,7 +1777,7 @@ _SCAL_doc = Template(
     
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vectors.
@@ -1805,7 +1805,7 @@ _SCAL_doc = Template(
 """)
 
 _libcublas.cublasSscal_v2.restype = int
-_libcublas.cublasSscal_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSscal_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1826,7 +1826,7 @@ cublasSscal.__doc__ = \
                                          func='cublasSscal')
 
 _libcublas.cublasDscal_v2.restype = int
-_libcublas.cublasDscal_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDscal_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1847,7 +1847,7 @@ cublasDscal.__doc__ = \
                                          func='cublasDscal')
 
 _libcublas.cublasCscal_v2.restype = int
-_libcublas.cublasCscal_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCscal_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1869,7 +1869,7 @@ cublasCscal.__doc__ = \
                                          func='cublasCscal')
 
 _libcublas.cublasCsscal_v2.restype = int
-_libcublas.cublasCsscal_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCsscal_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1890,7 +1890,7 @@ cublasCsscal.__doc__ = \
                                          func='cublasCsscal')
 
 _libcublas.cublasZscal_v2.restype = int
-_libcublas.cublasZscal_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZscal_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1912,7 +1912,7 @@ cublasZscal.__doc__ = \
                                          func='cublasZscal')
 
 _libcublas.cublasZdscal_v2.restype = int
-_libcublas.cublasZdscal_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZdscal_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_void_p,
@@ -1942,7 +1942,7 @@ _SWAP_doc = Template(
 
     Parameters
     ----------
-    handle : int
+    handle : void_p
         CUBLAS context.
     n : int
         Number of elements in input vectors.
@@ -1979,7 +1979,7 @@ _SWAP_doc = Template(
 """)
 
 _libcublas.cublasSswap_v2.restype = int
-_libcublas.cublasSswap_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSswap_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -1997,7 +1997,7 @@ cublasSswap.__doc__ = \
                                          func='cublasSswap')
 
 _libcublas.cublasDswap_v2.restype = int
-_libcublas.cublasDswap_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDswap_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -2015,7 +2015,7 @@ cublasDswap.__doc__ = \
                                          func='cublasDswap')
 
 _libcublas.cublasCswap_v2.restype = int
-_libcublas.cublasCswap_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCswap_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -2033,7 +2033,7 @@ cublasCswap.__doc__ = \
                                          func='cublasCswap')
 
 _libcublas.cublasZswap_v2.restype = int
-_libcublas.cublasZswap_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZswap_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
                                       ctypes.c_int,
@@ -2054,7 +2054,7 @@ cublasZswap.__doc__ = \
 
 # SGBMV, DGVMV, CGBMV, ZGBMV 
 _libcublas.cublasSgbmv_v2.restype = int
-_libcublas.cublasSgbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSgbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_char,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2085,7 +2085,7 @@ def cublasSgbmv(handle, trans, m, n, kl, ku, alpha, A, lda,
     cublasCheckStatus(status)
 
 _libcublas.cublasDgbmv_v2.restype = int
-_libcublas.cublasDgbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDgbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_char,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2115,7 +2115,7 @@ def cublasDgbmv(handle, trans, m, n, kl, ku, alpha, A, lda,
     cublasCheckStatus(status)
 
 _libcublas.cublasCgbmv_v2.restype = int
-_libcublas.cublasCgbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCgbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_char,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2238,7 +2238,7 @@ def cublasZgbmv(handle, trans, m, n, kl, ku, alpha, A, lda,
 # """
     
 _libcublas.cublasSgemv_v2.restype = int
-_libcublas.cublasSgemv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSgemv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2264,7 +2264,7 @@ def cublasSgemv(handle, trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
         
 _libcublas.cublasDgemv_v2.restype = int
-_libcublas.cublasDgemv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDgemv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2291,7 +2291,7 @@ def cublasDgemv(handle, trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
     
 _libcublas.cublasCgemv_v2.restype = int
-_libcublas.cublasCgemv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCgemv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2320,7 +2320,7 @@ def cublasCgemv(handle, trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
     
 _libcublas.cublasZgemv_v2.restype = int
-_libcublas.cublasZgemv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZgemv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2350,7 +2350,7 @@ def cublasZgemv(handle, trans, m, n, alpha, A, lda, x, incx, beta, y, incy):
 
 # SGER, DGER, CGERU, CGERC, ZGERU, ZGERC
 _libcublas.cublasSger_v2.restype = int
-_libcublas.cublasSger_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSger_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
@@ -2374,7 +2374,7 @@ def cublasSger(handle, m, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasDger_v2.restype = int
-_libcublas.cublasDger_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDger_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
@@ -2398,7 +2398,7 @@ def cublasDger(handle, m, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
     
 _libcublas.cublasCgerc_v2.restype = int
-_libcublas.cublasCgerc_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCgerc_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2421,7 +2421,7 @@ def cublasCgerc(handle, m, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
     
 _libcublas.cublasCgeru_v2.restype = int
-_libcublas.cublasCgeru_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCgeru_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2444,7 +2444,7 @@ def cublasCgeru(handle, m, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
     
 _libcublas.cublasZgerc_v2.restype = int
-_libcublas.cublasZgerc_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZgerc_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2467,7 +2467,7 @@ def cublasZgerc(handle, m, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasZgeru_v2.restype = int
-_libcublas.cublasZgeru_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZgeru_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2491,7 +2491,7 @@ def cublasZgeru(handle, m, n, alpha, x, incx, y, incy, A, lda):
 
 # SSBMV, DSBMV 
 _libcublas.cublasSsbmv_v2.restype = int
-_libcublas.cublasSsbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSsbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2519,7 +2519,7 @@ def cublasSsbmv(handle, uplo, n, k, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
         
 _libcublas.cublasDsbmv_v2.restype = int
-_libcublas.cublasDsbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDsbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -2547,7 +2547,7 @@ def cublasDsbmv(handle, uplo, n, k, alpha, A, lda, x, incx, beta, y, incy):
         
 # SSPMV, DSPMV
 _libcublas.cublasSspmv_v2.restype = int
-_libcublas.cublasSspmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSspmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2576,7 +2576,7 @@ def cublasSspmv(handle, uplo, n, alpha, AP, x, incx, beta, y, incy):
     cublasCheckStatus(status)
         
 _libcublas.cublasDspmv_v2.restype = int
-_libcublas.cublasDspmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDspmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2606,7 +2606,7 @@ def cublasDspmv(handle, uplo, n, alpha, AP, x, incx, beta, y, incy):
 
 # SSPR, DSPR
 _libcublas.cublasSspr_v2.restype = int
-_libcublas.cublasSspr_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSspr_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
@@ -2627,7 +2627,7 @@ def cublasSspr(handle, uplo, n, alpha, x, incx, AP):
 
 
 _libcublas.cublasDspr_v2.restype = int
-_libcublas.cublasDspr_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDspr_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
@@ -2648,7 +2648,7 @@ def cublasDspr(handle, uplo, n, alpha, x, incx, AP):
 
 # SSPR2, DSPR2
 _libcublas.cublasSspr2_v2.restype = int
-_libcublas.cublasSspr2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSspr2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2671,7 +2671,7 @@ def cublasSspr2(handle, uplo, n, alpha, x, incx, y, incy, AP):
     cublasCheckStatus(status)
 
 _libcublas.cublasDspr2_v2.restype = int
-_libcublas.cublasDspr2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDspr2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2694,7 +2694,7 @@ def cublasDspr2(handle, uplo, n, alpha, x, incx, y, incy, AP):
 
 # SSYMV, DSYMV, CSYMV, ZSYMV
 _libcublas.cublasSsymv_v2.restype = int
-_libcublas.cublasSsymv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSsymv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2720,7 +2720,7 @@ def cublasSsymv(handle, uplo, n, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
 
 _libcublas.cublasDsymv_v2.restype = int
-_libcublas.cublasDsymv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDsymv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2746,7 +2746,7 @@ def cublasDsymv(handle, uplo, n, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
 
 _libcublas.cublasCsymv_v2.restype = int
-_libcublas.cublasCsymv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCsymv_v2.argtypes = [ctypes.c_void_p,
                                         ctypes.c_int,
                                         ctypes.c_int,
                                         ctypes.c_void_p,
@@ -2774,7 +2774,7 @@ def cublasCsymv(handle, uplo, n, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
 
 _libcublas.cublasZsymv_v2.restype = int
-_libcublas.cublasZsymv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZsymv_v2.argtypes = [ctypes.c_void_p,
                                         ctypes.c_int,
                                         ctypes.c_int,
                                         ctypes.c_void_p,
@@ -2803,7 +2803,7 @@ def cublasZsymv(handle, uplo, n, alpha, A, lda, x, incx, beta, y, incy):
 
 # SSYR, DSYR, CSYR, ZSYR
 _libcublas.cublasSsyr_v2.restype = int
-_libcublas.cublasSsyr_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSsyr_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
@@ -2824,7 +2824,7 @@ def cublasSsyr(handle, uplo, n, alpha, x, incx, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasDsyr_v2.restype = int
-_libcublas.cublasDsyr_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDsyr_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
@@ -2845,7 +2845,7 @@ def cublasDsyr(handle, uplo, n, alpha, x, incx, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasCsyr_v2.restype = int
-_libcublas.cublasCsyr_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCsyr_v2.argtypes = [ctypes.c_void_p,
                                         ctypes.c_int,
                                         ctypes.c_int,
                                         ctypes.c_void_p,
@@ -2867,7 +2867,7 @@ def cublasCsyr(handle, uplo, n, alpha, x, incx, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasZsyr_v2.restype = int
-_libcublas.cublasZsyr_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZsyr_v2.argtypes = [ctypes.c_void_p,
                                         ctypes.c_int,
                                         ctypes.c_int,
                                         ctypes.c_void_p,
@@ -2890,7 +2890,7 @@ def cublasZsyr(handle, uplo, n, alpha, x, incx, A, lda):
 
 # SSYR2, DSYR2, CSYR2, ZSYR2
 _libcublas.cublasSsyr2_v2.restype = int
-_libcublas.cublasSsyr2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSsyr2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -2914,7 +2914,7 @@ def cublasSsyr2(handle, uplo, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasDsyr2_v2.restype = int
-_libcublas.cublasDsyr2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDsyr2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,                                   
                                       ctypes.c_void_p,
@@ -2938,7 +2938,7 @@ def cublasDsyr2(handle, uplo, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasCsyr2_v2.restype = int
-_libcublas.cublasCsyr2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCsyr2_v2.argtypes = [ctypes.c_void_p,
                                         ctypes.c_int,
                                         ctypes.c_int,                                   
                                         ctypes.c_void_p,
@@ -2963,7 +2963,7 @@ def cublasCsyr2(handle, uplo, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
  
 _libcublas.cublasZsyr2_v2.restype = int
-_libcublas.cublasZsyr2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZsyr2_v2.argtypes = [ctypes.c_void_p,
                                         ctypes.c_int,
                                         ctypes.c_int,                                   
                                         ctypes.c_void_p,
@@ -2989,7 +2989,7 @@ def cublasZsyr2(handle, uplo, n, alpha, x, incx, y, incy, A, lda):
 
 # STBMV, DTBMV, CTBMV, ZTBMV
 _libcublas.cublasStbmv_v2.restype = int
-_libcublas.cublasStbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasStbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3013,7 +3013,7 @@ def cublasStbmv(handle, uplo, trans, diag, n, k, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasDtbmv_v2.restype = int
-_libcublas.cublasDtbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDtbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3037,7 +3037,7 @@ def cublasDtbmv(handle, uplo, trans, diag, n, k, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasCtbmv_v2.restype = int
-_libcublas.cublasCtbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCtbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3061,7 +3061,7 @@ def cublasCtbmv(handle, uplo, trans, diag, n, k, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasZtbmv_v2.restype = int
-_libcublas.cublasZtbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZtbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3086,7 +3086,7 @@ def cublasZtbmv(handle, uplo, trans, diag, n, k, A, lda, x, incx):
 
 # STBSV, DTBSV, CTBSV, ZTBSV
 _libcublas.cublasStbsv_v2.restype = int
-_libcublas.cublasStbsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasStbsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3110,7 +3110,7 @@ def cublasStbsv(handle, uplo, trans, diag, n, k, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasDtbsv_v2.restype = int
-_libcublas.cublasDtbsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDtbsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3134,7 +3134,7 @@ def cublasDtbsv(handle, uplo, trans, diag, n, k, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasCtbsv_v2.restype = int
-_libcublas.cublasCtbsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCtbsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3158,7 +3158,7 @@ def cublasCtbsv(handle, uplo, trans, diag, n, k, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasZtbsv_v2.restype = int
-_libcublas.cublasZtbsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZtbsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3183,7 +3183,7 @@ def cublasZtbsv(handle, uplo, trans, diag, n, k, A, lda, x, incx):
 
 # STPMV, DTPMV, CTPMV, ZTPMV
 _libcublas.cublasStpmv_v2.restype = int
-_libcublas.cublasStpmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasStpmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3205,7 +3205,7 @@ def cublasStpmv(handle, uplo, trans, diag, n, AP, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasCtpmv_v2.restype = int
-_libcublas.cublasCtpmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCtpmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3227,7 +3227,7 @@ def cublasCtpmv(handle, uplo, trans, diag, n, AP, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasDtpmv_v2.restype = int
-_libcublas.cublasDtpmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDtpmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3249,7 +3249,7 @@ def cublasDtpmv(handle, uplo, trans, diag, n, AP, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasZtpmv_v2.restype = int
-_libcublas.cublasZtpmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZtpmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3272,7 +3272,7 @@ def cublasZtpmv(handle, uplo, trans, diag, n, AP, x, incx):
 
 # STPSV, DTPSV, CTPSV, ZTPSV
 _libcublas.cublasStpsv_v2.restype = int
-_libcublas.cublasStpsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasStpsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3295,7 +3295,7 @@ def cublasStpsv(handle, uplo, trans, diag, n, AP, x, incx):
 
 
 _libcublas.cublasDtpsv_v2.restype = int
-_libcublas.cublasDtpsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDtpsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3317,7 +3317,7 @@ def cublasDtpsv(handle, uplo, trans, diag, n, AP, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasCtpsv_v2.restype = int
-_libcublas.cublasCtpsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCtpsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3339,7 +3339,7 @@ def cublasCtpsv(handle, uplo, trans, diag, n, AP, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasZtpsv_v2.restype = int
-_libcublas.cublasZtpsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZtpsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3362,7 +3362,7 @@ def cublasZtpsv(handle, uplo, trans, diag, n, AP, x, incx):
 
 # STRMV, DTRMV, CTRMV, ZTRMV
 _libcublas.cublasStrmv_v2.restype = int
-_libcublas.cublasStrmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasStrmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3385,7 +3385,7 @@ def cublasStrmv(handle, uplo, trans, diag, n, A, lda, x, inx):
     cublasCheckStatus(status)
 
 _libcublas.cublasCtrmv_v2.restype = int
-_libcublas.cublasCtrmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCtrmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3408,7 +3408,7 @@ def cublasCtrmv(handle, uplo, trans, diag, n, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasDtrmv_v2.restype = int
-_libcublas.cublasDtrmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDtrmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3431,7 +3431,7 @@ def cublasDtrmv(handle, uplo, trans, diag, n, A, lda, x, inx):
     cublasCheckStatus(status)
 
 _libcublas.cublasZtrmv_v2.restype = int
-_libcublas.cublasZtrmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZtrmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,                                      
                                       ctypes.c_int,
@@ -3455,7 +3455,7 @@ def cublasZtrmv(handle, uplo, trans, diag, n, A, lda, x, incx):
 
 # STRSV, DTRSV, CTRSV, ZTRSV
 _libcublas.cublasStrsv_v2.restype = int
-_libcublas.cublasStrsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasStrsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3478,7 +3478,7 @@ def cublasStrsv(handle, uplo, trans, diag, n, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasDtrsv_v2.restype = int
-_libcublas.cublasDtrsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDtrsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3501,7 +3501,7 @@ def cublasDtrsv(handle, uplo, trans, diag, n, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasCtrsv_v2.restype = int
-_libcublas.cublasCtrsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCtrsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3524,7 +3524,7 @@ def cublasCtrsv(handle, uplo, trans, diag, n, A, lda, x, incx):
     cublasCheckStatus(status)
 
 _libcublas.cublasZtrsv_v2.restype = int
-_libcublas.cublasZtrsv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZtrsv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3548,7 +3548,7 @@ def cublasZtrsv(handle, uplo, trans, diag, n, A, lda, x, incx):
 
 # CHEMV, ZHEMV
 _libcublas.cublasChemv_v2.restype = int
-_libcublas.cublasChemv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasChemv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_void_p,
@@ -3576,7 +3576,7 @@ def cublasChemv(handle, uplo, n, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
 
 _libcublas.cublasZhemv_v2.restype = int
-_libcublas.cublasZhemv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZhemv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,                                       
                                       ctypes.c_void_p,
@@ -3605,7 +3605,7 @@ def cublasZhemv(handle, uplo, n, alpha, A, lda, x, incx, beta, y, incy):
 
 # CHBMV, ZHBMV
 _libcublas.cublasChbmv_v2.restype = int
-_libcublas.cublasChbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasChbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,                                      
@@ -3635,7 +3635,7 @@ def cublasChbmv(handle, uplo, n, k, alpha, A, lda, x, incx, beta, y, incy):
     cublasCheckStatus(status)
 
 _libcublas.cublasZhbmv_v2.restype = int
-_libcublas.cublasZhbmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZhbmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,                                      
@@ -3666,7 +3666,7 @@ def cublasZhbmv(handle, uplo, n, k, alpha, A, lda, x, incx, beta, y, incy):
 
 # CHPMV, ZHPMV
 _libcublas.cublasChpmv_v2.restype = int
-_libcublas.cublasChpmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasChpmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,                                      
                                       ctypes.c_void_p,
@@ -3693,7 +3693,7 @@ def cublasChpmv(handle, uplo, n, alpha, AP, x, incx, beta, y, incy):
     cublasCheckStatus(status)
 
 _libcublas.cublasZhpmv_v2.restype = int
-_libcublas.cublasZhpmv_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZhpmv_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,                                      
                                       ctypes.c_void_p,
@@ -3721,7 +3721,7 @@ def cublasZhpmv(handle, uplo, n, alpha, AP, x, incx, beta, y, incy):
 
 # CHER, ZHER
 _libcublas.cublasCher_v2.restype = int
-_libcublas.cublasCher_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCher_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,
                                      ctypes.c_void_p,
@@ -3741,7 +3741,7 @@ def cublasCher(handle, uplo, n, alpha, x, incx, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasZher_v2.restype = int
-_libcublas.cublasZher_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZher_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,                                     
                                      ctypes.c_void_p,
@@ -3763,7 +3763,7 @@ def cublasZher(handle, uplo, n, alpha, x, incx, A, lda):
 
 # CHER2, ZHER2
 _libcublas.cublasCher2_v2.restype = int
-_libcublas.cublasCher2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCher2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,                                      
                                       ctypes.c_void_p,
@@ -3788,7 +3788,7 @@ def cublasCher2(handle, uplo, n, alpha, x, incx, y, incy, A, lda):
     cublasCheckStatus(status)
 
 _libcublas.cublasZher2_v2.restype = int
-_libcublas.cublasZher2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZher2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,                                      
                                       ctypes.c_void_p,
@@ -3813,7 +3813,7 @@ def cublasZher2(handle, uplo, n, alpha, x, incx, y, incy, A, lda):
 
 # CHPR, ZHPR
 _libcublas.cublasChpr_v2.restype = int
-_libcublas.cublasChpr_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasChpr_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,                                     
                                      ctypes.c_void_p,
@@ -3833,7 +3833,7 @@ def cublasChpr(handle, uplo, n, alpha, x, incx, AP):
     cublasCheckStatus(status)
 
 _libcublas.cublasZhpr_v2.restype = int
-_libcublas.cublasZhpr_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZhpr_v2.argtypes = [ctypes.c_void_p,
                                      ctypes.c_int,
                                      ctypes.c_int,                                     
                                      ctypes.c_void_p,
@@ -3854,7 +3854,7 @@ def cublasZhpr(handle, uplo, n, alpha, x, incx, AP):
 
 # CHPR2, ZHPR2
 _libcublas.cublasChpr2.restype = int
-_libcublas.cublasChpr2.argtypes = [ctypes.c_int,
+_libcublas.cublasChpr2.argtypes = [ctypes.c_void_p,
                                    ctypes.c_int,
                                    ctypes.c_int,                                   
                                    ctypes.c_void_p,
@@ -3877,7 +3877,7 @@ def cublasChpr2(handle, uplo, n, alpha, x, inx, y, incy, AP):
     cublasCheckStatus(status)
 
 _libcublas.cublasZhpr2_v2.restype = int
-_libcublas.cublasZhpr2_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZhpr2_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,                                      
                                       ctypes.c_void_p,
@@ -3901,7 +3901,7 @@ def cublasZhpr2(handle, uplo, n, alpha, x, inx, y, incy, AP):
 
 # SGEMM, CGEMM, DGEMM, ZGEMM
 _libcublas.cublasSgemm_v2.restype = int
-_libcublas.cublasSgemm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSgemm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3931,7 +3931,7 @@ def cublasSgemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C,
     cublasCheckStatus(status)
 
 _libcublas.cublasCgemm_v2.restype = int
-_libcublas.cublasCgemm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCgemm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3963,7 +3963,7 @@ def cublasCgemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C,
     cublasCheckStatus(status)
 
 _libcublas.cublasDgemm_v2.restype = int
-_libcublas.cublasDgemm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDgemm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -3993,7 +3993,7 @@ def cublasDgemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C,
     cublasCheckStatus(status)
 
 _libcublas.cublasZgemm_v2.restype = int
-_libcublas.cublasZgemm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZgemm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4026,7 +4026,7 @@ def cublasZgemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C,
     
 # SSYMM, DSYMM, CSYMM, ZSYMM
 _libcublas.cublasSsymm_v2.restype = int
-_libcublas.cublasSsymm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSsymm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4055,7 +4055,7 @@ def cublasSsymm(handle, side, uplo, m, n, alpha, A, lda, B, ldb, beta, C, ldc):
     cublasCheckStatus(status)
 
 _libcublas.cublasDsymm_v2.restype = int
-_libcublas.cublasDsymm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDsymm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4085,7 +4085,7 @@ def cublasDsymm(handle, side, uplo, m, n, alpha, A, lda, B, ldb, beta, C, ldc):
     cublasCheckStatus(status)
 
 _libcublas.cublasCsymm_v2.restype = int
-_libcublas.cublasCsymm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCsymm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4116,7 +4116,7 @@ def cublasCsymm(handle, side, uplo, m, n, alpha, A, lda, B, ldb, beta, C, ldc):
     cublasCheckStatus(status)
 
 _libcublas.cublasZsymm_v2.restype = int
-_libcublas.cublasZsymm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZsymm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4148,7 +4148,7 @@ def cublasZsymm(handle, side, uplo, m, n, alpha, A, lda, B, ldb, beta, C, ldc):
 
 # SSYRK, DSYRK, CSYRK, ZSYRK
 _libcublas.cublasSsyrk_v2.restype = int
-_libcublas.cublasSsyrk_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSsyrk_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4175,7 +4175,7 @@ def cublasSsyrk(handle, uplo, trans, n, k, alpha, A, lda, beta, C, ldc):
     cublasCheckStatus(status)
 
 _libcublas.cublasDsyrk_v2.restype = int
-_libcublas.cublasDsyrk_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDsyrk_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4204,7 +4204,7 @@ def cublasDsyrk(handle, uplo, trans, n, k, alpha, A, lda, beta, C, ldc):
     cublasCheckStatus(status)
 
 _libcublas.cublasCsyrk_v2.restype = int
-_libcublas.cublasCsyrk_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCsyrk_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4233,7 +4233,7 @@ def cublasCsyrk(handle, uplo, trans, n, k, alpha, A, lda, beta, C, ldc):
     cublasCheckStatus(status)
 
 _libcublas.cublasZsyrk_v2.restype = int
-_libcublas.cublasZsyrk_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZsyrk_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4263,7 +4263,7 @@ def cublasZsyrk(handle, uplo, trans, n, k, alpha, A, lda, beta, C, ldc):
 
 # SSYR2K, DSYR2K, CSYR2K, ZSYR2K
 _libcublas.cublasSsyr2k_v2.restype = int
-_libcublas.cublasSsyr2k_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasSsyr2k_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_int,
                                        ctypes.c_int,                                       
@@ -4292,7 +4292,7 @@ def cublasSsyr2k(handle, uplo, trans, n, k, alpha, A, lda, B, ldb, beta, C, ldc)
     cublasCheckStatus(status)
 
 _libcublas.cublasDsyr2k_v2.restype = int
-_libcublas.cublasDsyr2k_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDsyr2k_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_int,
                                        ctypes.c_int,
@@ -4321,7 +4321,7 @@ def cublasDsyr2k(handle, uplo, trans, n, k, alpha, A, lda, B, ldb, beta, C, ldc)
     cublasCheckStatus(status)
 
 _libcublas.cublasCsyr2k_v2.restype = int
-_libcublas.cublasCsyr2k_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCsyr2k_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_int,
                                        ctypes.c_int,
@@ -4352,7 +4352,7 @@ def cublasCsyr2k(handle, uplo, trans, n, k, alpha, A, lda, B, ldb, beta, C, ldc)
     cublasCheckStatus(status)
 
 _libcublas.cublasZsyr2k_v2.restype = int
-_libcublas.cublasZsyr2k_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZsyr2k_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_int,
                                        ctypes.c_int,
@@ -4384,7 +4384,7 @@ def cublasZsyr2k(handle, uplo, trans, n, k, alpha, A, lda, B, ldb, beta, C, ldc)
 
 # STRMM, DTRMM, CTRMM, ZTRMM
 _libcublas.cublasStrmm_v2.restype = int
-_libcublas.cublasStrmm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasStrmm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4414,7 +4414,7 @@ def cublasStrmm(handle, side, uplo, trans, diag, m, n, alpha, A, lda, B, ldb, C,
     cublasCheckStatus(status)
 
 _libcublas.cublasDtrmm_v2.restype = int
-_libcublas.cublasDtrmm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDtrmm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4444,7 +4444,7 @@ def cublasDtrmm(handle, side, uplo, trans, diag, m, n, alpha, A, lda, B, ldb, C,
     cublasCheckStatus(status)
 
 _libcublas.cublasCtrmm_v2.restype = int
-_libcublas.cublasCtrmm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCtrmm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4475,7 +4475,7 @@ def cublasCtrmm(handle, side, uplo, trans, diag, m, n, alpha, A, lda, B, ldb, C,
     cublasCheckStatus(status)
 
 _libcublas.cublasZtrmm_v2.restype = int
-_libcublas.cublasZtrmm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZtrmm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4507,7 +4507,7 @@ def cublasZtrmm(handle, side, uplo, trans, diag, m, n, alpha, A, lda, B, ldb, C,
 
 # STRSM, DTRSM, CTRSM, ZTRSM
 _libcublas.cublasStrsm_v2.restype = int
-_libcublas.cublasStrsm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasStrsm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4535,7 +4535,7 @@ def cublasStrsm(handle, side, uplo, trans, diag, m, n, alpha, A, lda, B, ldb):
     cublasCheckStatus(status)
 
 _libcublas.cublasDtrsm_v2.restype = int
-_libcublas.cublasDtrsm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasDtrsm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4563,7 +4563,7 @@ def cublasDtrsm(handle, side, uplo, trans, diag, m, n, alpha, A, lda, B, ldb):
     cublasCheckStatus(status)
 
 _libcublas.cublasCtrsm_v2.restype = int
-_libcublas.cublasCtrsm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCtrsm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4592,7 +4592,7 @@ def cublasCtrsm(handle, side, uplo, trans, diag, m, n, alpha, A, lda, B, ldb):
     cublasCheckStatus(status)
 
 _libcublas.cublasZtrsm_v2.restype = int
-_libcublas.cublasZtrsm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZtrsm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4622,7 +4622,7 @@ def cublasZtrsm(handle, side, uplo, transa, diag, m, n, alpha, A, lda, B, ldb):
 
 # CHEMM, ZHEMM
 _libcublas.cublasChemm_v2.restype = int
-_libcublas.cublasChemm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasChemm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4653,7 +4653,7 @@ def cublasChemm(handle, side, uplo, m, n, alpha, A, lda, B, ldb, beta, C, ldc):
     cublasCheckStatus(status)
 
 _libcublas.cublasZhemm_v2.restype = int
-_libcublas.cublasZhemm_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZhemm_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4685,7 +4685,7 @@ def cublasZhemm(handle, side, uplo, m, n, alpha, A, lda, B, ldb, beta, C, ldc):
 
 # CHERK, ZHERK
 _libcublas.cublasCherk_v2.restype = int
-_libcublas.cublasCherk_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCherk_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4712,7 +4712,7 @@ def cublasCherk(handle, uplo, trans, n, k, alpha, A, lda, beta, C, ldc):
     cublasCheckStatus(status)
 
 _libcublas.cublasZherk_v2.restype = int
-_libcublas.cublasZherk_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZherk_v2.argtypes = [ctypes.c_void_p,
                                       ctypes.c_int,
                                       ctypes.c_int,
                                       ctypes.c_int,
@@ -4740,7 +4740,7 @@ def cublasZherk(handle, uplo, trans, n, k, alpha, A, lda, beta, C, ldc):
 
 # CHER2K, ZHER2K
 _libcublas.cublasCher2k_v2.restype = int
-_libcublas.cublasCher2k_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasCher2k_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_int,
                                        ctypes.c_int,
@@ -4771,7 +4771,7 @@ def cublasCher2k(handle, uplo, trans, n, k, alpha, A, lda, B, ldb, beta, C, ldc)
     cublasCheckStatus(status)
         
 _libcublas.cublasZher2k_v2.restype = int
-_libcublas.cublasZher2k_v2.argtypes = [ctypes.c_int,
+_libcublas.cublasZher2k_v2.argtypes = [ctypes.c_void_p,
                                        ctypes.c_int,
                                        ctypes.c_int,
                                        ctypes.c_int,
@@ -4805,7 +4805,7 @@ def cublasZher2k(handle, uplo, trans, n, k, alpha, A, lda, B, ldb, beta, C, ldc)
 
 # SDGMM, DDGMM, CDGMM, ZDGMM
 _libcublas.cublasSdgmm.restype = int
-_libcublas.cublasSdgmm.argtypes = [ctypes.c_int,
+_libcublas.cublasSdgmm.argtypes = [ctypes.c_void_p,
                                     ctypes.c_int,
                                     ctypes.c_int,
                                     ctypes.c_int,
@@ -4831,7 +4831,7 @@ def cublasSdgmm(handle, mode, m, n, A, lda, x, incx, C, ldc):
     cublasCheckStatus(status)
   
 _libcublas.cublasDdgmm.restype = int
-_libcublas.cublasDdgmm.argtypes = [ctypes.c_int,
+_libcublas.cublasDdgmm.argtypes = [ctypes.c_void_p,
                                     ctypes.c_int,
                                     ctypes.c_int,
                                     ctypes.c_int,
@@ -4857,7 +4857,7 @@ def cublasDdgmm(handle, mode, m, n, A, lda, x, incx, C, ldc):
     cublasCheckStatus(status)
     
 _libcublas.cublasCdgmm.restype = int
-_libcublas.cublasCdgmm.argtypes = [ctypes.c_int,
+_libcublas.cublasCdgmm.argtypes = [ctypes.c_void_p,
                                     ctypes.c_int,
                                     ctypes.c_int,
                                     ctypes.c_int,
@@ -4883,7 +4883,7 @@ def cublasCdgmm(mode, m, n, A, lda, x, incx, C, ldc):
     cublasCheckStatus(status)
       
 _libcublas.cublasZdgmm.restype = int
-_libcublas.cublasZdgmm.argtypes = [ctypes.c_int,
+_libcublas.cublasZdgmm.argtypes = [ctypes.c_void_p,
                                     ctypes.c_int,
                                     ctypes.c_int,
                                     ctypes.c_int,

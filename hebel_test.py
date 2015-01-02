@@ -22,7 +22,7 @@ import random
 import numpy as np
 from pycuda import gpuarray
 from pycuda.curandom import rand as curand
-from hebel import sampler
+from hebel import sampler, memory_pool
 from hebel.models import NeuralNet, NeuralNetRegression
 from hebel.optimizers import SGD
 from hebel.parameter_updaters import SimpleSGDUpdate, \
