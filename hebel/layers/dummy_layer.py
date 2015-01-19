@@ -29,7 +29,6 @@ class DummyLayer(ParameterfreeLayer):
         self.n_units = n_in
 
     def feed_forward(self, input_data, prediction=False):
-        assert input_data.shape[1] == self.n_in
         return (input_data,)
 
     def backprop(self, input_data, df_output, cache=None):
