@@ -16,7 +16,7 @@
 
 #include <stdio.h>
 #include <vector_types.h>
-#include "convolution_kernels.h"
+#include "kernels.h"
 
 typedef {{ dtype }} data_t;
 

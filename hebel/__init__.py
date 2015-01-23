@@ -25,7 +25,7 @@ cuda.init()
 from pycuda.tools import make_default_context, DeviceMemoryPool
 
 import os as _os
-neural_nets_root = _os.path.split(
+hebel_root_dir = _os.path.split(
     _os.path.abspath(_os.path.dirname(__file__)))[0]
 
 is_initialized = False

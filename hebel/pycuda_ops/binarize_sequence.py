@@ -20,8 +20,8 @@ from pycuda import driver
 import numpy as np
 import os, ctypes
 from jinja2 import Template
-from . import sequence_conv_root
-from hebel import memory_pool
+from hebel.sequence_convolution.sequence_convolution import sequence_conv_root
+from hebel import memory_pool, hebel_root_dir
 from hebel.utils.math import div_up
 
 from hebel import context
@@ -33,8 +33,8 @@ MULTIPROCESSOR_COUNT = context.get_device()\
     .get_attribute(driver.device_attribute.MULTIPROCESSOR_COUNT)
 N_LETTERS = 4
 
-_src_dir = os.path.join(sequence_conv_root, 'src')
-_code = Template(open(os.path.join(_src_dir, 'convolution_kernels.cu')).read())
+_src_dir = os.path.join(hebel_root_dir, 'src')
+_code = Template(open(os.path.join(_src_dir, 'kernels.cu')).read())
 
 _source_modules = {dtype: SourceModule(_code.render(dtype=dtype),
                                        include_dirs=[_src_dir], no_extern_c=True)
@@ -50,7 +50,7 @@ _dtype_name = {np.dtype(np.float32): 'float', np.dtype(np.float64): 'double'}
 _kernels['float']['sequenceToFloatKernel'].prepare('IIPP')
 _kernels['double']['sequenceToFloatKernel'].prepare('IIPP')
 
-def sequence_to_float(seq, output=None, dtype=np.float32, stream=None):
+def binarize_sequence(seq, output=None, dtype=np.float32, stream=None):
     n, w = seq.shape
     if output is None:
         output = gpuarray.empty((n, N_LETTERS, 1, w), dtype,

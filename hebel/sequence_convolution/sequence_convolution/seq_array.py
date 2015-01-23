@@ -15,14 +15,17 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 
-import numpy as np
 import string
-from pycuda import gpuarray
 import random
+
+import numpy as np
+from pycuda import gpuarray
+
 from hebel import memory_pool
 from hebel.data_providers import MultiTaskDataProvider
 from hebel.utils.math import ceil_div
-from .pycuda_ops import sequence_to_float
+from hebel.pycuda_ops.binarize_sequence import binarize_sequence
+
 
 def encode_sequence(seq):
     seq_upper = map(string.upper, seq)
@@ -52,7 +55,7 @@ class SeqArrayDataProvider(MultiTaskDataProvider):
         else:
             data = self.enc_seq
 
-        data = map(sequence_to_float, data)
+        data = map(binarize_sequence, data)
         for key, value in kwargs.iteritems():
             self.__dict__[key] = value
         super(SeqArrayDataProvider, self).__init__(data, targets, batch_size)
@@ -168,7 +171,7 @@ class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
                 self.sequences_next = np.copy(self.sequences_next[:, self.trim[0]:-self.trim[1]])
             self.sequences_next = gpuarray.to_gpu_async(
                 self.sequences_next, allocator=memory_pool.allocate)
-            self.sequences_next = sequence_to_float(self.sequences_next)
+            self.sequences_next = binarize_sequence(self.sequences_next)
             self.targets_next = gpuarray.to_gpu_async(
                 np.ascontiguousarray(data['label'], np.float32)
                 .reshape((data.shape[0], 1)),
