@@ -15,9 +15,6 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 
-import string
-import random
-
 import numpy as np
 from pycuda import gpuarray
 
@@ -25,12 +22,6 @@ from hebel import memory_pool
 from hebel.data_providers import MultiTaskDataProvider
 from hebel.utils.math import ceil_div
 from hebel.pycuda_ops.binarize_sequence import binarize_sequence
-
-
-def encode_sequence(seq):
-    seq_upper = map(string.upper, seq)
-    enc_seq = np.array(seq_upper, 'c')
-    return enc_seq
 
 
 class SeqArrayDataProvider(MultiTaskDataProvider):
@@ -143,13 +134,6 @@ class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
             self.get_next_batch()
             raise StopIteration
         
-        # self.table.read(self.i, self.i + self.batch_size)
-        # self.sequences = gpuarray.to_gpu(
-        #     np.ndarray((self.batch_size, self.seq_length),
-        #                '|S1', np.ascontiguousarray(self.batch['seq']).data))
-        # self.targets = gpuarray.to_gpu(np.ascontiguousarray(self.batch['label'], np.float32)
-        #                                .reshape((self.batch_size, 1)))
-
         sequences = self.sequences_next
         targets = self.targets_next
 
@@ -177,9 +161,3 @@ class HDF5SeqArrayDataProvider(MultiTaskDataProvider):
                 .reshape((data.shape[0], 1)),
                 allocator=memory_pool.allocate
             )
-
-
-def sample_sequence(length, n):
-    seq = [''.join((random.choice('ACGT') for _ in range(length)))
-           for _ in range(n)]
-    return seq
