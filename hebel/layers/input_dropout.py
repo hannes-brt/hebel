@@ -36,8 +36,8 @@ class InputDropout(DummyLayer):
     n_in : integer
         Number of input units.
 
-    dropout_probability : float in [0, 1]
-        Probability of dropping out each unit.
+    dropout_probability : float in [0, 1)
+        Probability of dropping out each input during training. Default is 0.2.
 
     compute_input_gradients : Bool
         Whether to compute the gradients with respect to the input

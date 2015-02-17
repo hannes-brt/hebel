@@ -26,7 +26,7 @@ class DummyLayer(HiddenLayer):
     n_parameters = 0
     l1_penalty_weight = 0.
     l2_penalty_weight = 0.
-    dropout = False
+    dropout = 0.
 
     def __init__(self, n_in):
         self.n_in = n_in

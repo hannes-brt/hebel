@@ -45,11 +45,11 @@ class NeuralNet(Model):
     activation_function : {'sigmoid', 'tanh', 'relu', or 'linear'}, optional
         The activation function to be used in the hidden layers.
 
-    dropout : bool, optional
-        Whether to use dropout regularization
+    dropout : float in [0, 1)
+        Probability of dropping out each hidden unit during training. Default is 0.
 
-    input_dropout : float, in ``[0, 1]``
-        Dropout probability for the input (default 0.0).
+    input_dropout : float in [0, 1)
+        Probability of dropping out each input during training. Default is 0.
 
     n_in : integer, optional
         The dimensionality of the input. Must be given, if the first
@@ -81,14 +81,14 @@ class NeuralNet(Model):
         # Simple form
         model = NeuralNet(layers=[1000, 1000],
                           activation_function='relu',
-                          dropout=True,
+                          dropout=0.5,
                           n_in=784, n_out=10,
                           l1_penalty_weight=.1)
 
         # Extended form, initializing with ``HiddenLayer`` and ``TopLayer`` objects
-        hidden_layers = [HiddenLayer(784, 1000, 'relu', dropout=True,
+        hidden_layers = [HiddenLayer(784, 1000, 'relu', dropout=0.5,
                                      l1_penalty_weight=.2),
-                         HiddenLayer(1000, 1000, 'relu', dropout=True,
+                         HiddenLayer(1000, 1000, 'relu', dropout=0.5,
                                      l1_penalty_weight=.1)]
         softmax_layer = LogisticLayer(1000, 10, l1_penalty_weight=.1)
 
@@ -98,7 +98,7 @@ class NeuralNet(Model):
     TopLayerClass = SoftmaxLayer
 
     def __init__(self, layers, top_layer=None, activation_function='sigmoid',
-                 dropout=False, input_dropout=0., n_in=None, n_out=None,
+                 dropout=0., input_dropout=0., n_in=None, n_out=None,
                  l1_penalty_weight=0., l2_penalty_weight=0.,
                  **kwargs):
         self.n_layers = len(layers)
@@ -137,7 +137,7 @@ class NeuralNet(Model):
             if self.n_layers:
                 dropout = self.n_layers * [dropout]
             else:
-                dropout = [False]
+                dropout = [0.]
 
         self.hidden_layers = []
 
@@ -271,8 +271,8 @@ class NeuralNet(Model):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved in layers that
-            use dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
 
@@ -408,9 +408,9 @@ class NeuralNet(Model):
 
         prediction : bool, optional
             Whether to run in prediction mode. Only relevant when
-            using dropout. If true, weights are halved. If false, then
-            half of hidden units are randomly dropped and the dropout
-            mask is returned in case ``return_cache==True``.
+            using dropout. If true, weights are multiplied by 1 - dropout.
+            If false, then half of hidden units are randomly dropped and
+            the dropout mask is returned in case ``return_cache==True``.
 
         **Returns:**
         
