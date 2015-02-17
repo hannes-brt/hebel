@@ -96,7 +96,7 @@ class LinearRegressionLayer(SoftmaxLayer):
             self.W = gpuarray.empty((n_in, n_out), dtype=np.float32,
                                     allocator=memory_pool.allocate)
             sampler.fill_uniform(self.W)
-            self.W = weights_scale * (self.W -.5)
+            self.W = self.weights_scale * (self.W -.5)
 
             self.b = gpuarray.zeros((n_out,), dtype=np.float32,
                                     allocator=memory_pool.allocate)
