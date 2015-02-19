@@ -257,7 +257,7 @@ class HiddenLayer(object):
             if prediction:
                 activations *= 1 - self.dropout
             else:
-                dropout_mask = sample_dropout_mask(activations, dropout)
+                dropout_mask = sample_dropout_mask(activations, self.dropout)
                 return activations, dropout_mask
 
         return (activations,)
