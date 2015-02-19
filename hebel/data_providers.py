@@ -34,6 +34,13 @@ import numpy as np
 from . import memory_pool
 from pycuda import gpuarray
 
+# Auto-check CPU arrays for contiguity before copying to GPU
+def my_gpuarray_to_gpu(arr, **kwargs):
+    if not arr.flags.forc:
+        arr = arr.copy()
+    return gpuarray.to_gpu(kwargs)
+gpuarray.to_gpu = my_gpuarray_to_gpu
+
 class DataProvider(object):
     """ This is the abstract base class for ``DataProvider``
     objects. Subclass this class to implement a custom design. At a
