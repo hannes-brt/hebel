@@ -74,7 +74,10 @@ class InputDropout(DummyLayer):
             The data after performing dropout.
         """
 
-        assert input_data.shape[1] == self.n_in
+        if input_data.shape[1] != self.n_in:
+            raise ValueError('Number of outputs from previous layer (%d) '
+                             'does not match number of inputs to this layer (%d)' %
+                             (input_data.shape[1], self.n_in))
 
         if not prediction:
             dropout_input = gpuarray.empty_like(input_data)

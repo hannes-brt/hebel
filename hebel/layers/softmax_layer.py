@@ -158,6 +158,11 @@ class SoftmaxLayer(TopLayer):
             The activations of the output units.
         """
 
+        if input_data.shape[1] != self.W.shape[0]:
+            raise ValueError('Number of outputs from previous layer (%d) '
+                            'does not match number of inputs to this layer (%d)' %
+                             (input_data.shape[1], self.W.shape[0]))
+
         lin_activations = linalg.dot(input_data, self.W)
         lin_activations = add_vec_to_mat(lin_activations, self.b, inplace=True)
         activations = softmax(lin_activations)

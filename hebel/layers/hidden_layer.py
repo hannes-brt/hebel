@@ -243,6 +243,11 @@ class HiddenLayer(object):
             The activations of the hidden units.
         """
 
+        if input_data.shape[1] != self.W.shape[0]:
+            raise ValueError('Number of outputs from previous layer (%d) '
+                            'does not match number of inputs to this layer (%d)' %
+                             (input_data.shape[1], self.W.shape[0]))
+
         activations = linalg.dot(input_data, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
 
