@@ -268,13 +268,12 @@ class MNISTDataProvider(MiniBatchDataProvider):
     :param batch_size: The size of mini-batches.
     """
 
-    try:
-        from skdata.mnist.view import OfficialVectorClassification
-    except ImportError:
-        from skdata.mnist.views import OfficialVectorClassification
-    mnist = OfficialVectorClassification()
-
     def __init__(self, array, batch_size=None):
+        try:
+            from skdata.mnist.view import OfficialVectorClassification
+        except ImportError:
+            from skdata.mnist.views import OfficialVectorClassification
+        self.mnist = OfficialVectorClassification()
 
         self.train_idx = self.mnist.fit_idxs
         self.val_idx = self.mnist.val_idxs
