@@ -228,3 +228,18 @@ class SimpleProgressMonitor(object):
                                     self.train_time.total_seconds() % 60)
         print "Avg. time per epoch %.2fs" % self.avg_epoch_t
         sys.stdout.flush()
+
+
+class DummyProgressMonitor(object):
+    def __init__(self, model=None):
+        self.model = model
+
+    def start_training(self):
+        pass
+
+    def report(self, epoch, train_error, validation_error=None,
+               new_best=None, epoch_t=None):
+        pass
+
+    def finish_training(self):
+        pass
