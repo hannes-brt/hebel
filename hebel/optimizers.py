@@ -173,13 +173,13 @@ class SGD(object):
 
                     epoch_t = time.time() - t
 
-                    self.progress_monitor.report(self.epoch, train_loss.get(),
+                    self.progress_monitor.report(self.epoch, train_loss,
                                                  validation_loss_rate,
                                                  new_best,
                                                  epoch_t=epoch_t)
                 else:
                     epoch_t = time.time() - t
-                    self.progress_monitor.report(self.epoch, train_loss.get(),
+                    self.progress_monitor.report(self.epoch, train_loss,
                                                  epoch_t=epoch_t)
 
             except KeyboardInterrupt:

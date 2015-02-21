@@ -282,7 +282,7 @@ class SoftmaxLayer(TopLayer):
         loss = cross_entropy(activations, targets)
 
         if average: loss /= targets.shape[0]
-        return loss
+        return loss.get()
         
     train_error = cross_entropy_error
 
@@ -321,4 +321,4 @@ class SoftmaxLayer(TopLayer):
                                  cumath.log(activations + eps)))
         if average:
             kl_error /= targets.shape[0]
-        return float(kl_error.get())
+        return kl_error.get()

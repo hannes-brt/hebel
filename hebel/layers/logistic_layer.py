@@ -279,7 +279,7 @@ class LogisticLayer(TopLayer):
 
         if average: loss /= targets.shape[0]
         # assert np.isfinite(loss)
-        return loss
+        return loss.get()
         
     train_error = cross_entropy_error
 

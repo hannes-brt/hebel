@@ -189,5 +189,5 @@ class LinearRegressionLayer(SoftmaxLayer):
             matrix_sum_out_axis((targets - activations) ** 2, 1))
 
         if average: loss = loss.mean()
-        return loss
+        return loss.get()
     train_error = squared_loss
