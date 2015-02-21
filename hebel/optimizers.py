@@ -20,7 +20,7 @@ algorithm we have in online stochastic gradient descent (SGD).
 """
 
 import numpy as np
-import time, cPickle, os, inspect
+import time, cPickle, sys, os, inspect
 from .pycuda_ops.matrix import vector_normalize
 from .schedulers import constant_scheduler
 from .monitors import SimpleProgressMonitor
@@ -119,7 +119,7 @@ class SGD(object):
             task_id=None):
         # Initialize variables
         self.epoch = 0
-        done_looping = False
+        keyboard_interrupt = False
 
         self.progress_monitor.start_training()
 
@@ -130,7 +130,7 @@ class SGD(object):
         for self.epoch in range(self.epoch, self.epoch + iterations):
             learning_parameters = map(lambda lp: lp.next(),
                                       self.learning_parameter_iterators)
-            if done_looping: break
+            if keyboard_interrupt: break
 
             try:
                 t = time.time()
@@ -184,13 +184,16 @@ class SGD(object):
 
             except KeyboardInterrupt:
                 print "Keyboard interrupt. Stopping training and cleaning up."
-                done_looping = True
+                keyboard_interrupt = True
 
         if self.early_stopping_module is not None:
             self.early_stopping_module.finish()
             self.model = self.early_stopping_module.model
 
         self.progress_monitor.finish_training()
+
+        if keyboard_interrupt:
+            sys.exit()
 
     def norm_v_norm(self):
         if self.max_vec_norm:
