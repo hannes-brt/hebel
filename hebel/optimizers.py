@@ -54,7 +54,11 @@ class EarlyStoppingModule(object):
 
     def finish(self):
         # self.model.parameters = self.best_model
-        self.model = cPickle.loads(self.best_model)
+        try:
+            self.model = cPickle.loads(self.best_model)
+        except AttributeError:
+            # Training has not yet reached the first validation epoch, so there is no self.best_model
+            return
         print "Optimization complete. " \
             "Best validation error of %.5g obtained in self.epoch %d" % \
             (self.best_validation_loss, self.best_epoch)
