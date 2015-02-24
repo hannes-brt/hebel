@@ -298,5 +298,5 @@ class LogisticLayer(TopLayer):
         class_error = np.sum((activations.get() >= .5) != (targets >= .5))
 
         if average: class_error = float(class_error) / targets.shape[0]
-        assert np.isfinite(class_error)
+
         return class_error

@@ -331,7 +331,8 @@ class NeuralNet(Model):
         loss, hidden_cache, logistic_cache = self.evaluate(
             input_data, targets, return_cache=True, prediction=False)
 
-        # assert np.isfinite(loss)
+        if not np.isfinite(loss):
+            raise ValueError('Infinite activations!')
 
         # Backpropagation
         if self.hidden_layers:
