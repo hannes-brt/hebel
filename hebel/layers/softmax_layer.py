@@ -200,6 +200,10 @@ class SoftmaxLayer(TopLayer):
         else:
             activations = self.feed_forward(input_data, prediction=False)
 
+        if activations.shape != targets.shape:
+            raise ValueError('Activations (shape = %s) and targets (shape = %s) are different sizes' %
+                             tuple([' x '.join(map(str, arr.shape)) for arr in (activations, targets)]))
+
         delta = substract_matrix(activations, targets)
         nan_to_zeros(delta, delta)
 
