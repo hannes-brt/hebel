@@ -23,15 +23,16 @@ import numpy as np
 import time, cPickle, sys, os, inspect
 from .pycuda_ops.matrix import vector_normalize
 from .schedulers import constant_scheduler
-from .monitors import SimpleProgressMonitor
+from .monitors import SimpleProgressMonitor, DummyProgressMonitor
 from . import memory_pool
 from pycuda._driver import MemoryError
 
 
 class EarlyStoppingModule(object):
-    def __init__(self, model):
+    def __init__(self, model, verbose):
         self.model = model
         self.best_validation_loss = np.inf
+        self.verbose = verbose
 
     def update(self, epoch, validation_loss):
         if validation_loss < self.best_validation_loss:
@@ -59,9 +60,10 @@ class EarlyStoppingModule(object):
         except AttributeError:
             # Training has not yet reached the first validation epoch, so there is no self.best_model
             return
-        print "Optimization complete. " \
-            "Best validation error of %.5g obtained in self.epoch %d" % \
-            (self.best_validation_loss, self.best_epoch)
+        if self.verbose:
+            print "Optimization complete. " \
+                  "Best validation error of %.5g obtained in self.epoch %d" % \
+                  (self.best_validation_loss, self.best_epoch)
 
 
 class SGD(object):
@@ -76,7 +78,8 @@ class SGD(object):
                  progress_monitor=None,
                  learning_rate_schedule=constant_scheduler(.1),
                  momentum_schedule=None,
-                 early_stopping=True):
+                 early_stopping=True,
+                 verbose=True):
 
         """ Stochastic gradient descent
         """
@@ -108,14 +111,17 @@ class SGD(object):
             self.learning_parameter_iterators.append(momentum_schedule)
 
         if progress_monitor is None:
-            self.progress_monitor = SimpleProgressMonitor(model=self.model)
+            if verbose:
+                self.progress_monitor = SimpleProgressMonitor(model=self.model)
+            else:
+                self.progress_monitor = DummyProgressMonitor()
         else:
             self.progress_monitor = progress_monitor
 
         if self.progress_monitor.model is None:
             self.progress_monitor.model = self.model
 
-        self.early_stopping_module = EarlyStoppingModule(self.model) \
+        self.early_stopping_module = EarlyStoppingModule(self.model, verbose) \
                                      if early_stopping else None
 
     def run(self, iterations=200, validation_interval=5,
