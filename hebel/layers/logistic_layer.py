@@ -200,7 +200,7 @@ class LogisticLayer(TopLayer):
 
         if activations.shape != targets.shape:
             raise ValueError('Activations (shape = %s) and targets (shape = %s) are different sizes' %
-                             tuple([' x '.join(map(str, arr.shape)) for arr in (activations, targets)]))
+                             (activations.shape, targets.shape))
 
         delta = substract_matrix(activations, targets)
         nan_to_zeros(delta, delta)

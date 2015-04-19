@@ -43,6 +43,8 @@ class DataProvider(object):
     def __init__(self, data, targets, batch_size):
         self.data = data
         self.targets = targets
+        if len(self.targets.shape) == 1:
+            self.targets = self.targets[:, None] # box targets
 
         self.N = data.shape[0]
 
@@ -224,6 +226,8 @@ class BatchDataProvider(MiniBatchDataProvider):
     def __init__(self, data, targets):
         self.data = data
         self.targets = targets
+        if len(self.targets.shape) == 1:
+            self.targets = self.targets[:, None] # box targets
         self.N = data.shape[0]
         self.i = 0
         self.batch_size = self.N
