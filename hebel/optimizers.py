@@ -121,14 +121,17 @@ class SGD(object):
         if self.progress_monitor.model is None:
             self.progress_monitor.model = self.model
 
-        self.early_stopping_module = EarlyStoppingModule(self.model, verbose) \
-                                     if early_stopping else None
+        self.early_stopping = early_stopping
+        self.verbose = verbose
+        self.epoch = 0
 
     def run(self, iterations=200, validation_interval=5,
             yaml_config=None,
             task_id=None):
-        # Initialize variables
-        self.epoch = 0
+
+        self.early_stopping_module = EarlyStoppingModule(self.model, self.verbose) \
+            if self.early_stopping else None
+
         keyboard_interrupt = False
 
         self.progress_monitor.start_training()
@@ -137,7 +140,7 @@ class SGD(object):
         self.progress_monitor.yaml_config = yaml_config
 
         # Main loop
-        for self.epoch in range(self.epoch, self.epoch + iterations):
+        for self.epoch in range(self.epoch + 1, self.epoch + iterations + 1):
             learning_parameters = map(lambda lp: lp.next(),
                                       self.learning_parameter_iterators)
             if keyboard_interrupt: break
@@ -198,7 +201,7 @@ class SGD(object):
 
         if self.early_stopping_module is not None:
             self.early_stopping_module.finish()
-            self.model = self.early_stopping_module.model
+            # self.model = self.early_stopping_module.model
 
         self.progress_monitor.finish_training()
 
