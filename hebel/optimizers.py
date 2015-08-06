@@ -20,18 +20,19 @@ algorithm we have in online stochastic gradient descent (SGD).
 """
 
 import numpy as np
-import time, cPickle, os, inspect
+import time, cPickle, sys, os, inspect
 from .pycuda_ops.matrix import vector_normalize
 from .schedulers import constant_scheduler
-from .monitors import SimpleProgressMonitor
+from .monitors import SimpleProgressMonitor, DummyProgressMonitor
 from . import memory_pool
 from pycuda._driver import MemoryError
 
 
 class EarlyStoppingModule(object):
-    def __init__(self, model):
+    def __init__(self, model, verbose):
         self.model = model
         self.best_validation_loss = np.inf
+        self.verbose = verbose
 
     def update(self, epoch, validation_loss):
         if validation_loss < self.best_validation_loss:
@@ -54,10 +55,15 @@ class EarlyStoppingModule(object):
 
     def finish(self):
         # self.model.parameters = self.best_model
-        self.model = cPickle.loads(self.best_model)
-        print "Optimization complete. " \
-            "Best validation error of %.5g obtained in self.epoch %d" % \
-            (self.best_validation_loss, self.best_epoch)
+        try:
+            self.model = cPickle.loads(self.best_model)
+        except AttributeError:
+            # Training has not yet reached the first validation epoch, so there is no self.best_model
+            return
+        if self.verbose:
+            print "Optimization complete. " \
+                  "Best validation error of %.5g obtained in self.epoch %d" % \
+                  (self.best_validation_loss, self.best_epoch)
 
 
 class SGD(object):
@@ -72,7 +78,8 @@ class SGD(object):
                  progress_monitor=None,
                  learning_rate_schedule=constant_scheduler(.1),
                  momentum_schedule=None,
-                 early_stopping=True):
+                 early_stopping=True,
+                 verbose=True):
 
         """ Stochastic gradient descent
         """
@@ -104,22 +111,28 @@ class SGD(object):
             self.learning_parameter_iterators.append(momentum_schedule)
 
         if progress_monitor is None:
-            self.progress_monitor = SimpleProgressMonitor(model=self.model)
+            if verbose:
+                self.progress_monitor = SimpleProgressMonitor(model=self.model)
+            else:
+                self.progress_monitor = DummyProgressMonitor()
         else:
             self.progress_monitor = progress_monitor
 
         if self.progress_monitor.model is None:
             self.progress_monitor.model = self.model
 
-        self.early_stopping_module = EarlyStoppingModule(self.model) \
-                                     if early_stopping else None
+        self.early_stopping = early_stopping
+        self.verbose = verbose
+        self.epoch = 0
 
     def run(self, iterations=200, validation_interval=5,
             yaml_config=None,
             task_id=None):
-        # Initialize variables
-        self.epoch = 0
-        done_looping = False
+
+        self.early_stopping_module = EarlyStoppingModule(self.model, self.verbose) \
+            if self.early_stopping else None
+
+        keyboard_interrupt = False
 
         self.progress_monitor.start_training()
 
@@ -127,10 +140,10 @@ class SGD(object):
         self.progress_monitor.yaml_config = yaml_config
 
         # Main loop
-        for self.epoch in range(self.epoch, self.epoch + iterations):
+        for self.epoch in range(self.epoch + 1, self.epoch + iterations + 1):
             learning_parameters = map(lambda lp: lp.next(),
                                       self.learning_parameter_iterators)
-            if done_looping: break
+            if keyboard_interrupt: break
 
             try:
                 t = time.time()
@@ -173,24 +186,27 @@ class SGD(object):
 
                     epoch_t = time.time() - t
 
-                    self.progress_monitor.report(self.epoch, train_loss.get(),
+                    self.progress_monitor.report(self.epoch, train_loss,
                                                  validation_loss_rate,
                                                  new_best,
                                                  epoch_t=epoch_t)
                 else:
                     epoch_t = time.time() - t
-                    self.progress_monitor.report(self.epoch, train_loss.get(),
+                    self.progress_monitor.report(self.epoch, train_loss,
                                                  epoch_t=epoch_t)
 
             except KeyboardInterrupt:
                 print "Keyboard interrupt. Stopping training and cleaning up."
-                done_looping = True
+                keyboard_interrupt = True
 
         if self.early_stopping_module is not None:
             self.early_stopping_module.finish()
-            self.model = self.early_stopping_module.model
+            # self.model = self.early_stopping_module.model
 
         self.progress_monitor.finish_training()
+
+        if keyboard_interrupt:
+            sys.exit()
 
     def norm_v_norm(self):
         if self.max_vec_norm:

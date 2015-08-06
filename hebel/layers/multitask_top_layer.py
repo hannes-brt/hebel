@@ -233,8 +233,8 @@ class MultitaskTopLayer(TopLayer):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the task
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
         
@@ -316,8 +316,8 @@ class MultitaskTopLayer(TopLayer):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         sum_errors : bool, optional
             Whether to add up the errors from the different tasks. If

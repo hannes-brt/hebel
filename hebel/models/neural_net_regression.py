@@ -46,8 +46,8 @@ class NeuralNetRegression(NeuralNet):
     activation_function : {'sigmoid', 'tanh', 'relu', or 'linear'}, optional
         The activation function to be used in the hidden layers.
 
-    dropout : bool, optional
-        Whether to use dropout regularization
+    dropout : float in [0, 1)
+        Probability of dropping out each hidden unit during training. Default is 0.
 
     n_in : integer, optional
         The dimensionality of the input. Must be given, if the first

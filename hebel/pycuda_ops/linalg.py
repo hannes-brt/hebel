@@ -101,7 +101,9 @@ def dot(x_gpu, y_gpu, transa='N', transb='N', handle=None, target=None):
     if len(x_gpu.shape) == 1 and len(y_gpu.shape) == 1:
 
         if x_gpu.size != y_gpu.size:
-            raise ValueError('arrays must be of same length')
+            raise ValueError('arrays must be of same length: '
+                             'x_gpu.size = %d, y_gpu.size = %d' %
+                             (x_gpu.size, y_gpu.size))
 
         # Compute inner product for 1D arrays:
         if (x_gpu.dtype == np.complex64 and y_gpu.dtype == np.complex64):
@@ -113,7 +115,9 @@ def dot(x_gpu, y_gpu, transa='N', transb='N', handle=None, target=None):
         elif (x_gpu.dtype == np.float64 and y_gpu.dtype == np.float64):
             cublas_func = cublas.cublasDdot
         else:
-            raise ValueError('unsupported combination of input types')
+            raise ValueError('unsupported combination of input types: '
+                             'x_gpu.dtype = %s, y_gpu.dtype = %s' %
+                             (str(x_gpu.dtype), str(y_gpu.dtype)))
 
         return cublas_func(handle, x_gpu.size, x_gpu.gpudata, 1,
                            y_gpu.gpudata, 1)
@@ -146,7 +150,9 @@ def dot(x_gpu, y_gpu, transa='N', transb='N', handle=None, target=None):
             alpha = np.float64(1.0)
             beta = np.float64(0.0)
         else:
-            raise ValueError('unsupported combination of input types')
+            raise ValueError('unsupported combination of input types: '
+                             'x_gpu.dtype = %s, y_gpu.dtype = %s' %
+                             (str(x_gpu.dtype), str(y_gpu.dtype)))
 
         transa = lower(transa)
         transb = lower(transb)
@@ -156,17 +162,18 @@ def dot(x_gpu, y_gpu, transa='N', transb='N', handle=None, target=None):
         elif transb in ['n']:
             k, m = y_shape
         else:
-            raise ValueError('invalid value for transb')
+            raise ValueError('invalid value "%s" for transb' % transb)
 
         if transa in ['t', 'c']:
             l, n = x_shape
         elif transa in ['n']:
             n, l = x_shape
         else:
-            raise ValueError('invalid value for transa')
+            raise ValueError('invalid value "%s" for transa' % transa)
 
         if l != k:
-            raise ValueError('objects are not aligned')
+            raise ValueError('objects are not aligned: x_shape = %s, y_shape = %s' %
+                             (x_shape, y_shape))
 
         if transb == 'n':
             lda = max(1, m)

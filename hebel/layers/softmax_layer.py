@@ -149,14 +149,19 @@ class SoftmaxLayer(TopLayer):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
         
         activations : ``GPUArray``
             The activations of the output units.
         """
+
+        if input_data.shape[1] != self.W.shape[0]:
+            raise ValueError('Number of outputs from previous layer (%d) '
+                            'does not match number of inputs to this layer (%d)' %
+                             (input_data.shape[1], self.W.shape[0]))
 
         lin_activations = linalg.dot(input_data, self.W)
         lin_activations = add_vec_to_mat(lin_activations, self.b, inplace=True)
@@ -194,6 +199,10 @@ class SoftmaxLayer(TopLayer):
             activations = cache
         else:
             activations = self.feed_forward(input_data, prediction=False)
+
+        if activations.shape != targets.shape:
+            raise ValueError('Activations (shape = %s) and targets (shape = %s) are different sizes' %
+                             (activations.shape, targets.shape))
 
         delta = substract_matrix(activations, targets)
         nan_to_zeros(delta, delta)
@@ -244,8 +253,8 @@ class SoftmaxLayer(TopLayer):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
         test_error : float
@@ -277,7 +286,7 @@ class SoftmaxLayer(TopLayer):
         loss = cross_entropy(activations, targets)
 
         if average: loss /= targets.shape[0]
-        return loss
+        return loss.get()
         
     train_error = cross_entropy_error
 
@@ -316,4 +325,4 @@ class SoftmaxLayer(TopLayer):
                                  cumath.log(activations + eps)))
         if average:
             kl_error /= targets.shape[0]
-        return float(kl_error.get())
+        return kl_error.get()

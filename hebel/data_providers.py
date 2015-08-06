@@ -43,6 +43,8 @@ class DataProvider(object):
     def __init__(self, data, targets, batch_size):
         self.data = data
         self.targets = targets
+        if len(self.targets.shape) == 1:
+            self.targets = self.targets[:, None] # box targets
 
         self.N = data.shape[0]
 
@@ -116,9 +118,13 @@ class MiniBatchDataProvider(DataProvider):
         self.i += 1
 
         if not isinstance(minibatch_data, gpuarray.GPUArray):
+            if not minibatch_data.flags.forc:
+                minibatch_data = minibatch_data.copy()
             minibatch_data = gpuarray.to_gpu(minibatch_data, allocator=memory_pool.allocate)
 
         if not isinstance(minibatch_targets, gpuarray.GPUArray):
+            if not minibatch_targets.flags.forc:
+                minibatch_targets = minibatch_targets.copy()
             minibatch_targets = gpuarray.to_gpu(minibatch_targets, allocator=memory_pool.allocate)
 
         return minibatch_data, minibatch_targets
@@ -150,6 +156,8 @@ class MultiTaskDataProvider(DataProvider):
         self.data = data
 
         if not isinstance(targets, gpuarray.GPUArray):
+            if not targets.flags.forc:
+                targets = targets.copy()
             targets = gpuarray.to_gpu(targets, allocator=memory_pool.allocate)
         self.targets = targets
 
@@ -218,6 +226,8 @@ class BatchDataProvider(MiniBatchDataProvider):
     def __init__(self, data, targets):
         self.data = data
         self.targets = targets
+        if len(self.targets.shape) == 1:
+            self.targets = self.targets[:, None] # box targets
         self.N = data.shape[0]
         self.i = 0
         self.batch_size = self.N
@@ -262,13 +272,12 @@ class MNISTDataProvider(MiniBatchDataProvider):
     :param batch_size: The size of mini-batches.
     """
 
-    try:
-        from skdata.mnist.view import OfficialVectorClassification
-    except ImportError:
-        from skdata.mnist.views import OfficialVectorClassification
-    mnist = OfficialVectorClassification()
-
     def __init__(self, array, batch_size=None):
+        try:
+            from skdata.mnist.view import OfficialVectorClassification
+        except ImportError:
+            from skdata.mnist.views import OfficialVectorClassification
+        self.mnist = OfficialVectorClassification()
 
         self.train_idx = self.mnist.fit_idxs
         self.val_idx = self.mnist.val_idxs

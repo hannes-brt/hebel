@@ -36,27 +36,11 @@ import sys, ctypes
 from ctypes.util import find_library
 
 # Load CUDA driver library:
-if sys.platform == 'linux2':
-    _libcuda_libname_list = ['libcuda.so', 'libcuda.so.3', 'libcuda.so.4']
-elif sys.platform == 'darwin':
-    _libcuda_libname_list = ['CUDA', 'libcuda.dylib']
-elif sys.platform == 'win32':
-    _libcuda_libname_list = ['nvcuda.dll']
-else:
-    raise RuntimeError('unsupported platform')
-
-# Print understandable error message when library cannot be found:
-_libcuda = None
-for _libcuda_libname in _libcuda_libname_list:
-    try:
-        _libcuda = ctypes.cdll.LoadLibrary(find_library(_libcuda_libname))
-    except OSError:
-        pass
-    else:
-        break
-if _libcuda == None:
+_libcuda_shortname = 'nvcuda' if sys.platform == 'win32' else 'cuda'
+_libcuda_name = find_library(_libcuda_shortname) # on Windows, this is the full path, not just the name
+if _libcuda_name is None:
     raise OSError('CUDA driver library not found')
-
+_libcuda = ctypes.cdll.LoadLibrary(_libcuda_name)
 
 # Exceptions corresponding to various CUDA driver errors:
 

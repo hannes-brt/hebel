@@ -48,8 +48,8 @@ class HiddenLayer(object):
     activation_function : {``sigmoid``, ``tanh``, ``relu``, ``linear``}, optional
         Which activation function to use. Default is sigmoid.
 
-    dropout : bool
-        Whether the layer should use dropout (with dropout probability 0.5)
+    dropout : float in [0, 1)
+        Probability of dropping out each hidden unit during training. Default is 0.
 
     parameters : array_like of ``GPUArray``
         Parameters used to initialize the layer. If this is omitted,
@@ -106,7 +106,7 @@ class HiddenLayer(object):
 
     def __init__(self, n_in, n_units,
                  activation_function='sigmoid',
-                 dropout=False,
+                 dropout=0.,
                  parameters=None,
                  weights_scale=None,
                  l1_penalty_weight=0.,
@@ -146,7 +146,11 @@ class HiddenLayer(object):
         self.l1_penalty_weight = l1_penalty_weight
         self.l2_penalty_weight = l2_penalty_weight
 
-        self.dropout = dropout
+        # This line is for backward compatibility only; dropout was formerly a bool
+        if isinstance(dropout, bool): dropout = 0.5 if dropout else 0
+        
+        self.dropout = float(dropout)
+        assert 0 <= self.dropout < 1
 
     @property
     def parameters(self):
@@ -213,12 +217,11 @@ class HiddenLayer(object):
 
     @property
     def l1_penalty(self):
-        return float(self.l1_penalty_weight) * gpuarray.sum(abs(self.W))
+        return self.l1_penalty_weight * gpuarray.sum(abs(self.W)).get()
 
     @property
     def l2_penalty(self):
-        return float(self.l2_penalty_weight) * .5 * \
-            gpuarray.sum(self.W ** 2.)
+        return self.l2_penalty_weight * .5 * gpuarray.sum(self.W ** 2.).get()
 
     def feed_forward(self, input_data, prediction=False):
         """Propagate forward through the layer
@@ -230,8 +233,8 @@ class HiddenLayer(object):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
         
@@ -239,17 +242,22 @@ class HiddenLayer(object):
             The activations of the hidden units.
         """
 
+        if input_data.shape[1] != self.W.shape[0]:
+            raise ValueError('Number of outputs from previous layer (%d) '
+                            'does not match number of inputs to this layer (%d)' %
+                             (input_data.shape[1], self.W.shape[0]))
+
         activations = linalg.dot(input_data, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
 
         self.f(activations)
 
-        if self.dropout and prediction:
-            activations *= .5
-
-        if self.dropout and not prediction:
-            dropout_mask = sample_dropout_mask(activations)
-            return activations, dropout_mask
+        if self.dropout > 0:
+            if prediction:
+                activations *= 1 - self.dropout
+            else:
+                dropout_mask = sample_dropout_mask(activations, self.dropout)
+                return activations, dropout_mask
 
         return (activations,)
 
@@ -290,7 +298,7 @@ class HiddenLayer(object):
             activations = cache[0]
 
         # Multiply the binary mask with the incoming gradients
-        if self.dropout and dropout_mask is not None:
+        if self.dropout > 0 and dropout_mask is not None:
             apply_dropout_mask(df_output, dropout_mask)
 
         # Get gradient wrt activation function

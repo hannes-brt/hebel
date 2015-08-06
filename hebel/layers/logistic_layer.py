@@ -146,14 +146,19 @@ class LogisticLayer(TopLayer):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
         
         activations : ``GPUArray``
             The activations of the output units.
         """
+
+        if input_data.shape[1] != self.W.shape[0]:
+            raise ValueError('Number of outputs from previous layer (%d) '
+                            'does not match number of inputs to this layer (%d)' %
+                             (input_data.shape[1], self.W.shape[0]))
 
         activations = linalg.dot(input_data, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
@@ -192,6 +197,10 @@ class LogisticLayer(TopLayer):
             activations = cache
         else:
             activations = self.feed_forward(input_data, prediction=False)
+
+        if activations.shape != targets.shape:
+            raise ValueError('Activations (shape = %s) and targets (shape = %s) are different sizes' %
+                             (activations.shape, targets.shape))
 
         delta = substract_matrix(activations, targets)
         nan_to_zeros(delta, delta)
@@ -242,8 +251,8 @@ class LogisticLayer(TopLayer):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
         test_error : float
@@ -274,7 +283,7 @@ class LogisticLayer(TopLayer):
 
         if average: loss /= targets.shape[0]
         # assert np.isfinite(loss)
-        return loss
+        return loss.get()
         
     train_error = cross_entropy_error
 
@@ -293,5 +302,5 @@ class LogisticLayer(TopLayer):
         class_error = np.sum((activations.get() >= .5) != (targets >= .5))
 
         if average: class_error = float(class_error) / targets.shape[0]
-        assert np.isfinite(class_error)
+
         return class_error

@@ -26,7 +26,7 @@ class DummyLayer(HiddenLayer):
     n_parameters = 0
     l1_penalty_weight = 0.
     l2_penalty_weight = 0.
-    dropout = False
+    dropout = 0.
 
     def __init__(self, n_in):
         self.n_in = n_in
@@ -52,7 +52,10 @@ class DummyLayer(HiddenLayer):
         return 0.
 
     def feed_forward(self, input_data, prediction=False):
-        assert input_data.shape[1] == self.n_in
+        if input_data.shape[1] != self.n_in:
+            raise ValueError('Number of outputs from previous layer (%d) '
+                             'does not match number of inputs to this layer (%d)' %
+                             (input_data.shape[1], self.n_in))
         return (input_data,)
 
     def backprop(self, input_data, df_output, cache=None):

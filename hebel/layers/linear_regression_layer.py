@@ -96,7 +96,7 @@ class LinearRegressionLayer(SoftmaxLayer):
             self.W = gpuarray.empty((n_in, n_out), dtype=np.float32,
                                     allocator=memory_pool.allocate)
             sampler.fill_uniform(self.W)
-            self.W = weights_scale * (self.W -.5)
+            self.W = self.weights_scale * (self.W -.5)
 
             self.b = gpuarray.zeros((n_out,), dtype=np.float32,
                                     allocator=memory_pool.allocate)
@@ -120,14 +120,19 @@ class LinearRegressionLayer(SoftmaxLayer):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
         
         activations : ``GPUArray``
             The activations of the output units.
         """
+
+        if input_data.shape[1] != self.W.shape[0]:
+            raise ValueError('Number of outputs from previous layer (%d) '
+                             'does not match number of inputs to this layer (%d)' %
+                             (input_data.shape[1], self.W.shape[0]))
 
         activations = linalg.dot(input_data, self.W)
         activations = add_vec_to_mat(activations, self.b, inplace=True)
@@ -162,8 +167,8 @@ class LinearRegressionLayer(SoftmaxLayer):
 
         prediction : bool, optional
             Whether to use prediction model. Only relevant when using
-            dropout. If true, then weights are halved if the layers
-            uses dropout.
+            dropout. If true, then weights are multiplied by
+            1 - dropout if the layer uses dropout.
 
         **Returns:**
         test_error : float
@@ -184,5 +189,5 @@ class LinearRegressionLayer(SoftmaxLayer):
             matrix_sum_out_axis((targets - activations) ** 2, 1))
 
         if average: loss = loss.mean()
-        return float(loss.get())
+        return loss.get()
     train_error = squared_loss
